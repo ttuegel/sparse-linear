@@ -113,7 +113,7 @@ extents ixs =
   where
     len = U.length ixs
 
-mm :: Matrix CSR a -> Matrix CSC a -> Matrix COO a
+mm :: Matrix CSC a -> Matrix CSR a -> Matrix COO a
 mm = undefined
 
 mv :: (Num a, Unbox a) => Matrix CSR a -> Vector a -> Vector a
