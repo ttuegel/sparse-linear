@@ -16,60 +16,57 @@ import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Algorithms.Intro (sortBy)
 import Data.Vector.Algorithms.Search (Comparison, binarySearchP)
 
-data CS a = CS !Int !(Vector Int) !(Vector (Int, a))
-data CO a = CO !Int !Int !(Vector (Int, Int, a))
+-- | Matrix formats
+data FmtK
+    = R CompK -- ^ row-ordered matrix with specified compression
+    | C CompK -- ^ column-ordered matrix with specified compression
+    | Un      -- ^ unordered matrix (uncompressed only)
 
-data FormatK = CSR | CSC | COO
+-- | Matrix compression
+data CompK
+    = U -- ^ uncompressed
+    | Z -- ^ compressed
 
-data family Matrix :: FormatK -> * -> *
-newtype instance Matrix CSR a = MatrixCSR (CS a)
-newtype instance Matrix CSC a = MatrixCSC (CS a)
-newtype instance Matrix COO a = MatrixCOO (CO a)
+data Zx a = Zx !Int !(Vector Int) !(Vector (Int, a))
+data Ux a = Ux !Int !Int !(Vector (Int, Int, a))
 
-pack :: Unbox a => Int -> Int -> Vector (Int, Int, a) -> Matrix COO a
-pack r c v = MatrixCOO (CO r c v)
+data family Matrix :: FmtK -> * -> *
+newtype instance Matrix (R Z) a = MatZR (Zx a)
+newtype instance Matrix (C Z) a = MatZC (Zx a)
+newtype instance Matrix (R U) a = MatUR (Ux a)
+newtype instance Matrix (C U) a = MatUC (Ux a)
+newtype instance Matrix Un a = MatUn (Ux a)
 
-class Format f where
-    coo :: Unbox a => Matrix f a -> Matrix COO a
-    csr :: Unbox a => Matrix f a -> Matrix CSR a
-    csc :: Unbox a => Matrix f a -> Matrix CSC a
+pack :: Unbox a => Int -> Int -> Vector (Int, Int, a) -> Matrix Un a
+pack r c v = MatUn (Ux r c v)
 
-instance Format COO where
-    coo = id
+{-# INLINE extents #-}
+extents :: Vector Int -> Vector (Int, Int)
+extents ixs = U.postscanr' (\start (end, _) -> (start, end)) (len, 0) ixs
+  where
+    len = U.length ixs
 
-    csr (MatrixCOO (CO nRows nCols vals)) =
+class Compressed f where
+    compress :: Unbox a => Matrix (f U) a -> Matrix (f Z) a
+    decompress :: Unbox a => Matrix (f Z) a -> Matrix (f U) a
+
+class Ordered f where
+    order :: Unbox a => Matrix Un a -> Matrix (f U) a
+    deorder :: Unbox a => Matrix (f U) a -> Matrix Un a
+
+instance Compressed R where
+    {-# INLINE compress #-}
+    compress (MatUR (Ux nRows nCols vals)) =
         runST $ do
           valsM <- U.thaw vals
-          sortBy rowOrdering valsM
           rows <- U.generateM nRows
             $ \i -> binarySearchP (\(r, _, _) -> r == i) valsM
           vals' <- U.map (\(_, c, x) -> (c, x)) <$> U.freeze valsM
-          return $! MatrixCSR (CS nCols rows vals')
-      where
-        rowOrdering :: Comparison (Int, Int, a)
-        rowOrdering (ra, ca, _) (rb, cb, _) =
-            case compare ra rb of
-              EQ -> compare ca cb
-              x -> x
+          return $! MatZR (Zx nCols rows vals')
 
-    csc (MatrixCOO (CO nRows nCols vals)) =
-        runST $ do
-          valsM <- U.thaw vals
-          sortBy colOrdering valsM
-          cols <- U.generateM nRows
-            $ \i -> binarySearchP (\(_, c, _) -> c == i) valsM
-          vals' <- U.map (\(r, _, x) -> (r, x)) <$> U.freeze valsM
-          return $! MatrixCSC (CS nRows cols vals')
-      where
-        colOrdering :: Comparison (Int, Int, a)
-        colOrdering (ra, ca, _) (rb, cb, _) =
-            case compare ca cb of
-              EQ -> compare ra rb
-              x -> x
-
-instance Format CSR where
-    coo (MatrixCSR (CS nCols rows vals)) =
-        MatrixCOO $ CO nRows nCols $ U.create $ do
+    {-# INLINE decompress #-}
+    decompress (MatZR (Zx nCols rows vals)) =
+        MatUR $ Ux nRows nCols $ U.create $ do
           vals' <- U.unsafeThaw $ U.map (\(c, x) -> (-1, c, x)) vals
           U.forM_ (U.indexed $ extents rows) $ \(r, (start, end)) ->
             let go i
@@ -84,12 +81,34 @@ instance Format CSR where
         nRows = U.length rows
         len = U.length vals
 
-    csr = id
-    csc = csc . coo
+instance Ordered R where
+    {-# INLINE order #-}
+    order (MatUn (Ux nRows nCols vals)) =
+        MatUR $ Ux nRows nCols $ U.modify (sortBy rowOrd) vals
+      where
+        {-# INLINE rowOrd #-}
+        rowOrd :: Comparison (Int, Int, a)
+        rowOrd (ra, ca, _) (rb, cb, _) =
+            case compare ra rb of
+              EQ -> compare ca cb
+              x -> x
 
-instance Format CSC where
-    coo (MatrixCSC (CS nRows cols vals)) =
-        MatrixCOO $ CO nRows nCols $ U.create $ do
+    {-# INLINE deorder #-}
+    deorder (MatUR mat) = MatUn mat
+
+instance Compressed C where
+    {-# INLINE compress #-}
+    compress (MatUC (Ux nRows nCols vals)) =
+        runST $ do
+          valsM <- U.thaw vals
+          cols <- U.generateM nRows
+            $ \i -> binarySearchP (\(_, c, _) -> c == i) valsM
+          vals' <- U.map (\(r, _, x) -> (r, x)) <$> U.freeze valsM
+          return $! MatZC (Zx nRows cols vals')
+
+    {-# INLINE decompress #-}
+    decompress (MatZC (Zx nRows cols vals)) =
+        MatUC $ Ux nRows nCols $ U.create $ do
           vals' <- U.unsafeThaw $ U.map (\(r, x) -> (r, -1, x)) vals
           U.forM_ (U.indexed $ extents cols) $ \(c, (start, end)) ->
             let go i
@@ -104,20 +123,26 @@ instance Format CSC where
         nCols = U.length cols
         len = U.length vals
 
-    csr = csr . coo
-    csc = id
+instance Ordered C where
+    {-# INLINE order #-}
+    order (MatUn (Ux nRows nCols vals)) =
+        MatUC $ Ux nRows nCols $ U.modify (sortBy colOrd) vals
+      where
+        {-# INLINE colOrd #-}
+        colOrd :: Comparison (Int, Int, a)
+        colOrd (ra, ca, _) (rb, cb, _) =
+            case compare ca cb of
+              EQ -> compare ra rb
+              x -> x
 
-extents :: Vector Int -> Vector (Int, Int)
-extents ixs =
-    U.postscanr' (\start (end, _) -> (start, end)) (len, 0) ixs
-  where
-    len = U.length ixs
+    {-# INLINE deorder #-}
+    deorder (MatUC mat) = MatUn mat
 
-mm :: Matrix CSC a -> Matrix CSR a -> Matrix COO a
+mm :: Ordered f => Matrix (C Z) a -> Matrix (R Z) a -> Matrix (f U) a
 mm = undefined
 
-mv :: (Num a, Unbox a) => Matrix CSR a -> Vector a -> Vector a
-mv (MatrixCSR (CS nCols rows vals)) vec =
+mv :: (Num a, Unbox a) => Matrix (R Z) a -> Vector a -> Vector a
+mv (MatZR (Zx nCols rows vals)) vec =
     assert (nCols == U.length vec)
     $ flip U.map (extents rows)
     $ \(start, end) ->
@@ -125,8 +150,8 @@ mv (MatrixCSR (CS nCols rows vals)) vec =
       in U.sum $ U.zipWith (*) coeffs $ U.backpermute vec cols
 
 mvM :: (Unbox a, Num a, PrimMonad m)
-    => Matrix CSR a -> MVector (PrimState m) a -> MVector (PrimState m) a -> m ()
-mvM (MatrixCSR (CS nCols rows vals)) src dst =
+    => Matrix (R Z) a -> MVector (PrimState m) a -> MVector (PrimState m) a -> m ()
+mvM (MatZR (Zx nCols rows vals)) src dst =
     assert (nCols == MU.length src)
     $ assert (nRows == MU.length dst)
     $ U.forM_ (U.indexed $ extents rows)
