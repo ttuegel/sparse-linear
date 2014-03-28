@@ -11,6 +11,7 @@ import Control.Monad.ST (runST)
 import Data.Maybe (fromMaybe)
 import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U
+import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Algorithms.Intro (sortBy)
 import Data.Vector.Algorithms.Search (Comparison, binarySearchP)
@@ -123,5 +124,19 @@ mv (MatrixCSR (CS nCols rows vals)) vec =
       let (cols, coeffs) = U.unzip $ U.slice start (end - start) vals
       in U.sum $ U.zipWith (*) coeffs $ U.backpermute vec cols
 
-mvM :: Matrix CSR a -> v (PrimState m) a -> m (v (PrimState m) a)
-mvM = undefined
+mvM :: (Unbox a, Num a, PrimMonad m)
+    => Matrix CSR a -> MVector (PrimState m) a -> MVector (PrimState m) a -> m ()
+mvM (MatrixCSR (CS nCols rows vals)) src dst =
+    assert (nCols == MU.length src)
+    $ assert (nRows == MU.length dst)
+    $ U.forM_ (U.indexed $ extents rows)
+    $ \(r, (start, end)) ->
+      let go i y
+            | i < end = do
+              (c, a) <- U.unsafeIndexM vals i
+              x <- MU.unsafeRead src c
+              go (succ i) $! y + a * x
+            | otherwise = MU.unsafeWrite dst r y
+      in go start 0
+  where
+    nRows = U.length rows
