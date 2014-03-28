@@ -28,34 +28,38 @@ class Format f where
     csr :: Matrix f a -> Matrix CSR a
     csc :: Matrix f a -> Matrix CSC a
 
-rowOrdering, colOrdering :: Comparison (Int, Int, a)
-rowOrdering (ra, ca, _) (rb, cb, _) =
-    case compare ra rb of
-      EQ -> compare ca cb
-      x -> x
-colOrdering (ra, ca, _) (rb, cb, _) =
-    case compare ca cb of
-      EQ -> compare ra rb
-      x -> x
-
 instance Format COO where
     coo = id
 
-    csr (Coord nRows nCols vals) = runST $ do
-      valsM <- U.thaw vals
-      sortBy rowOrdering valsM
-      rows <- U.generateM nRows
-        $ \i -> binarySearchP (\(r, _, _) -> r == i) valsM
-      vals' <- U.map (\(_, c, x) -> (c, x)) <$> U.freeze valsM
-      return $! CS nCols rows vals'
+    csr (Coord nRows nCols vals) =
+        runST $ do
+          valsM <- U.thaw vals
+          sortBy rowOrdering valsM
+          rows <- U.generateM nRows
+            $ \i -> binarySearchP (\(r, _, _) -> r == i) valsM
+          vals' <- U.map (\(_, c, x) -> (c, x)) <$> U.freeze valsM
+          return $! CS nCols rows vals'
+      where
+        rowOrdering :: Comparison (Int, Int, a)
+        rowOrdering (ra, ca, _) (rb, cb, _) =
+            case compare ra rb of
+              EQ -> compare ca cb
+              x -> x
 
-    csc (Coord nRows nCols vals) = runST $ do
-      valsM <- U.thaw vals
-      sortBy colOrdering valsM
-      cols <- U.generateM nRows
-        $ \i -> binarySearchP (\(_, c, _) -> c == i) valsM
-      vals' <- U.map (\(r, _, x) -> (r, x)) <$> U.freeze valsM
-      return $! CS nRows cols vals'
+    csc (Coord nRows nCols vals) =
+        runST $ do
+          valsM <- U.thaw vals
+          sortBy colOrdering valsM
+          cols <- U.generateM nRows
+            $ \i -> binarySearchP (\(_, c, _) -> c == i) valsM
+          vals' <- U.map (\(r, _, x) -> (r, x)) <$> U.freeze valsM
+          return $! CS nRows cols vals'
+      where
+        colOrdering :: Comparison (Int, Int, a)
+        colOrdering (ra, ca, _) (rb, cb, _) =
+            case compare ca cb of
+              EQ -> compare ra rb
+              x -> x
 
 instance Format CSR where
     coo (CS nCols rows vals) =
@@ -63,9 +67,13 @@ instance Format CSR where
           let spans = U.postscanr' (\start (end, _) -> (start, end)) (len, 0) rows
           vals' <- U.unsafeThaw $ U.map (\(c, x) -> (-1, c, x)) vals
           U.forM_ (U.indexed spans) $ \(r, (start, end)) ->
-            forFromUpto start end $ \i -> do
-              (_, c, x) <- MU.read vals' i
-              MU.write vals' i (r, c, x)
+            let go i
+                  | i < end = do
+                    (_, c, x) <- MU.read vals' i
+                    MU.write vals' i (r, c, x)
+                    go $ succ i
+                  | otherwise = return ()
+            in go start
           return vals'
       where
         nRows = U.length rows
@@ -74,21 +82,19 @@ instance Format CSR where
     csr = id
     csc = csc . coo
 
-forFromUpto :: Monad m => Int -> Int -> (Int -> m a) -> m a
-forFromUpto start end act = go start
-  where
-    go i | i < end = act i >> go (succ i)
-         | otherwise = return ()
-
 instance Format CSC where
     coo (CS nRows cols vals) =
         Coord nRows nCols $ U.create $ do
           let spans = U.postscanr' (\start (end, _) -> (start, end)) (len, 0) cols
           vals' <- U.unsafeThaw $ U.map (\(r, x) -> (r, -1, x)) vals
           U.forM_ (U.indexed spans) $ \(c, (start, end)) ->
-            forFromUpto start end $ \i -> do
-              (r, _, x) <- MU.read vals' i
-              MU.write vals' i (r, c, x)
+            let go i
+                  | i < end = do
+                    (r, _, x) <- MU.read vals' i
+                    MU.write vals' i (r, c, x)
+                    go $ succ i
+                  | otherwise = return ()
+            in go start
           return vals'
       where
         nCols = U.length cols
