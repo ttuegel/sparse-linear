@@ -25,6 +25,9 @@ newtype instance Matrix CSR a = MatrixCSR (CS a)
 newtype instance Matrix CSC a = MatrixCSC (CS a)
 newtype instance Matrix COO a = MatrixCOO (CO a)
 
+pack :: Unbox a => Int -> Int -> Vector (Int, Int, a) -> Matrix COO a
+pack r c v = MatrixCOO (CO r c v)
+
 class Format f where
     coo :: Unbox a => Matrix f a -> Matrix COO a
     csr :: Unbox a => Matrix f a -> Matrix CSR a
