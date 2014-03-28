@@ -21,7 +21,6 @@ import Data.Vector.Algorithms.Search (Comparison, binarySearchP)
 data FormatK
     = RowMajor CompressionK -- ^ row-ordered matrix
     | ColMajor CompressionK -- ^ column-ordered matrix
-    | UnOrd                 -- ^ unordered matrix (uncompressed only)
 
 -- | Compression
 data CompressionK
@@ -36,16 +35,16 @@ newtype instance Matrix (RowMajor Comp) a = MatCR (Cx a)
 newtype instance Matrix (ColMajor Comp) a = MatCC (Cx a)
 newtype instance Matrix (RowMajor UnComp) a = MatUR (Ux a)
 newtype instance Matrix (ColMajor UnComp) a = MatUC (Ux a)
-newtype instance Matrix UnOrd a = MatUn (Ux a)
 
 -- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
-type MatrixCOO = Matrix UnOrd
 type MatrixCSR = Matrix (RowMajor Comp)
 type MatrixCSC = Matrix (ColMajor Comp)
 
+{-
 pack :: (Order ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix ord a
 pack r c v = order $ MatUn (Ux r c v)
+-}
 
 {-# INLINE extents #-}
 extents :: Vector Int -> Vector (Int, Int)
@@ -56,10 +55,6 @@ extents ixs = U.postscanr' (\start (end, _) -> (start, end)) (len, 0) ixs
 class Compress f where
     compress :: Unbox a => Matrix (f UnComp) a -> Matrix (f Comp) a
     decompress :: Unbox a => Matrix (f Comp) a -> Matrix (f UnComp) a
-
-class Order ord where
-    order :: Unbox a => Matrix UnOrd a -> Matrix ord a
-    deorder :: Unbox a => Matrix ord a -> Matrix UnOrd a
 
 instance Compress RowMajor where
     {-# INLINE compress #-}
@@ -88,21 +83,6 @@ instance Compress RowMajor where
         nRows = U.length rows
         len = U.length vals
 
-instance Order (RowMajor UnComp) where
-    {-# INLINE order #-}
-    order (MatUn (Ux nRows nCols vals)) =
-        MatUR $ Ux nRows nCols $ U.modify (sortBy rowOrd) vals
-      where
-        {-# INLINE rowOrd #-}
-        rowOrd :: Comparison (Int, Int, a)
-        rowOrd (ra, ca, _) (rb, cb, _) =
-            case compare ra rb of
-              EQ -> compare ca cb
-              x -> x
-
-    {-# INLINE deorder #-}
-    deorder (MatUR mat) = MatUn mat
-
 instance Compress ColMajor where
     {-# INLINE compress #-}
     compress (MatUC (Ux nRows nCols vals)) =
@@ -130,6 +110,26 @@ instance Compress ColMajor where
         nCols = U.length cols
         len = U.length vals
 
+{-
+class Order ord where
+    order :: Unbox a => Matrix UnOrd a -> Matrix ord a
+    deorder :: Unbox a => Matrix ord a -> Matrix UnOrd a
+
+instance Order (RowMajor UnComp) where
+    {-# INLINE order #-}
+    order (MatUn (Ux nRows nCols vals)) =
+        MatUR $ Ux nRows nCols $ U.modify (sortBy rowOrd) vals
+      where
+        {-# INLINE rowOrd #-}
+        rowOrd :: Comparison (Int, Int, a)
+        rowOrd (ra, ca, _) (rb, cb, _) =
+            case compare ra rb of
+              EQ -> compare ca cb
+              x -> x
+
+    {-# INLINE deorder #-}
+    deorder (MatUR mat) = MatUn mat
+
 instance Order (ColMajor UnComp) where
     {-# INLINE order #-}
     order (MatUn (Ux nRows nCols vals)) =
@@ -144,13 +144,7 @@ instance Order (ColMajor UnComp) where
 
     {-# INLINE deorder #-}
     deorder (MatUC mat) = MatUn mat
-
-instance Order UnOrd where
-    {-# INLINE order #-}
-    order x = x
-
-    {-# INLINE deorder #-}
-    deorder x = x
+-}
 
 mm :: Matrix (ColMajor Comp) a
    -> Matrix (RowMajor Comp) a
