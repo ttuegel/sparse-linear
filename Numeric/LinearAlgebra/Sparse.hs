@@ -103,8 +103,8 @@ instance Format CSC where
     csr = csr . coo
     csc = id
 
-mm :: (Format f, Format g) => Matrix f a -> Matrix g a -> Matrix COO a
-mv :: (Format f, U.Vector v a) => Matrix f a -> v a -> v a
+mm :: (Format f, Format g) => Matrix CSR a -> Matrix CSC a -> Matrix COO a
+mv :: (Format f, U.Vector v a) => Matrix CSR a -> v a -> v a
 
 mvM :: (Format f, PrimMonad m, MU.MVector v a)
-    => Matrix f a -> v (PrimState m) a -> m (v (PrimState m) a)
+    => Matrix CSR a -> v (PrimState m) a -> m (v (PrimState m) a)
