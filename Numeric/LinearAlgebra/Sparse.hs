@@ -1,15 +1,18 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Numeric.LinearAlgebra.Sparse where
 
 import Control.Applicative ((<$>))
 import Control.Exception (assert)
+import Control.Lens
 import Control.Monad (when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.Maybe (fromMaybe)
+import Data.Monoid (mappend)
+import Data.Ord (comparing)
 import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
@@ -17,28 +20,126 @@ import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Algorithms.Intro (sortBy)
 import Data.Vector.Algorithms.Search (Comparison, binarySearchP)
 
+-- | Matrix order
+data OrderK
+    = Row -- ^ row-major
+    | Col -- ^ column-major
+
+-- | The GADT is needed for the class constraint, which I'm really not
+-- happy about. It shouldn't be necessary, but it is for sortUx.
+data OrderP :: OrderK -> * where
+    OrderP :: Order ord => OrderP ord
+
+newtype Ordered (ord :: OrderK) a = Ordered a
+
+{-# INLINE order #-}
+order :: Order ord => OrderP ord -> a -> Ordered ord a
+order _ x = Ordered x
+
+{-# INLINE unorder #-}
+unorder :: Order ord => Ordered ord a -> (OrderP ord, a)
+unorder (Ordered x) = (OrderP, x)
+
+{-# INLINE unorder_ #-}
+unorder_ :: Order ord => Ordered ord a -> a
+unorder_ = snd . unorder
+
+instance Order ord => Functor (Ordered ord) where
+    fmap f x = order OrderP $ f $ unorder_ x
+
+{-
+instance Order ord => Ord (Ordered ord a) where
+    compare a b =
+      comparing (view major) a b `mappend` comparing (view minor) a b
+
+instance Eq (Ordered ord a) where
+    (==) a b = view major a == view major b && view minor a == view minor b
+-}
+
 -- | Matrix formats
 data FormatK
-    = RowMajor CompressionK -- ^ row-ordered matrix
-    | ColMajor CompressionK -- ^ column-ordered matrix
+    = U -- ^ uncompressed
+    | C -- ^ compressed
 
--- | Compression
-data CompressionK
-    = UnComp  -- ^ uncompressed
-    | Comp    -- ^ compressed
+class Order ord where
+    -- | Extract the major index from a tuple in (row, column, ...) order.
+    major :: (Field1 s s a a, Field2 s s a a) => Lens' (Ordered ord s) a
+    -- | Extract the minor index from a tuple in (row, column, ...) order
+    minor :: (Field1 s s a a, Field2 s s a a) => Lens' (Ordered ord s) a
+    -- | Extract the row index from a tuple in (major, minor, ...) order.
+    row :: (Field1 s s a a, Field2 s s a a) => Lens' (Ordered ord s) a
+    -- | Extract the column index from a tuple in (major, minor, ...) order
+    col :: (Field1 s s a a, Field2 s s a a) => Lens' (Ordered ord s) a
 
-data Cx a = Cx !Int !(Vector Int) !(Vector (Int, a))
-data Ux a = Ux !Int !Int !(Vector (Int, Int, a))
+instance Order Row where
+    major f s = fmap (order OrderP) $ _1 f $ unorder_ s
+    minor f s = fmap (order OrderP) $ _2 f $ unorder_ s
+    row f s = fmap (order OrderP) $ _1 f $ unorder_ s
+    col f s = fmap (order OrderP) $ _2 f $ unorder_ s
 
-data family Matrix :: FormatK -> * -> *
-newtype instance Matrix (RowMajor Comp) a = MatCR (Cx a)
-newtype instance Matrix (ColMajor Comp) a = MatCC (Cx a)
-newtype instance Matrix (RowMajor UnComp) a = MatUR (Ux a)
-newtype instance Matrix (ColMajor UnComp) a = MatUC (Ux a)
+instance Order Col where
+    major f s = fmap (order OrderP) $ _2 f $ unorder_ s
+    minor f s = fmap (order OrderP) $ _1 f $ unorder_ s
+    row f s = fmap (order OrderP) $ _2 f $ unorder_ s
+    col f s = fmap (order OrderP) $ _1 f $ unorder_ s
 
+data Cx (ord :: OrderK) a = Cx (OrderP ord) !Int !(Vector Int) !(Vector (Int, a))
+data Ux (ord :: OrderK) a = Ux (OrderP ord) !Int !Int !(Vector (Int, Int, a))
+
+data family Matrix :: FormatK -> OrderK -> * -> *
+newtype instance Matrix C ord a = MatC (Cx ord a)
+newtype instance Matrix U ord a = MatU (Ux ord a)
+
+compress :: (Order ord, Unbox a) => Matrix U ord a -> Matrix C ord a
+compress (MatU (Ux witness majorDim minorDim vals)) =
+    MatC (Cx witness minorDim majorIxs valsC)
+  where
+    _minor = view minor . order witness
+    _major = view major . order witness
+    valsC = U.map (\x -> (_minor x, view _3 x)) vals
+    majorIxs = runST $ do
+      valsM <- U.thaw vals
+      U.generateM majorDim
+        $ \i -> binarySearchP (\x -> (_major x) == i) valsM
+
+decompress :: (Order ord, Unbox a) => Matrix C ord a -> Matrix U ord a
+decompress (MatC (Cx witness minorDim majorIxs valsC)) =
+    MatU (Ux witness majorDim minorDim vals)
+  where
+    majorDim = U.length majorIxs
+    (minors, coeffs) = U.unzip valsC
+    majors =
+      U.concatMap (\(r, len) -> U.replicate len r) $ U.indexed majorLengths
+    majorLengths =
+      U.generate majorDim $ \r ->
+        let this = majorIxs U.! r
+            next = fromMaybe (U.length valsC) (majorIxs U.!? (succ r))
+        in next - this
+    vals =
+      let ixs = order witness (majors, minors)
+      in U.zip3 (view row ixs) (view col ixs) coeffs
+
+sortUx :: (Order ord, Unbox a) => Ux ord' a -> Ux ord a
+sortUx (Ux _ nr nc vals) =
+    Ux witness nr nc $ U.modify (sortBy sorter) vals
+  where
+    -- This witness is why OrderP must be a GADT. For some reason, the
+    -- Order ord constraint isn't propagated to witness. If I could figure
+    -- out why, OrderP could be an ordinary ADT.
+    witness = OrderP
+    _major = view major . order witness
+    _minor = view minor . order witness
+    sorter a b =
+      (comparing _major a b) `mappend` (comparing _minor a b)
+
+     {-
+reorder :: Matrix U ord a -> Matrix U ord' a
+reorder (MatU ux) = MatU $ sortUx ux
+-}
 -- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
-type MatrixCSR = Matrix (RowMajor Comp)
-type MatrixCSC = Matrix (ColMajor Comp)
+type MatrixCSR = Matrix C Row
+type MatrixCSC = Matrix C Col
+type MatrixCOO = Matrix U Row
 
 {-
 pack :: (Order ord, Unbox a)
@@ -52,107 +153,14 @@ extents ixs = U.postscanr' (\start (end, _) -> (start, end)) (len, 0) ixs
   where
     len = U.length ixs
 
-class Compress f where
-    compress :: Unbox a => Matrix (f UnComp) a -> Matrix (f Comp) a
-    decompress :: Unbox a => Matrix (f Comp) a -> Matrix (f UnComp) a
-
-instance Compress RowMajor where
-    {-# INLINE compress #-}
-    compress (MatUR (Ux nRows nCols vals)) =
-        runST $ do
-          valsM <- U.thaw vals
-          rows <- U.generateM nRows
-            $ \i -> binarySearchP (\(r, _, _) -> r == i) valsM
-          vals' <- U.map (\(_, c, x) -> (c, x)) <$> U.freeze valsM
-          return $! MatCR (Cx nCols rows vals')
-
-    {-# INLINE decompress #-}
-    decompress (MatCR (Cx nCols rows vals)) =
-        MatUR $ Ux nRows nCols $ U.create $ do
-          vals' <- U.unsafeThaw $ U.map (\(c, x) -> (-1, c, x)) vals
-          U.forM_ (U.indexed $ extents rows) $ \(r, (start, end)) ->
-            let go i
-                  | i < end = do
-                    (_, c, x) <- MU.read vals' i
-                    MU.write vals' i (r, c, x)
-                    go $ succ i
-                  | otherwise = return ()
-            in go start
-          return vals'
-      where
-        nRows = U.length rows
-        len = U.length vals
-
-instance Compress ColMajor where
-    {-# INLINE compress #-}
-    compress (MatUC (Ux nRows nCols vals)) =
-        runST $ do
-          valsM <- U.thaw vals
-          cols <- U.generateM nRows
-            $ \i -> binarySearchP (\(_, c, _) -> c == i) valsM
-          vals' <- U.map (\(r, _, x) -> (r, x)) <$> U.freeze valsM
-          return $! MatCC (Cx nRows cols vals')
-
-    {-# INLINE decompress #-}
-    decompress (MatCC (Cx nRows cols vals)) =
-        MatUC $ Ux nRows nCols $ U.create $ do
-          vals' <- U.unsafeThaw $ U.map (\(r, x) -> (r, -1, x)) vals
-          U.forM_ (U.indexed $ extents cols) $ \(c, (start, end)) ->
-            let go i
-                  | i < end = do
-                    (r, _, x) <- MU.read vals' i
-                    MU.write vals' i (r, c, x)
-                    go $ succ i
-                  | otherwise = return ()
-            in go start
-          return vals'
-      where
-        nCols = U.length cols
-        len = U.length vals
-
 {-
-class Order ord where
-    order :: Unbox a => Matrix UnOrd a -> Matrix ord a
-    deorder :: Unbox a => Matrix ord a -> Matrix UnOrd a
-
-instance Order (RowMajor UnComp) where
-    {-# INLINE order #-}
-    order (MatUn (Ux nRows nCols vals)) =
-        MatUR $ Ux nRows nCols $ U.modify (sortBy rowOrd) vals
-      where
-        {-# INLINE rowOrd #-}
-        rowOrd :: Comparison (Int, Int, a)
-        rowOrd (ra, ca, _) (rb, cb, _) =
-            case compare ra rb of
-              EQ -> compare ca cb
-              x -> x
-
-    {-# INLINE deorder #-}
-    deorder (MatUR mat) = MatUn mat
-
-instance Order (ColMajor UnComp) where
-    {-# INLINE order #-}
-    order (MatUn (Ux nRows nCols vals)) =
-        MatUC $ Ux nRows nCols $ U.modify (sortBy colOrd) vals
-      where
-        {-# INLINE colOrd #-}
-        colOrd :: Comparison (Int, Int, a)
-        colOrd (ra, ca, _) (rb, cb, _) =
-            case compare ca cb of
-              EQ -> compare ra rb
-              x -> x
-
-    {-# INLINE deorder #-}
-    deorder (MatUC mat) = MatUn mat
--}
-
-mm :: Matrix (ColMajor Comp) a
-   -> Matrix (RowMajor Comp) a
-   -> Matrix (ord UnComp) a
+mm :: Matrix C Col a
+   -> Matrix C Row a
+   -> Matrix U ord a
 mm = undefined
 
-mv :: (Num a, Unbox a) => Matrix (RowMajor Comp) a -> Vector a -> Vector a
-mv (MatCR (Cx nCols rows vals)) vec =
+mv :: (Num a, Unbox a) => Matrix C Row a -> Vector a -> Vector a
+mv (MatC (Cx nCols rows vals)) vec =
     assert (nCols == U.length vec)
     $ flip U.map (extents rows)
     $ \(start, end) ->
@@ -160,10 +168,10 @@ mv (MatCR (Cx nCols rows vals)) vec =
       in U.sum $ U.zipWith (*) coeffs $ U.backpermute vec cols
 
 mvM :: (Unbox a, Num a, PrimMonad m)
-    => Matrix (RowMajor Comp) a
+    => Matrix C Row a
     -> MVector (PrimState m) a
     -> MVector (PrimState m) a -> m ()
-mvM (MatCR (Cx nCols rows vals)) src dst =
+mvM (MatC (Cx nCols rows vals)) src dst =
     assert (nCols == MU.length src)
     $ assert (nRows == MU.length dst)
     $ U.forM_ (U.indexed $ extents rows)
@@ -177,3 +185,4 @@ mvM (MatCR (Cx nCols rows vals)) src dst =
       in go start 0
   where
     nRows = U.length rows
+-}

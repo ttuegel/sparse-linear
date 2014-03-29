@@ -20,6 +20,7 @@ library
   -- other-modules:       
   other-extensions:    TypeFamilies
   build-depends:       base >=4.6 && <4.7,
+                       lens ==4.1.*,
                        primitive ==0.5.*,
                        vector ==0.10.*,
                        vector-algorithms ==0.6.*
