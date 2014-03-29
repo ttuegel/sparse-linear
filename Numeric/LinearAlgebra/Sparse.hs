@@ -70,12 +70,20 @@ instance OrderR Row where
     minor f = fmap (tag Proxy) . _2 f . untag
     row f = fmap (tag Proxy) . _1 f . untag
     col f = fmap (tag Proxy) . _2 f . untag
+    {-# INLINE major #-}
+    {-# INLINE minor #-}
+    {-# INLINE row #-}
+    {-# INLINE col #-}
 
 instance OrderR Col where
     major f = fmap (tag Proxy) . _2 f . untag
     minor f = fmap (tag Proxy) . _1 f . untag
     row f = fmap (tag Proxy) . _2 f . untag
     col f = fmap (tag Proxy) . _1 f . untag
+    {-# INLINE major #-}
+    {-# INLINE minor #-}
+    {-# INLINE row #-}
+    {-# INLINE col #-}
 
 -- | Compressed sparse format
 data Cx a = Cx !Int -- ^ minor dimension
@@ -97,6 +105,7 @@ type MatrixCSR = Matrix C Row
 type MatrixCSC = Matrix C Col
 type MatrixCOO = Matrix U Row
 
+{-# INLINE compress #-}
 compress :: (OrderR ord, Unbox a) => Matrix U ord a -> Matrix C ord a
 compress (MatU mat) =
     MatC $ unproxy $ \witness ->
@@ -112,6 +121,7 @@ compress (MatU mat) =
               $ \i -> binarySearchL majorsM i
       in Cx minDim majorIxs $ U.zip minors coeffs
 
+{-# INLINE decompress #-}
 decompress :: (OrderR ord, Unbox a) => Matrix C ord a -> Matrix U ord a
 decompress (MatC mat) =
     MatU $ unproxy $ \witness ->
@@ -132,6 +142,7 @@ decompress (MatC mat) =
           nCols = view row $ tag witness (majDim, minDim)
       in Ux nRows nCols $ U.zip3 rows cols coeffs
 
+{-# INLINE generate #-}
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
 
@@ -182,19 +193,24 @@ pack :: (OrderR ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix U ord a
 pack r c v = MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
 
+mv :: (Num a, Unbox a) => Matrix C Row a -> Vector a -> Vector a
+mv mat xs =
+    assert (nCols == U.length xs)
+    $ U.create $ do
+      ys <- MU.new nRows
+      iforMOf_ (indexing rows) mat $ \ixR _row -> do
+        let (cols, coeffs) = U.unzip _row
+        MU.write ys ixR $ U.sum $ U.zipWith (*) coeffs $ U.backpermute xs cols
+      return ys
+  where
+    (MatC (Tagged (Cx nCols ixs _))) = mat
+    nRows = U.length ixs
+
 {-
 mm :: Matrix C Col a
    -> Matrix C Row a
    -> Matrix U ord a
 mm = undefined
-
-mv :: (Num a, Unbox a) => Matrix C Row a -> Vector a -> Vector a
-mv (MatC (Cx nCols rows vals)) vec =
-    assert (nCols == U.length vec)
-    $ flip U.map (extents rows)
-    $ \(start, end) ->
-      let (cols, coeffs) = U.unzip $ U.slice start (end - start) vals
-      in U.sum $ U.zipWith (*) coeffs $ U.backpermute vec cols
 
 mvM :: (Unbox a, Num a, PrimMonad m)
     => Matrix C Row a
