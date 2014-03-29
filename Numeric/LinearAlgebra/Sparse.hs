@@ -7,7 +7,7 @@ module Numeric.LinearAlgebra.Sparse where
 import Control.Applicative ((<$>))
 import Control.Exception (assert)
 import Control.Lens
-import Control.Monad (when)
+import Control.Monad (liftM, when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.Maybe (fromMaybe)
@@ -206,28 +206,24 @@ mv mat xs =
     (MatC (Tagged (Cx nCols ixs _))) = mat
     nRows = U.length ixs
 
+mvM :: (Unbox a, Num a, PrimMonad m)
+    => Matrix C Row a
+    -> MVector (PrimState m) a
+    -> MVector (PrimState m) a -> m ()
+mvM mat src dst =
+    assert (nCols == MU.length src)
+    $ assert (nRows == MU.length dst)
+    $ iforMOf_ (indexing rows) mat $ \ixR _row -> do
+      let (_cols, _coeffs) = U.unzip _row
+      r <- liftM (U.sum . U.zipWith (*) _coeffs) $ U.mapM (MU.read src) _cols
+      MU.write dst ixR r
+  where
+    (MatC (Tagged (Cx nCols ixs _))) = mat
+    nRows = U.length ixs
+
 {-
 mm :: Matrix C Col a
    -> Matrix C Row a
    -> Matrix U ord a
 mm = undefined
-
-mvM :: (Unbox a, Num a, PrimMonad m)
-    => Matrix C Row a
-    -> MVector (PrimState m) a
-    -> MVector (PrimState m) a -> m ()
-mvM (MatC (Cx nCols rows vals)) src dst =
-    assert (nCols == MU.length src)
-    $ assert (nRows == MU.length dst)
-    $ U.forM_ (U.indexed $ extents rows)
-    $ \(r, (start, end)) ->
-      let go i y
-            | i < end = do
-              (c, a) <- U.unsafeIndexM vals i
-              x <- MU.unsafeRead src c
-              go (succ i) $! y + a * x
-            | otherwise = MU.unsafeWrite dst r y
-      in go start 0
-  where
-    nRows = U.length rows
 -}
