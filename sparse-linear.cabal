@@ -19,7 +19,7 @@ library
   exposed-modules:     Numeric.LinearAlgebra.Sparse
   -- other-modules:       
   other-extensions:    TypeFamilies
-  build-depends:       base >=4.6 && <4.7,
+  build-depends:       base,
                        lens ==4.1.*,
                        primitive ==0.5.*,
                        vector ==0.10.*,

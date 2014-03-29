@@ -1,5 +1,5 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Numeric.LinearAlgebra.Sparse where
@@ -18,134 +18,135 @@ import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Algorithms.Intro (sortBy)
-import Data.Vector.Algorithms.Search (Comparison, binarySearchP)
+import Data.Vector.Algorithms.Search (Comparison, binarySearchL)
+
+-- | PolyKind Proxy
+data Proxy p = Proxy
+
+-- | PolyKind Tagged
+newtype Tagged t a = Tagged { untag :: a }
+
+{-# INLINE tag #-}
+tag :: Proxy t -> a -> Tagged t a
+tag Proxy = Tagged
+
+{-# INLINE unproxy #-}
+unproxy :: (Proxy t -> a) -> Tagged t a
+unproxy f = let witness = Proxy in tag witness (f witness)
+
+{-# INLINE proxy #-}
+proxy :: Tagged t a -> Proxy t -> a
+proxy tagged Proxy = untag tagged
+
+instance Functor (Tagged t) where
+    fmap f tagged = untag $ unproxy $ \p -> tag p $ f $ untag tagged
 
 -- | Matrix order
 data OrderK
     = Row -- ^ row-major
     | Col -- ^ column-major
 
--- | The GADT is needed for the class constraint, which I'm really not
--- happy about. It shouldn't be necessary, but it is for sortUx.
-data OrderP :: OrderK -> * where
-    OrderP :: Order ord => OrderP ord
-
-newtype Ordered (ord :: OrderK) a = Ordered a
-
-{-# INLINE order #-}
-order :: Order ord => OrderP ord -> a -> Ordered ord a
-order _ x = Ordered x
-
-{-# INLINE unorder #-}
-unorder :: Order ord => Ordered ord a -> (OrderP ord, a)
-unorder (Ordered x) = (OrderP, x)
-
-{-# INLINE unorder_ #-}
-unorder_ :: Order ord => Ordered ord a -> a
-unorder_ = snd . unorder
-
-instance Order ord => Functor (Ordered ord) where
-    fmap f x = order OrderP $ f $ unorder_ x
-
-{-
-instance Order ord => Ord (Ordered ord a) where
-    compare a b =
-      comparing (view major) a b `mappend` comparing (view minor) a b
-
-instance Eq (Ordered ord a) where
-    (==) a b = view major a == view major b && view minor a == view minor b
--}
-
 -- | Matrix formats
 data FormatK
     = U -- ^ uncompressed
     | C -- ^ compressed
 
-class Order ord where
+class OrderR (ord :: OrderK) where
     -- | Extract the major index from a tuple in (row, column, ...) order.
-    major :: (Field1 s s a a, Field2 s s a a) => Lens' (Ordered ord s) a
+    major :: (Field1 s s a a, Field2 s s a a)
+          => Lens' (Tagged ord s) a
     -- | Extract the minor index from a tuple in (row, column, ...) order
-    minor :: (Field1 s s a a, Field2 s s a a) => Lens' (Ordered ord s) a
+    minor :: (Field1 s s a a, Field2 s s a a)
+          => Lens' (Tagged ord s) a
     -- | Extract the row index from a tuple in (major, minor, ...) order.
-    row :: (Field1 s s a a, Field2 s s a a) => Lens' (Ordered ord s) a
+    row :: (Field1 s s a a, Field2 s s a a)
+        => Lens' (Tagged ord s) a
     -- | Extract the column index from a tuple in (major, minor, ...) order
-    col :: (Field1 s s a a, Field2 s s a a) => Lens' (Ordered ord s) a
+    col :: (Field1 s s a a, Field2 s s a a)
+        => Lens' (Tagged ord s) a
 
-instance Order Row where
-    major f s = fmap (order OrderP) $ _1 f $ unorder_ s
-    minor f s = fmap (order OrderP) $ _2 f $ unorder_ s
-    row f s = fmap (order OrderP) $ _1 f $ unorder_ s
-    col f s = fmap (order OrderP) $ _2 f $ unorder_ s
+instance OrderR Row where
+    major f = fmap (tag Proxy) . _1 f . untag
+    minor f = fmap (tag Proxy) . _2 f . untag
+    row f = fmap (tag Proxy) . _1 f . untag
+    col f = fmap (tag Proxy) . _2 f . untag
 
-instance Order Col where
-    major f s = fmap (order OrderP) $ _2 f $ unorder_ s
-    minor f s = fmap (order OrderP) $ _1 f $ unorder_ s
-    row f s = fmap (order OrderP) $ _2 f $ unorder_ s
-    col f s = fmap (order OrderP) $ _1 f $ unorder_ s
+instance OrderR Col where
+    major f = fmap (tag Proxy) . _2 f . untag
+    minor f = fmap (tag Proxy) . _1 f . untag
+    row f = fmap (tag Proxy) . _2 f . untag
+    col f = fmap (tag Proxy) . _1 f . untag
 
-data Cx (ord :: OrderK) a = Cx (OrderP ord) !Int !(Vector Int) !(Vector (Int, a))
-data Ux (ord :: OrderK) a = Ux (OrderP ord) !Int !Int !(Vector (Int, Int, a))
+-- | Compressed sparse format
+data Cx a = Cx !Int -- ^ minor dimension
+               !(Vector Int) -- ^ starting indices of each major slice
+               !(Vector (Int, a)) -- ^ (minor index, coefficient)
+
+-- | Uncompressed sparse format
+data Ux a = Ux !Int -- ^ major dimension
+               !Int -- ^ minor dimension
+               !(Vector (Int, Int, a))
+               -- ^ (row index, column index, coefficient)
 
 data family Matrix :: FormatK -> OrderK -> * -> *
-newtype instance Matrix C ord a = MatC (Cx ord a)
-newtype instance Matrix U ord a = MatU (Ux ord a)
+newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
+newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
 
-compress :: (Order ord, Unbox a) => Matrix U ord a -> Matrix C ord a
-compress (MatU (Ux witness majorDim minorDim vals)) =
-    MatC (Cx witness minorDim majorIxs valsC)
+compress :: (OrderR ord, Unbox a) => Matrix U ord a -> Matrix C ord a
+compress (MatU mat) =
+    MatC $ unproxy $ \witness ->
+      let (Ux nRows nCols vals) = untag mat
+          (rows, columns, coeffs) = U.unzip3 vals
+          majDim = view major $ tag witness (nRows, nCols)
+          minDim = view minor $ tag witness (nRows, nCols)
+          majors = view major $ tag witness (rows, columns)
+          minors = view minor $ tag witness (rows, columns)
+          majorIxs = runST $ do
+            majorsM <- U.thaw majors
+            U.generateM majDim
+              $ \i -> binarySearchL majorsM i
+      in Cx minDim majorIxs $ U.zip minors coeffs
+
+decompress :: (OrderR ord, Unbox a) => Matrix C ord a -> Matrix U ord a
+decompress (MatC mat) =
+    MatU $ unproxy $ \witness ->
+      let (Cx minDim majorIxs valsC) = untag mat
+          (minors, coeffs) = U.unzip valsC
+          majDim = U.length majorIxs
+          majorLengths =
+            U.generate majDim $ \r ->
+              let this = majorIxs U.! r
+                  next = fromMaybe (U.length valsC) (majorIxs U.!? (succ r))
+              in next - this
+          majors =
+            U.concatMap (\(r, len) -> U.replicate len r)
+            $ U.indexed majorLengths
+          rows = view row $ tag witness (majors, minors)
+          cols = view col $ tag witness (majors, minors)
+          nRows = view row $ tag witness (majDim, minDim)
+          nCols = view row $ tag witness (majDim, minDim)
+      in Ux nRows nCols $ U.zip3 rows cols coeffs
+
+sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
+sortUx witness (Ux nr nc vals) =
+    Ux nr nc $ U.modify (sortBy sorter) vals
   where
-    _minor = view minor . order witness
-    _major = view major . order witness
-    valsC = U.map (\x -> (_minor x, view _3 x)) vals
-    majorIxs = runST $ do
-      valsM <- U.thaw vals
-      U.generateM majorDim
-        $ \i -> binarySearchP (\x -> (_major x) == i) valsM
+    _major = view major . tag witness
+    _minor = view minor . tag witness
+    sorter a b = (comparing _major a b) `mappend` (comparing _minor a b)
 
-decompress :: (Order ord, Unbox a) => Matrix C ord a -> Matrix U ord a
-decompress (MatC (Cx witness minorDim majorIxs valsC)) =
-    MatU (Ux witness majorDim minorDim vals)
-  where
-    majorDim = U.length majorIxs
-    (minors, coeffs) = U.unzip valsC
-    majors =
-      U.concatMap (\(r, len) -> U.replicate len r) $ U.indexed majorLengths
-    majorLengths =
-      U.generate majorDim $ \r ->
-        let this = majorIxs U.! r
-            next = fromMaybe (U.length valsC) (majorIxs U.!? (succ r))
-        in next - this
-    vals =
-      let ixs = order witness (majors, minors)
-      in U.zip3 (view row ixs) (view col ixs) coeffs
+reorder :: (OrderR ord', Unbox a) => Matrix U ord a -> Matrix U ord' a
+reorder (MatU mat) =
+    MatU $ unproxy $ \witness -> sortUx witness $ untag mat
 
-sortUx :: (Order ord, Unbox a) => Ux ord' a -> Ux ord a
-sortUx (Ux _ nr nc vals) =
-    Ux witness nr nc $ U.modify (sortBy sorter) vals
-  where
-    -- This witness is why OrderP must be a GADT. For some reason, the
-    -- Order ord constraint isn't propagated to witness. If I could figure
-    -- out why, OrderP could be an ordinary ADT.
-    witness = OrderP
-    _major = view major . order witness
-    _minor = view minor . order witness
-    sorter a b =
-      (comparing _major a b) `mappend` (comparing _minor a b)
-
-     {-
-reorder :: Matrix U ord a -> Matrix U ord' a
-reorder (MatU ux) = MatU $ sortUx ux
--}
 -- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
 type MatrixCSR = Matrix C Row
 type MatrixCSC = Matrix C Col
 type MatrixCOO = Matrix U Row
 
-{-
-pack :: (Order ord, Unbox a)
-     => Int -> Int -> Vector (Int, Int, a) -> Matrix ord a
-pack r c v = order $ MatUn (Ux r c v)
--}
+pack :: (OrderR ord, Unbox a)
+     => Int -> Int -> Vector (Int, Int, a) -> Matrix U ord a
+pack r c v = MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
 
 {-# INLINE extents #-}
 extents :: Vector Int -> Vector (Int, Int)
