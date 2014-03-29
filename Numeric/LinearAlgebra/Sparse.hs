@@ -92,6 +92,11 @@ data family Matrix :: FormatK -> OrderK -> * -> *
 newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
 newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
 
+-- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
+type MatrixCSR = Matrix C Row
+type MatrixCSC = Matrix C Col
+type MatrixCOO = Matrix U Row
+
 compress :: (OrderR ord, Unbox a) => Matrix U ord a -> Matrix C ord a
 compress (MatU mat) =
     MatC $ unproxy $ \witness ->
@@ -132,31 +137,33 @@ generate len f = map f $ take len $ [0..]
 
 -- | I was going to put this in a class to abstract over the matrix format,
 -- but I realized that I would just end up compressing the matrix before
--- slicing, anyway.
+-- slicing, anyway. It's a Fold, not a Traversable, because it's not
+-- suitable for modifying the matrix. If you want to do that, you'll
+-- probably get better speed by manipulating the structure directly. This
+-- is just for consumption.
+{-# INLINE slices #-}
 slices :: Unbox a => Fold (Matrix C ord a) (Vector (Int, a))
 slices = folding $ \(MatC mat) ->
     let Cx minDim ixs vals = untag mat
-        len = U.length vals
-        extents = generate len $ \i ->
-          let start = ixs U.! i
-              end = fromMaybe len $ ixs U.!? i
-          in (start, end - start)
-    in map (\(start, l) -> U.slice start l vals) extents
+    in map (\(start, l) -> U.slice start l vals) $ extents ixs $ U.length vals
 
 {-# INLINE extents #-}
 extents :: Vector Int -> Int -> [(Int, Int)]
-extents ixs len = map go $ take (U.length ixs) $ [0..]
-  where
-    go i = let start = ixs U.! i
-               end = fromMaybe len $ ixs U.!? i
-           in (start, end - start)
+extents ixs len =
+    generate (U.length ixs) $ \i ->
+      let start = ixs U.! i
+          end = fromMaybe len $ ixs U.!? i
+      in (start, end - start)
 
+{-# INLINE rows #-}
 rows :: Unbox a => Fold (Matrix C Row a) (Vector (Int, a))
 rows = slices
 
+{-# INLINE cols #-}
 cols :: Unbox a => Fold (Matrix C Col a) (Vector (Int, a))
 cols = slices
 
+{-# INLINE sortUx #-}
 sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
 sortUx witness (Ux nr nc vals) =
     Ux nr nc $ U.modify (sortBy sorter) vals
@@ -165,15 +172,12 @@ sortUx witness (Ux nr nc vals) =
     _minor = view minor . tag witness
     sorter a b = (comparing _major a b) `mappend` (comparing _minor a b)
 
+{-# INLINE reorder #-}
 reorder :: (OrderR ord', Unbox a) => Matrix U ord a -> Matrix U ord' a
 reorder (MatU mat) =
     MatU $ unproxy $ \witness -> sortUx witness $ untag mat
 
--- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
-type MatrixCSR = Matrix C Row
-type MatrixCSC = Matrix C Col
-type MatrixCOO = Matrix U Row
-
+{-# INLINE pack #-}
 pack :: (OrderR ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix U ord a
 pack r c v = MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
