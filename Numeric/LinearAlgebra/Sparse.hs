@@ -127,6 +127,36 @@ decompress (MatC mat) =
           nCols = view row $ tag witness (majDim, minDim)
       in Ux nRows nCols $ U.zip3 rows cols coeffs
 
+generate :: Int -> (Int -> a) -> [a]
+generate len f = map f $ take len $ [0..]
+
+-- | I was going to put this in a class to abstract over the matrix format,
+-- but I realized that I would just end up compressing the matrix before
+-- slicing, anyway.
+slices :: Unbox a => Fold (Matrix C ord a) (Vector (Int, a))
+slices = folding $ \(MatC mat) ->
+    let Cx minDim ixs vals = untag mat
+        len = U.length vals
+        extents = generate len $ \i ->
+          let start = ixs U.! i
+              end = fromMaybe len $ ixs U.!? i
+          in (start, end - start)
+    in map (\(start, l) -> U.slice start l vals) extents
+
+{-# INLINE extents #-}
+extents :: Vector Int -> Int -> [(Int, Int)]
+extents ixs len = map go $ take (U.length ixs) $ [0..]
+  where
+    go i = let start = ixs U.! i
+               end = fromMaybe len $ ixs U.!? i
+           in (start, end - start)
+
+rows :: Unbox a => Fold (Matrix C Row a) (Vector (Int, a))
+rows = slices
+
+cols :: Unbox a => Fold (Matrix C Col a) (Vector (Int, a))
+cols = slices
+
 sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
 sortUx witness (Ux nr nc vals) =
     Ux nr nc $ U.modify (sortBy sorter) vals
@@ -147,12 +177,6 @@ type MatrixCOO = Matrix U Row
 pack :: (OrderR ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix U ord a
 pack r c v = MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
-
-{-# INLINE extents #-}
-extents :: Vector Int -> Vector (Int, Int)
-extents ixs = U.postscanr' (\start (end, _) -> (start, end)) (len, 0) ixs
-  where
-    len = U.length ixs
 
 {-
 mm :: Matrix C Col a
