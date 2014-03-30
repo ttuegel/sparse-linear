@@ -95,14 +95,37 @@ data Cx a = Cx !Int -- ^ minor dimension
                !(Vector (Int, a)) -- ^ (minor index, coefficient)
 
 -- | Uncompressed sparse format
-data Ux a = Ux !Int -- ^ major dimension
-               !Int -- ^ minor dimension
+data Ux a = Ux !Int -- ^ row dimension
+               !Int -- ^ column dimension
                !(Vector (Int, Int, a))
                -- ^ (row index, column index, coefficient)
 
 data family Matrix :: FormatK -> OrderK -> * -> *
 newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
 newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
+
+class FormatR (fmt :: FormatK) where
+    nRows, nCols, nMaj, nMin :: OrderR ord => Matrix fmt ord a -> Int
+
+instance FormatR U where
+    nRows (MatU (Tagged (Ux n _ _))) = n
+    nCols (MatU (Tagged (Ux _ n _))) = n
+    nMaj mat@(MatU ux) = view major $ copyTag ux (nRows mat, nCols mat)
+    nMin mat@(MatU ux) = view minor $ copyTag ux (nRows mat, nCols mat)
+    {-# INLINE nRows #-}
+    {-# INLINE nCols #-}
+    {-# INLINE nMaj #-}
+    {-# INLINE nMin #-}
+
+instance FormatR C where
+    nMaj (MatC (Tagged (Cx _ ixs _))) = U.length ixs
+    nMin (MatC (Tagged (Cx n _ _))) = n
+    nRows mat@(MatC cx) = view row $ copyTag cx (nMaj mat, nMin mat)
+    nCols mat@(MatC cx) = view col $ copyTag cx (nMaj mat, nMin mat)
+    {-# INLINE nRows #-}
+    {-# INLINE nCols #-}
+    {-# INLINE nMaj #-}
+    {-# INLINE nMin #-}
 
 -- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
 type MatrixCSR = Matrix C Row
