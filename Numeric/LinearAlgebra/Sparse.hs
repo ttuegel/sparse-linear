@@ -105,27 +105,34 @@ newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
 newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
 
 class FormatR (fmt :: FormatK) where
-    nRows, nCols, nMaj, nMin :: OrderR ord => Matrix fmt ord a -> Int
+    -- | The dimensions of a matrix in (row, column) order.
+    dim :: OrderR ord => Matrix fmt ord a -> (Int, Int)
+
+    -- | The dimensions of a matrix in format-specific (major, minor)
+    -- order.
+    dimF :: OrderR ord => Matrix fmt ord a -> (Int, Int)
 
 instance FormatR U where
-    nRows (MatU (Tagged (Ux n _ _))) = n
-    nCols (MatU (Tagged (Ux _ n _))) = n
-    nMaj mat@(MatU ux) = view major $ copyTag ux (nRows mat, nCols mat)
-    nMin mat@(MatU ux) = view minor $ copyTag ux (nRows mat, nCols mat)
-    {-# INLINE nRows #-}
-    {-# INLINE nCols #-}
-    {-# INLINE nMaj #-}
-    {-# INLINE nMin #-}
+    dim (MatU (Tagged (Ux r c _))) = (r, c)
+    dimF mat@(MatU ux) =
+      -- TODO: Find a lens-y way to do this
+      let _dim = copyTag ux $ dim mat
+          m = view major _dim
+          n = view minor _dim
+      in (m, n)
+    {-# INLINE dim #-}
+    {-# INLINE dimF #-}
 
 instance FormatR C where
-    nMaj (MatC (Tagged (Cx _ ixs _))) = U.length ixs
-    nMin (MatC (Tagged (Cx n _ _))) = n
-    nRows mat@(MatC cx) = view row $ copyTag cx (nMaj mat, nMin mat)
-    nCols mat@(MatC cx) = view col $ copyTag cx (nMaj mat, nMin mat)
-    {-# INLINE nRows #-}
-    {-# INLINE nCols #-}
-    {-# INLINE nMaj #-}
-    {-# INLINE nMin #-}
+    dimF (MatC (Tagged (Cx n ixs _))) = (U.length ixs, n)
+    dim mat@(MatC cx) =
+      -- TODO: Find a lens-y way to do this
+      let _dim = copyTag cx $ dimF mat
+          r = view row _dim
+          c = view col _dim
+      in (r, c)
+    {-# INLINE dim #-}
+    {-# INLINE dimF #-}
 
 -- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
 type MatrixCSR = Matrix C Row
