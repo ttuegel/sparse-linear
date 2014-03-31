@@ -4,10 +4,9 @@
 
 module Numeric.LinearAlgebra.Sparse where
 
-import Control.Applicative ((<$>))
 import Control.Exception (assert)
 import Control.Lens
-import Control.Monad (liftM, when)
+import Control.Monad (liftM)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.Maybe (fromMaybe)
@@ -18,7 +17,7 @@ import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Algorithms.Intro (sortBy)
-import Data.Vector.Algorithms.Search (Comparison, binarySearchL)
+import Data.Vector.Algorithms.Search (binarySearchL)
 
 -- | PolyKind Proxy
 data Proxy p = Proxy
@@ -128,11 +127,11 @@ instance FormatR U where
 
     compress mat@(MatU ux) =
         MatC $ unproxy $ \witness ->
-          let (Ux nRows nCols vals) = proxy ux witness
-              (rows, columns, coeffs) = U.unzip3 vals
+          let (Ux _ _ vals) = proxy ux witness
+              (rows_, cols_, coeffs) = U.unzip3 vals
               (m, n) = dimF mat
-              majors = view major $ tag witness (rows, columns)
-              minors = view minor $ tag witness (rows, columns)
+              majors = view major $ tag witness (rows_, cols_)
+              minors = view minor $ tag witness (rows_, cols_)
               ixs = runST $ do
                 majorsM <- U.thaw majors
                 U.generateM m $ binarySearchL majorsM
@@ -159,7 +158,7 @@ instance FormatR C where
 
     decompress mat@(MatC cx) =
         MatU $ unproxy $ \witness ->
-          let (Cx n majorIxs valsC) = proxy cx witness
+          let (Cx _ majorIxs valsC) = proxy cx witness
               (minors, coeffs) = U.unzip valsC
               (m, _) = dimF mat
               majorLengths =
@@ -170,10 +169,10 @@ instance FormatR C where
               majors =
                 U.concatMap (\(r, len) -> U.replicate len r)
                 $ U.indexed majorLengths
-              rows = view row $ tag witness (majors, minors)
-              cols = view col $ tag witness (majors, minors)
+              rows_ = view row $ tag witness (majors, minors)
+              cols_ = view col $ tag witness (majors, minors)
               (nr, nc) = dim mat
-          in Ux nr nc $ U.zip3 rows cols coeffs
+          in Ux nr nc $ U.zip3 rows_ cols_ coeffs
 
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
@@ -198,7 +197,7 @@ generate len f = map f $ take len $ [0..]
 {-# INLINE slices #-}
 slices :: Unbox a => Fold (Matrix C ord a) (Vector (Int, a))
 slices = folding $ \(MatC mat) ->
-    let Cx minDim ixs vals = untag mat
+    let Cx _ ixs vals = untag mat
     in map (\(start, l) -> U.slice start l vals) $ extents ixs $ U.length vals
 
 {-# INLINE extents #-}
@@ -242,8 +241,8 @@ mv mat xs =
     $ U.create $ do
       ys <- MU.new nRows
       iforMOf_ (indexing rows) mat $ \ixR _row -> do
-        let (cols, coeffs) = U.unzip _row
-        MU.write ys ixR $ U.sum $ U.zipWith (*) coeffs $ U.backpermute xs cols
+        let (cols_, coeffs) = U.unzip _row
+        MU.write ys ixR $ U.sum $ U.zipWith (*) coeffs $ U.backpermute xs cols_
       return ys
   where
     (MatC (Tagged (Cx nCols ixs _))) = mat
