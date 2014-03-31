@@ -112,66 +112,78 @@ class FormatR (fmt :: FormatK) where
     -- order.
     dimF :: OrderR ord => Matrix fmt ord a -> (Int, Int)
 
+    compress :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix C ord a
+
+    decompress :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix U ord a
+
 instance FormatR U where
     dim (MatU (Tagged (Ux r c _))) = (r, c)
+
     dimF mat@(MatU ux) =
       -- TODO: Find a lens-y way to do this
       let _dim = copyTag ux $ dim mat
           m = view major _dim
           n = view minor _dim
       in (m, n)
+
+    compress mat@(MatU ux) =
+        MatC $ unproxy $ \witness ->
+          let (Ux nRows nCols vals) = proxy ux witness
+              (rows, columns, coeffs) = U.unzip3 vals
+              (m, n) = dimF mat
+              majors = view major $ tag witness (rows, columns)
+              minors = view minor $ tag witness (rows, columns)
+              ixs = runST $ do
+                majorsM <- U.thaw majors
+                U.generateM m $ binarySearchL majorsM
+          in Cx n ixs $ U.zip minors coeffs
+
+    decompress x = x
+
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
+    {-# INLINE compress #-}
+    {-# INLINE decompress #-}
 
 instance FormatR C where
     dimF (MatC (Tagged (Cx n ixs _))) = (U.length ixs, n)
+
     dim mat@(MatC cx) =
       -- TODO: Find a lens-y way to do this
       let _dim = copyTag cx $ dimF mat
           r = view row _dim
           c = view col _dim
       in (r, c)
+
+    compress x = x
+
+    decompress mat@(MatC cx) =
+        MatU $ unproxy $ \witness ->
+          let (Cx n majorIxs valsC) = proxy cx witness
+              (minors, coeffs) = U.unzip valsC
+              (m, _) = dimF mat
+              majorLengths =
+                U.generate m $ \r ->
+                  let this = majorIxs U.! r
+                      next = fromMaybe (U.length valsC) (majorIxs U.!? (succ r))
+                  in next - this
+              majors =
+                U.concatMap (\(r, len) -> U.replicate len r)
+                $ U.indexed majorLengths
+              rows = view row $ tag witness (majors, minors)
+              cols = view col $ tag witness (majors, minors)
+              (nr, nc) = dim mat
+          in Ux nr nc $ U.zip3 rows cols coeffs
+
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
+    {-# INLINE compress #-}
+    {-# INLINE decompress #-}
 
 -- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
 type MatrixCSR = Matrix C Row
 type MatrixCSC = Matrix C Col
 type MatrixCOO = Matrix U Row
-
-{-# INLINE compress #-}
-compress :: (OrderR ord, Unbox a) => Matrix U ord a -> Matrix C ord a
-compress mat@(MatU ux) =
-    MatC $ unproxy $ \witness ->
-      let (Ux nRows nCols vals) = proxy ux witness
-          (rows, columns, coeffs) = U.unzip3 vals
-          (m, n) = dimF mat
-          majors = view major $ tag witness (rows, columns)
-          minors = view minor $ tag witness (rows, columns)
-          ixs = runST $ do
-            majorsM <- U.thaw majors
-            U.generateM m $ binarySearchL majorsM
-      in Cx n ixs $ U.zip minors coeffs
-
-{-# INLINE decompress #-}
-decompress :: (OrderR ord, Unbox a) => Matrix C ord a -> Matrix U ord a
-decompress mat@(MatC cx) =
-    MatU $ unproxy $ \witness ->
-      let (Cx n majorIxs valsC) = proxy cx witness
-          (minors, coeffs) = U.unzip valsC
-          (m, _) = dimF mat
-          majorLengths =
-            U.generate m $ \r ->
-              let this = majorIxs U.! r
-                  next = fromMaybe (U.length valsC) (majorIxs U.!? (succ r))
-              in next - this
-          majors =
-            U.concatMap (\(r, len) -> U.replicate len r)
-            $ U.indexed majorLengths
-          rows = view row $ tag witness (majors, minors)
-          cols = view col $ tag witness (majors, minors)
-          (nr, nc) = dim mat
-      in Ux nr nc $ U.zip3 rows cols coeffs
 
 {-# INLINE generate #-}
 generate :: Int -> (Int -> a) -> [a]
