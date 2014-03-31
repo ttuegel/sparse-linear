@@ -141,29 +141,27 @@ type MatrixCOO = Matrix U Row
 
 {-# INLINE compress #-}
 compress :: (OrderR ord, Unbox a) => Matrix U ord a -> Matrix C ord a
-compress (MatU mat) =
+compress mat@(MatU ux) =
     MatC $ unproxy $ \witness ->
-      let (Ux nRows nCols vals) = untag mat
+      let (Ux nRows nCols vals) = proxy ux witness
           (rows, columns, coeffs) = U.unzip3 vals
-          majDim = view major $ tag witness (nRows, nCols)
-          minDim = view minor $ tag witness (nRows, nCols)
+          (m, n) = dimF mat
           majors = view major $ tag witness (rows, columns)
           minors = view minor $ tag witness (rows, columns)
-          majorIxs = runST $ do
+          ixs = runST $ do
             majorsM <- U.thaw majors
-            U.generateM majDim
-              $ \i -> binarySearchL majorsM i
-      in Cx minDim majorIxs $ U.zip minors coeffs
+            U.generateM m $ binarySearchL majorsM
+      in Cx n ixs $ U.zip minors coeffs
 
 {-# INLINE decompress #-}
 decompress :: (OrderR ord, Unbox a) => Matrix C ord a -> Matrix U ord a
-decompress (MatC mat) =
+decompress mat@(MatC cx) =
     MatU $ unproxy $ \witness ->
-      let (Cx minDim majorIxs valsC) = untag mat
+      let (Cx n majorIxs valsC) = proxy cx witness
           (minors, coeffs) = U.unzip valsC
-          majDim = U.length majorIxs
+          (m, _) = dimF mat
           majorLengths =
-            U.generate majDim $ \r ->
+            U.generate m $ \r ->
               let this = majorIxs U.! r
                   next = fromMaybe (U.length valsC) (majorIxs U.!? (succ r))
               in next - this
@@ -172,9 +170,8 @@ decompress (MatC mat) =
             $ U.indexed majorLengths
           rows = view row $ tag witness (majors, minors)
           cols = view col $ tag witness (majors, minors)
-          nRows = view row $ tag witness (majDim, minDim)
-          nCols = view row $ tag witness (majDim, minDim)
-      in Ux nRows nCols $ U.zip3 rows cols coeffs
+          (nr, nc) = dim mat
+      in Ux nr nc $ U.zip3 rows cols coeffs
 
 {-# INLINE generate #-}
 generate :: Int -> (Int -> a) -> [a]
