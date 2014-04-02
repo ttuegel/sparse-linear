@@ -270,13 +270,13 @@ mm :: Matrix C Col a
 mm = undefined
 -}
 
-slice_ :: Unbox a => Matrix C ord a -> Int -> Vector (Int, a)
-slice_ mat@(MatC cx) i =
+slice :: Unbox a => Matrix C ord a -> Int -> Vector (Int, a)
+slice mat@(MatC cx) i =
     let Cx _ _ vals = untag cx
-    in (uncurry U.slice $ sliceStartLen_ mat i) vals
+    in (uncurry U.slice $ sliceStartLen mat i) vals
 
-sliceStartLen_ :: Unbox a => Matrix C ord a -> Int -> (Int, Int)
-sliceStartLen_ (MatC cx) i =
+sliceStartLen :: Unbox a => Matrix C ord a -> Int -> (Int, Int)
+sliceStartLen (MatC cx) i =
     let Cx _ starts vals = untag cx
         start = starts U.! i
         end = fromMaybe (U.length vals) $ starts U.!? i
@@ -304,8 +304,8 @@ add matA@(MatC a) matB@(MatC b) =
             vals <- MU.new $ nnzA + nnzB
             ixs <- MU.new majorA
             let go (i, start) = when (i < majorA) $ do
-                  let sliceA = slice_ matA i
-                      sliceB = slice_ matB i
+                  let sliceA = slice matA i
+                      sliceB = slice matB i
                       sliceC =
                         -- TODO: remove zeros
                         -- TODO: collect coeffs in same minor dimension
