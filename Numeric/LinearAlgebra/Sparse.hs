@@ -260,17 +260,14 @@ mm :: Matrix C Col a
 mm = undefined
 -}
 
+{-# INLINE slice #-}
 slice :: Unbox a => Matrix C ord a -> Int -> Vector (Int, a)
-slice mat@(MatC cx) i =
-    let Cx _ _ vals = untag cx
-    in (uncurry U.slice $ sliceStartLen mat i) vals
-
-sliceStartLen :: Unbox a => Matrix C ord a -> Int -> (Int, Int)
-sliceStartLen (MatC cx) i =
+slice (MatC cx) i =
     let Cx _ starts vals = untag cx
         start = starts U.! i
         end = fromMaybe (U.length vals) $ starts U.!? i
-    in assert (i < U.length starts) $ (start, start - end)
+    in assert (i < U.length starts)
+    $ (U.slice start $ end - start) vals
 
 copyImm :: (PrimMonad m, Unbox a)
         => MVector (PrimState m) a -> Vector a -> m ()
