@@ -195,18 +195,8 @@ generate len f = map f $ take len $ [0..]
 -- probably get better speed by manipulating the structure directly. This
 -- is just for consumption.
 {-# INLINE slices #-}
-slices :: Unbox a => Fold (Matrix C ord a) (Vector (Int, a))
-slices = folding $ \(MatC mat) ->
-    let Cx _ ixs vals = untag mat
-    in map (\(start, l) -> U.slice start l vals) $ extents ixs $ U.length vals
-
-{-# INLINE extents #-}
-extents :: Vector Int -> Int -> [(Int, Int)]
-extents ixs len =
-    generate (U.length ixs) $ \i ->
-      let start = ixs U.! i
-          end = fromMaybe len $ ixs U.!? i
-      in (start, end - start)
+slices :: (Unbox a, OrderR ord) => Fold (Matrix C ord a) (Vector (Int, a))
+slices = folding $ \mat -> generate (fst $ dimF mat) $ slice mat
 
 {-# INLINE rows #-}
 rows :: Unbox a => Fold (Matrix C Row a) (Vector (Int, a))
