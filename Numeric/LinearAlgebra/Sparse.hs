@@ -6,7 +6,7 @@ module Numeric.LinearAlgebra.Sparse where
 
 import Control.Exception (assert)
 import Control.Lens
-import Control.Monad (forM_, liftM, when)
+import Control.Monad (liftM, when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.Maybe (fromMaybe)
@@ -270,9 +270,28 @@ mm :: Matrix C Col a
 mm = undefined
 -}
 
+slice_ :: Unbox a => Matrix C ord a -> Int -> Vector (Int, a)
+slice_ mat@(MatC cx) i =
+    let Cx _ _ vals = untag cx
+    in (uncurry U.slice $ sliceStartLen_ mat i) vals
+
+sliceStartLen_ :: Unbox a => Matrix C ord a -> Int -> (Int, Int)
+sliceStartLen_ (MatC cx) i =
+    let Cx _ starts vals = untag cx
+        start = starts U.! i
+        end = fromMaybe (U.length vals) $ starts U.!? i
+    in assert (i < U.length starts) $ (start, start - end)
+
+copyImm :: (PrimMonad m, Unbox a)
+        => MVector (PrimState m) a -> Vector a -> m ()
+copyImm dst src =
+    assert (U.length src == MU.length dst)
+    $ U.forM_ (U.enumFromN 0 $ U.length src)
+    $ \i -> U.unsafeIndexM src i >>= MU.unsafeWrite dst i
+
 add :: (OrderR ord, Unbox a)
     => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
-add (MatC a) (MatC b) =
+add matA@(MatC a) matB@(MatC b) =
     MatC $ unproxy $ \witness ->
       let Cx minorA ixsA valsA = proxy a witness
           Cx minorB ixsB valsB = proxy b witness
@@ -280,29 +299,23 @@ add (MatC a) (MatC b) =
           nnzB = U.length valsB
           majorA = U.length ixsA
           majorB = U.length ixsB
-          lenSlice ixs nnz i =
-            let start = ixs U.! i
-                end = fromMaybe nnz $ ixs U.!? (succ i)
-            in assert (i < majorA) $ end - start
           minorC = minorA
           (valsC, ixsC) = runST $ do
             vals <- MU.new $ nnzA + nnzB
             ixs <- MU.new majorA
-            forM_ (take majorA [0..]) $ \i -> do
-              let lenA = lenSlice ixsA nnzA i
-                  lenB = lenSlice ixsB nnzB i
-                  sliceA = U.slice (ixsA U.! i) lenA valsA
-                  sliceB = U.slice (ixsB U.! i) lenB valsB
-                  sliceC =
-                    -- TODO: remove zeros
-                    -- TODO: collect coeffs in same minor dimension
-                    U.modify (sortBy (comparing fst))
-                    $ sliceA U.++ sliceB
-              start <- MU.read ixs i
-              slice_ <- U.thaw sliceC
-              MU.copy (MU.slice start (U.length sliceC) vals) slice_
-              when (i + 1 < MU.length ixs)
-                $ MU.write ixs (i + 1) (start + U.length sliceC)
+            let go (i, start) = when (i < majorA) $ do
+                  let sliceA = slice_ matA i
+                      sliceB = slice_ matB i
+                      sliceC =
+                        -- TODO: remove zeros
+                        -- TODO: collect coeffs in same minor dimension
+                        U.modify (sortBy (comparing fst))
+                        $ sliceA U.++ sliceB
+                      len = U.length sliceC
+                  MU.unsafeWrite ixs i start
+                  copyImm (MU.slice start len vals) sliceC
+                  go (succ i, start + len)
+            go (0, 0)
             vals_ <- U.unsafeFreeze vals
             ixs_ <- U.unsafeFreeze ixs
             return (vals_, ixs_)
