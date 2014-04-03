@@ -239,6 +239,7 @@ pack :: (OrderR ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix U ord a
 pack r c v = MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
 
+{-# INLINE mv #-}
 mv :: (Num a, Unbox a) => Matrix C Row a -> Vector a -> Vector a
 mv mat xs =
     assert (nCols == U.length xs)
@@ -252,6 +253,7 @@ mv mat xs =
     (MatC (Tagged (Cx nCols ixs _))) = mat
     nRows = U.length ixs
 
+{-# INLINE mvM #-}
 mvM :: (Unbox a, Num a, PrimMonad m)
     => Matrix C Row a
     -> MVector (PrimState m) a
@@ -300,6 +302,7 @@ slice (MatC cx) i =
     in assert (i < U.length starts)
     $ (U.slice start $ end - start) vals
 
+{-# INLINE add #-}
 add :: (Num a, OrderR ord, Unbox a)
     => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
 add a b =
