@@ -291,34 +291,24 @@ copyImm dst src =
 
 add :: (OrderR ord, Unbox a)
     => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
-add matA@(MatC a) matB@(MatC b) =
-    MatC $ unproxy $ \witness ->
-      let Cx minorA ixsA valsA = proxy a witness
-          Cx minorB ixsB valsB = proxy b witness
-          nnzA = U.length valsA
-          nnzB = U.length valsB
-          majorA = U.length ixsA
-          majorB = U.length ixsB
-          minorC = minorA
-          (valsC, ixsC) = runST $ do
-            vals <- MU.new $ nnzA + nnzB
-            ixs <- MU.new majorA
-            let go (i, start) = when (i < majorA) $ do
-                  let sliceA = slice matA i
-                      sliceB = slice matB i
-                      sliceC =
-                        -- TODO: remove zeros
-                        -- TODO: collect coeffs in same minor dimension
-                        U.modify (sortBy (comparing fst))
-                        $ sliceA U.++ sliceB
-                      len = U.length sliceC
-                  MU.unsafeWrite ixs i start
-                  copyImm (MU.slice start len vals) sliceC
-                  go (succ i, start + len)
-            go (0, 0)
-            vals_ <- U.unsafeFreeze vals
-            ixs_ <- U.unsafeFreeze ixs
-            return (vals_, ixs_)
-      in assert (minorA == minorB)
-         $ assert (majorA == majorB)
-         $ Cx minorC ixsC valsC
+add a b =
+    let (majorA, minorA) = dimF a
+        (valsC, ixsC) = runST $ do
+          vals <- MU.new $ nonzero a + nonzero b
+          ixs <- MU.new majorA
+          let go (i, start) = when (i < majorA) $ do
+                let sliceC =
+                      -- TODO: remove zeros
+                      -- TODO: collect coeffs in same minor dimension
+                      U.modify (sortBy (comparing fst))
+                      $ slice a i U.++ slice b i
+                    len = U.length sliceC
+                MU.unsafeWrite ixs i start
+                copyImm (MU.slice start len vals) sliceC
+                go (succ i, start + len)
+          go (0, 0)
+          vals_ <- U.unsafeFreeze vals
+          ixs_ <- U.unsafeFreeze ixs
+          return (vals_, ixs_)
+    in assert (dimF a == dimF b)
+        $ MatC $ tag Proxy $ Cx minorA ixsC valsC
