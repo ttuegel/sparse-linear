@@ -111,6 +111,9 @@ class FormatR (fmt :: FormatK) where
     -- order.
     dimF :: OrderR ord => Matrix fmt ord a -> (Int, Int)
 
+    -- | The number of non-zero entries in the matrix.
+    nonzero :: Unbox a => Matrix fmt ord a -> Int
+
     compress :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix C ord a
 
     decompress :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix U ord a
@@ -124,6 +127,10 @@ instance FormatR U where
           m = view major _dim
           n = view minor _dim
       in (m, n)
+
+    nonzero (MatU ux) =
+      let Ux _ _ vals = untag ux
+      in U.length vals
 
     compress mat@(MatU ux) =
         MatC $ unproxy $ \witness ->
@@ -141,6 +148,7 @@ instance FormatR U where
 
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
+    {-# INLINE nonzero #-}
     {-# INLINE compress #-}
     {-# INLINE decompress #-}
 
@@ -155,6 +163,10 @@ instance FormatR C where
       in (r, c)
 
     compress x = x
+
+    nonzero (MatC cx) =
+      let Cx _ _ vals = untag cx
+      in U.length vals
 
     decompress mat@(MatC cx) =
         MatU $ unproxy $ \witness ->
@@ -176,6 +188,7 @@ instance FormatR C where
 
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
+    {-# INLINE nonzero #-}
     {-# INLINE compress #-}
     {-# INLINE decompress #-}
 
