@@ -4,7 +4,6 @@
 
 module Numeric.LinearAlgebra.Sparse where
 
-import Control.Arrow ((&&&))
 import Control.Exception (assert)
 import Control.Lens
 import Control.Monad (liftM, liftM2, when)
@@ -281,9 +280,12 @@ mult a b =
     expand :: (Num a, OrderR ord, Unbox a)
            => Vector (Int, a) -> Vector (Int, a) -> Matrix C ord a
     expand ls rs = MatC $ unproxy $ \witness ->
-      let ((mjr, ms), (mnr, ns)) =
-            (view major &&& view minor)
-            $ tag witness ((left, ls), (right, rs))
+      let dimC = tag witness (left, right)
+          lsrs = tag witness (ls, rs)
+          mjr = view major dimC
+          mnr = view minor dimC
+          ms = view major lsrs
+          ns = view minor lsrs
           vals = U.concatMap (\(_, x) -> U.map (\(n, y) -> (n, x * y)) ns) ms
           stride = U.length ns
           ixs = U.iterateN mjr (+ stride) 0
