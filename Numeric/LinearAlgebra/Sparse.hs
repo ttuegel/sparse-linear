@@ -298,13 +298,6 @@ slice (MatC cx) i =
     in assert (i < U.length starts)
     $ (U.slice start $ end - start) vals
 
-copyImm :: (PrimMonad m, Unbox a)
-        => MVector (PrimState m) a -> Vector a -> m ()
-copyImm dst src =
-    assert (U.length src == MU.length dst)
-    $ U.forM_ (U.enumFromN 0 $ U.length src)
-    $ \i -> U.unsafeIndexM src i >>= MU.unsafeWrite dst i
-
 add :: (Num a, OrderR ord, Unbox a)
     => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
 add a b =
