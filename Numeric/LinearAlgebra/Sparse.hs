@@ -14,8 +14,10 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid (mappend)
 import Data.Ord (comparing)
 import qualified Data.Vector.Generic as V
+import qualified Data.Vector.Generic.Mutable as MV
 import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Storable as S
+import qualified Data.Vector.Storable.Mutable as MS
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MU
@@ -258,21 +260,19 @@ mv mat xs_ =
     xs = V.convert xs_
     (r, c) = dim mat
 
-{-# INLINE mvM #-}
-mvM :: (Unbox a, Num a, PrimMonad m)
-    => Matrix C Row a
-    -> MVector (PrimState m) a
-    -> MVector (PrimState m) a -> m ()
+{-# SPECIALIZE INLINE mvM :: (Num a, PrimMonad m, Unbox a) => Matrix C Row a -> MVector (PrimState m) a -> MVector (PrimState m) a -> m () #-}
+{-# SPECIALIZE INLINE mvM :: (MS.Storable a, Num a, PrimMonad m, Unbox a) => Matrix C Row a -> MS.MVector (PrimState m) a -> MS.MVector (PrimState m) a -> m () #-}
+mvM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
+    => Matrix C Row a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 mvM mat src dst =
-    assert (nCols == MU.length src)
-    $ assert (nRows == MU.length dst)
+    assert (c == MV.length src)
+    $ assert (r == MV.length dst)
     $ iforMOf_ (indexing rows) mat $ \ixR _row -> do
       let (_cols, _coeffs) = U.unzip _row
-      r <- liftM (U.sum . U.zipWith (*) _coeffs) $ U.mapM (MU.read src) _cols
-      MU.write dst ixR r
+      x <- liftM (U.sum . U.zipWith (*) _coeffs) $ U.mapM (MV.read src) _cols
+      MV.write dst ixR x
   where
-    (MatC (Tagged (Cx nCols ixs _))) = mat
-    nRows = U.length ixs
+    (r, c) = dim mat
 
 {-# INLINE mult #-}
 mult :: (Num a, OrderR ord, Unbox a)
