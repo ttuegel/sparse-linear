@@ -313,14 +313,13 @@ add a b =
           vals <- MU.new $ nonzero a + nonzero b
           ixs <- MU.new majorA
           let go (i, start) = when (i < majorA) $ do
-                let sliceC =
-                      -- TODO: remove zeros
-                      -- TODO: collect coeffs in same minor dimension
-                      U.modify (sortBy (comparing fst))
-                      $ slice a i U.++ slice b i
-                    len = U.length sliceC
                 MU.unsafeWrite ixs i start
-                copyImm (MU.slice start len vals) sliceC
+                sliceC <- U.unsafeThaw $ slice a i U.++ slice b i
+                -- TODO: remove zeros
+                -- TODO: collect coeffs in same minor dimension
+                let len = MU.length sliceC
+                sortBy (comparing fst) sliceC
+                MU.move (MU.slice start len vals) sliceC
                 go (succ i, start + len)
           go (0, 0)
           vals_ <- U.unsafeFreeze vals
