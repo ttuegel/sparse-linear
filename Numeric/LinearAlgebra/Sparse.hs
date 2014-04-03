@@ -7,7 +7,7 @@ module Numeric.LinearAlgebra.Sparse where
 import Control.Arrow ((&&&))
 import Control.Exception (assert)
 import Control.Lens
-import Control.Monad (liftM, when)
+import Control.Monad (liftM, liftM2, when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.List (foldl')
@@ -305,25 +305,66 @@ copyImm dst src =
     $ U.forM_ (U.enumFromN 0 $ U.length src)
     $ \i -> U.unsafeIndexM src i >>= MU.unsafeWrite dst i
 
-add :: (OrderR ord, Unbox a)
+add :: (Num a, OrderR ord, Unbox a)
     => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
 add a b =
     let (majorA, minorA) = dimF a
         (valsC, ixsC) = runST $ do
           vals <- MU.new $ nonzero a + nonzero b
           ixs <- MU.new majorA
-          let go (i, start) = when (i < majorA) $ do
-                MU.unsafeWrite ixs i start
-                sliceC <- U.unsafeThaw $ slice a i U.++ slice b i
-                -- TODO: remove zeros
-                -- TODO: collect coeffs in same minor dimension
-                let len = MU.length sliceC
-                sortBy (comparing fst) sliceC
-                MU.move (MU.slice start len vals) sliceC
-                go (succ i, start + len)
-          go (0, 0)
-          vals_ <- U.unsafeFreeze vals
+          let go i start
+                | i < majorA = do
+                  MU.unsafeWrite ixs i start
+                  let sliceA = slice a i
+                      sliceB = slice b i
+                  len <- addSlicesInto
+                    (MU.slice start (U.length sliceA + U.length sliceB) vals)
+                    sliceA sliceB
+                  go (succ i) (start + len)
+                | otherwise = return start
+          len <- go 0 0
+          vals_ <- U.unsafeFreeze $ MU.unsafeSlice 0 len vals
           ixs_ <- U.unsafeFreeze ixs
           return (vals_, ixs_)
     in assert (dimF a == dimF b)
         $ MatC $ tag Proxy $ Cx minorA ixsC valsC
+  where
+    addSlicesInto :: (Monad m, Num a, PrimMonad m, Unbox a)
+                  => MVector (PrimState m) (Int, a)
+                  -> Vector (Int, a)
+                  -> Vector (Int, a)
+                  -> m Int
+    addSlicesInto dst src1 src2 = do
+      let len1 = U.length src1
+          len2 = U.length src2
+          len = MU.length dst
+      MU.move (MU.slice 0 len1 dst) =<< U.thaw src1
+      MU.move (MU.slice len1 (len1 + len2) dst) =<< U.thaw src2
+      sortBy (comparing fst) dst
+
+      -- Accumulate elements in same minor dimension by adding their
+      -- coefficients together. Set the minor dimension of duplicate
+      -- elements to (-1) so we can find them later.
+      let (ns, xs) = MU.unzip dst -- unzip to avoid looking up both fields
+          accumulate update check =
+            when (check < len) $ do
+              -- do the elements have the same minor dimension?
+              -- i.e., is one a duplicate?
+              dup <- liftM2 (==) (MU.read ns update) (MU.read ns check)
+              if dup
+                then do
+                  -- add the duplicate coefficients
+                  x <- liftM2 (+) (MU.read xs update) (MU.read xs check)
+                  -- insert new coefficient in place of first duplicate
+                  MU.write xs update x
+                  -- mark second duplicate for removal
+                  MU.write ns check (-1)
+                  accumulate update (succ check)
+                else accumulate check (succ check)
+      accumulate 0 1
+
+      sortBy (comparing fst) dst
+      start <- binarySearchL (fst $ MU.unzip dst) 0
+      let len' = len - start
+      when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
+      return len'
