@@ -13,7 +13,9 @@ import Data.List (foldl')
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mappend)
 import Data.Ord (comparing)
+import qualified Data.Vector.Generic as V
 import Data.Vector.Unboxed (Unbox, Vector)
+import qualified Data.Vector.Storable as S
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MU
@@ -239,19 +241,22 @@ pack :: (OrderR ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix U ord a
 pack r c v = MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
 
-{-# INLINE mv #-}
-mv :: (Num a, Unbox a) => Matrix C Row a -> Vector a -> Vector a
-mv mat xs =
-    assert (nCols == U.length xs)
-    $ U.create $ do
-      ys <- MU.new nRows
+{-# SPECIALIZE INLINE mv :: (Num a, Unbox a) => Matrix C Row a -> Vector a -> Vector a #-}
+{-# SPECIALIZE INLINE mv :: (Num a, S.Storable a, Unbox a) => Matrix C Row a -> S.Vector a -> S.Vector a #-}
+mv :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
+mv mat xs_ =
+    assert (c == U.length xs)
+    $ V.convert $ U.create $ do
+      ys <- MU.new r
       iforMOf_ (indexing rows) mat $ \ixR _row -> do
         let (cols_, coeffs) = U.unzip _row
-        MU.write ys ixR $ U.sum $ U.zipWith (*) coeffs $ U.backpermute xs cols_
+        MU.write ys ixR
+          $ U.sum $ U.zipWith (*) coeffs
+          $ U.backpermute xs cols_
       return ys
   where
-    (MatC (Tagged (Cx nCols ixs _))) = mat
-    nRows = U.length ixs
+    xs = V.convert xs_
+    (r, c) = dim mat
 
 {-# INLINE mvM #-}
 mvM :: (Unbox a, Num a, PrimMonad m)
