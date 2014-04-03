@@ -4,11 +4,13 @@
 
 module Numeric.LinearAlgebra.Sparse where
 
+import Control.Arrow ((&&&))
 import Control.Exception (assert)
 import Control.Lens
 import Control.Monad (liftM, when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
+import Data.List (foldl')
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mappend)
 import Data.Ord (comparing)
@@ -266,12 +268,26 @@ mvM mat src dst =
     (MatC (Tagged (Cx nCols ixs _))) = mat
     nRows = U.length ixs
 
-{-
-mm :: Matrix C Col a
-   -> Matrix C Row a
-   -> Matrix U ord a
-mm = undefined
--}
+{-# INLINE mult #-}
+mult :: (Num a, OrderR ord, Unbox a)
+     => Matrix C Col a -> Matrix C Row a -> Matrix C ord a
+mult a b =
+    assert (inner == inner')
+    $ foldl' add empty $ generate inner $ \i -> expand (slice a i) (slice b i)
+  where
+    (inner, left) = dimF a
+    (inner', right) = dimF b
+    empty = compress $ pack left right U.empty
+    expand :: (Num a, OrderR ord, Unbox a)
+           => Vector (Int, a) -> Vector (Int, a) -> Matrix C ord a
+    expand ls rs = MatC $ unproxy $ \witness ->
+      let ((mjr, ms), (mnr, ns)) =
+            (view major &&& view minor)
+            $ tag witness ((left, ls), (right, rs))
+          vals = U.concatMap (\(_, x) -> U.map (\(n, y) -> (n, x * y)) ns) ms
+          stride = U.length ns
+          ixs = U.iterateN mjr (+ stride) 0
+      in Cx mnr ixs vals
 
 {-# INLINE slice #-}
 slice :: Unbox a => Matrix C ord a -> Int -> Vector (Int, a)
