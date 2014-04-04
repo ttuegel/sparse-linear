@@ -7,7 +7,7 @@ module Numeric.LinearAlgebra.Sparse
     ( Matrix
     , OrderK(..), OrderR(..)
     , FormatK(..), FormatR(..)
-    , slicesF, rowsF, colsF, slice
+    , slicesF, rowsF, colsF
     , pack, reorder
     , mulV, mulVM, mul, add
     ) where
@@ -29,7 +29,7 @@ import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Algorithms.Intro (sortBy)
-import Data.Vector.Algorithms.Search (binarySearchL)
+import Data.Vector.Algorithms.Search (binarySearchL, binarySearchLBy)
 
 import Data.Proxy.PolyKind
 
@@ -149,7 +149,13 @@ class FormatR (fmt :: FormatK) where
 
     decompress :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix U ord a
 
+    fromU :: (OrderR ord, Unbox a) => Matrix U ord a -> Matrix fmt ord a
+
+    fromC :: (OrderR ord, Unbox a) => Matrix C ord a -> Matrix fmt ord a
+
     transpose :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a
+
+    slice :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Int -> Vector (Int, a)
 
 instance FormatR U where
     dim = lens getDim setDim
@@ -198,12 +204,32 @@ instance FormatR U where
             let (Ux r c vals) = proxy ux witness
             in sortUx witness $ Ux c r $ U.map (\(x, y, z) -> (y, x, z)) vals
 
+    slice mat@(MatU ux) i =
+        untag $ unproxy $ \witness ->
+            let Ux _ _ vals = proxy ux witness
+                startEl = untag $ set major i $ tag witness (0, 0, undefined)
+                endEl = untag $ set major (succ i) $ tag witness (0, 0, undefined)
+                (start, end) = runST $ do
+                    vals_ <- U.thaw vals
+                    start_ <- binarySearchLBy (comparator witness) vals_ startEl
+                    end_ <- binarySearchLBy (comparator witness) vals_ endEl
+                    return (start_, end_)
+                (rs, cs, xs) = U.unzip3 $ U.slice start (end - start) vals
+                minors = view minor $ copyTag ux (rs, cs)
+            in assert (i < view (dimF . _1) mat) $ U.zip minors xs
+
+    fromU x = x
+    fromC = decompress
+
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
     {-# INLINE nonzero #-}
     {-# INLINE compress #-}
     {-# INLINE decompress #-}
     {-# INLINE transpose #-}
+    {-# INLINE slice #-}
+    {-# INLINE fromU #-}
+    {-# INLINE fromC #-}
 
 instance FormatR C where
     dim = lens getDim setDim
@@ -221,7 +247,7 @@ instance FormatR C where
 
     dimF = lens getDimF setDimF
       where
-        getDimF mat@(MatC cx) =
+        getDimF (MatC cx) =
             let Cx mnr ixs _ = untag cx
                 mjr = U.length ixs
             in (mjr, mnr)
@@ -277,12 +303,26 @@ instance FormatR C where
 
     transpose = compress . transpose . decompress
 
+    slice (MatC cx) i =
+        let Cx _ starts vals = untag cx
+            start = starts U.! i
+            end = fromMaybe (U.length vals) $ starts U.!? i
+        in assert (i < U.length starts)
+        $ (U.slice start $ end - start) vals
+
+    fromC x = x
+    fromU = compress
+
+
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
     {-# INLINE nonzero #-}
     {-# INLINE compress #-}
     {-# INLINE decompress #-}
+    {-# INLINE slice #-}
     {-# INLINE transpose #-}
+    {-# INLINE fromU #-}
+    {-# INLINE fromC #-}
 
 instance (Eq a, Unbox a) => Eq (Matrix C ord a) where
     (==) (MatC a) (MatC b) = untag a == untag b
@@ -302,22 +342,23 @@ instance (AEq a, Unbox a) => AEq (Matrix U ord a) where
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
 
--- | I was going to put this in a class to abstract over the matrix format,
--- but I realized that I would just end up compressing the matrix before
--- slicing, anyway. It's a Fold, not a Traversable, because it's not
--- suitable for modifying the matrix. If you want to do that, you'll
--- probably get better speed by manipulating the structure directly. This
--- is just for consumption.
+{-# INLINE empty #-}
+empty :: (FormatR fmt, OrderR ord, Unbox a) => Matrix fmt ord a
+empty = fromU $ pack 0 0 $ U.empty
+
 {-# INLINE slicesF #-}
-slicesF :: (Unbox a, OrderR ord) => Fold (Matrix C ord a) (Vector (Int, a))
+slicesF :: (FormatR fmt, OrderR ord, Unbox a)
+        => Fold (Matrix fmt ord a) (Vector (Int, a))
 slicesF = folding $ \mat -> generate (view (dimF . _1) mat) $ slice mat
 
 {-# INLINE rowsF #-}
-rowsF :: Unbox a => Fold (Matrix C Row a) (Vector (Int, a))
+rowsF :: (FormatR fmt, Unbox a)
+      => Fold (Matrix fmt Row a) (Vector (Int, a))
 rowsF = slicesF
 
 {-# INLINE colsF #-}
-colsF :: Unbox a => Fold (Matrix C Col a) (Vector (Int, a))
+colsF :: (FormatR fmt, Unbox a)
+      => Fold (Matrix fmt Col a) (Vector (Int, a))
 colsF = slicesF
 
 {-# INLINE sortUx #-}
@@ -369,11 +410,11 @@ mul :: (Num a, OrderR ord, Unbox a)
     => Matrix C Col a -> Matrix C Row a -> Matrix C ord a
 mul a b =
     assert (inner == inner')
-    $ foldl' add empty $ generate inner $ \i -> expand (slice a i) (slice b i)
+    $ foldl' add empty_ $ generate inner $ \i -> expand (slice a i) (slice b i)
   where
     (inner, left) = view dimF a
     (inner', right) = view dimF b
-    empty = compress $ pack left right U.empty
+    empty_ = set dim (left, right) empty
     expand :: (Num a, OrderR ord, Unbox a)
            => Vector (Int, a) -> Vector (Int, a) -> Matrix C ord a
     expand ls rs = MatC $ unproxy $ \witness ->
@@ -387,15 +428,6 @@ mul a b =
           stride = U.length ns
           ixs = U.iterateN mjr (+ stride) 0
       in Cx mnr ixs vals
-
-{-# INLINE slice #-}
-slice :: Unbox a => Matrix C ord a -> Int -> Vector (Int, a)
-slice (MatC cx) i =
-    let Cx _ starts vals = untag cx
-        start = starts U.! i
-        end = fromMaybe (U.length vals) $ starts U.!? i
-    in assert (i < U.length starts)
-    $ (U.slice start $ end - start) vals
 
 {-# INLINE add #-}
 add :: (Num a, OrderR ord, Unbox a)
