@@ -259,16 +259,16 @@ generate len f = map f $ take len $ [0..]
 -- probably get better speed by manipulating the structure directly. This
 -- is just for consumption.
 {-# INLINE slices #-}
-slices :: (Unbox a, OrderR ord) => Fold (Matrix C ord a) (Vector (Int, a))
-slices = folding $ \mat -> generate (fst $ dimF mat) $ slice mat
+slicesF :: (Unbox a, OrderR ord) => Fold (Matrix C ord a) (Vector (Int, a))
+slicesF = folding $ \mat -> generate (fst $ dimF mat) $ slice mat
 
 {-# INLINE rows #-}
-rows :: Unbox a => Fold (Matrix C Row a) (Vector (Int, a))
-rows = slices
+rowsF :: Unbox a => Fold (Matrix C Row a) (Vector (Int, a))
+rowsF = slices
 
 {-# INLINE cols #-}
-cols :: Unbox a => Fold (Matrix C Col a) (Vector (Int, a))
-cols = slices
+colsF :: Unbox a => Fold (Matrix C Col a) (Vector (Int, a))
+colsF = slices
 
 {-# INLINE sortUx #-}
 sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
