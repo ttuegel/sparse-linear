@@ -16,7 +16,8 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Numeric.LinearAlgebra.Sparse
+  exposed-modules:     Data.Proxy.PolyKind
+                       Numeric.LinearAlgebra.Sparse
   -- other-modules:       
   hs-source-dirs:      src
   other-extensions:    TypeFamilies
