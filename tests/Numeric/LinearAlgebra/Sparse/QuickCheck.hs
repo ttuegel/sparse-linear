@@ -15,13 +15,14 @@ import Test.QuickCheck
 
 import Numeric.LinearAlgebra.Sparse
 
-arbitraryMatU :: (Arbitrary a, OrderR ord, Unbox a)
-              => Int -> Int -> Gen (Matrix U ord a)
-arbitraryMatU r c = (pack r c . U.fromList) <$> resize nnz arbitrary
+arbitraryMat  :: (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
+              => Int -> Int -> Gen (Matrix fmt ord a)
+arbitraryMat r c = (fromU . pack r c . U.fromList) <$> resize nnz arbitrary
   where
     nnz = (r * c) `div` 2
 
-shrinkMat :: (FormatR fmt, OrderR ord, Unbox a) => Matrix fmt ord a -> [Matrix fmt ord a]
+shrinkMat :: (FormatR fmt, OrderR ord, Unbox a)
+          => Matrix fmt ord a -> [Matrix fmt ord a]
 shrinkMat mat =
     let (r, c) = view dim mat
         dropRow | r > 1 = Just $ set dim (pred r, c) mat
@@ -32,10 +33,25 @@ shrinkMat mat =
 
 -- Need pairs of matrices that are the same size, so we don't want an
 -- Arbitrary instance for just (Matrix U ord a).
-instance (Arbitrary a, OrderR ord, OrderR ord', Unbox a) => Arbitrary (Matrix U ord a, Matrix U ord' a) where
+instance (Arbitrary a, FormatR fmt, OrderR ord, OrderR ord', Unbox a)
+    => Arbitrary (Matrix fmt ord a, Matrix fmt ord' a) where
+
     arbitrary = do
       r <- abs <$> arbitrarySizedIntegral
       c <- abs <$> arbitrarySizedIntegral
-      (,) <$> arbitraryMatU r c <*> arbitraryMatU r c
+      (,) <$> arbitraryMat r c <*> arbitraryMat r c
 
-    shrink = undefined
+    shrink (a, b) = zip (shrinkMat a) (shrinkMat b)
+
+-- Need triples of matrices that are the same size, so we don't want an
+-- Arbitrary instance for just (Matrix U ord a).
+instance
+    (Arbitrary a, FormatR fmt, OrderR ord, OrderR ord', OrderR ord'', Unbox a)
+    => Arbitrary (Matrix fmt ord a, Matrix fmt ord' a, Matrix fmt ord'' a) where
+
+    arbitrary = do
+      r <- abs <$> arbitrarySizedIntegral
+      c <- abs <$> arbitrarySizedIntegral
+      (,,) <$> arbitraryMat r c <*> arbitraryMat r c <*> arbitraryMat r c
+
+    shrink (a, b, c) = zip3 (shrinkMat a) (shrinkMat b) (shrinkMat c)
