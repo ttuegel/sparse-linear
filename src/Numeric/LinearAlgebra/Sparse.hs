@@ -218,9 +218,9 @@ pack :: (OrderR ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix U ord a
 pack r c v = MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
 
-{-# INLINE mv #-}
-mv :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
-mv mat xs_ =
+{-# INLINE mulV #-}
+mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
+mulV mat xs_ =
     assert (c == U.length xs)
     $ V.convert $ U.create $ do
       ys <- MU.new r
@@ -234,10 +234,10 @@ mv mat xs_ =
     xs = V.convert xs_
     (r, c) = dim mat
 
-{-# INLINE mvM #-}
-mvM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
-    => Matrix C Row a -> v (PrimState m) a -> v (PrimState m) a -> m ()
-mvM mat src dst =
+{-# INLINE mulVM #-}
+mulVM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
+      => Matrix C Row a -> v (PrimState m) a -> v (PrimState m) a -> m ()
+mulVM mat src dst =
     assert (c == MV.length src)
     $ assert (r == MV.length dst)
     $ iforMOf_ (indexing rows) mat $ \ixR _row -> do
@@ -247,10 +247,10 @@ mvM mat src dst =
   where
     (r, c) = dim mat
 
-{-# INLINE mult #-}
-mult :: (Num a, OrderR ord, Unbox a)
-     => Matrix C Col a -> Matrix C Row a -> Matrix C ord a
-mult a b =
+{-# INLINE mul #-}
+mul :: (Num a, OrderR ord, Unbox a)
+    => Matrix C Col a -> Matrix C Row a -> Matrix C ord a
+mul a b =
     assert (inner == inner')
     $ foldl' add empty $ generate inner $ \i -> expand (slice a i) (slice b i)
   where
