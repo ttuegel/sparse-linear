@@ -25,5 +25,5 @@ copyTag :: Tagged t a -> b -> Tagged t b
 copyTag t x = untag $ unproxy $ \witness -> let _ = proxy t witness in tag witness x
 
 instance Functor (Tagged t) where
-    fmap f tagged = untag $ unproxy $ \p -> tag p $ f $ untag tagged
+    fmap f tagged = copyTag tagged $ f $ untag tagged
 
