@@ -4,7 +4,9 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Numeric.LinearAlgebra.Sparse
-    ( Matrix, OrderK(..), FormatK(..), OrderR(..), FormatR(..)
+    ( Matrix
+    , OrderK(..), OrderR(..)
+    , FormatK(..), FormatR(..)
     , slices, rows, cols, slice
     , pack, reorder
     , mulV, mulVM, mul, add
@@ -18,7 +20,7 @@ import Control.Monad.ST (runST)
 import Data.AEq
 import Data.List (foldl')
 import Data.Maybe (fromMaybe)
-import Data.Monoid (mappend)
+import Data.Monoid ((<>))
 import Data.Ord (comparing)
 import qualified Data.Vector.Generic as V
 import qualified Data.Vector.Generic.Mutable as MV
@@ -54,6 +56,14 @@ class OrderR (ord :: OrderK) where
     -- | Extract the column index from a tuple in (major, minor, ...) order
     col :: (Field1 s s a a, Field2 s s a a)
         => Lens' (Tagged ord s) a
+
+{-# INLINE comparator #-}
+comparator  :: (Field1 s s a a, Field2 s s a a, Ord a, OrderR ord)
+            => Proxy ord -> s -> s -> Ordering
+comparator witness a' b' =
+    let a = tag witness a'
+        b = tag witness b'
+    in comparing (view major) a b <> comparing (view minor) a b
 
 instance OrderR Row where
     major f = fmap (tag Proxy) . _1 f . untag
@@ -263,11 +273,7 @@ cols = slices
 {-# INLINE sortUx #-}
 sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
 sortUx witness (Ux nr nc vals) =
-    Ux nr nc $ U.modify (sortBy sorter) vals
-  where
-    _major = view major . tag witness
-    _minor = view minor . tag witness
-    sorter a b = (comparing _major a b) `mappend` (comparing _minor a b)
+    Ux nr nc $ U.modify (sortBy $ comparator witness) vals
 
 {-# INLINE reorder #-}
 reorder :: (OrderR ord', Unbox a) => Matrix U ord a -> Matrix U ord' a
