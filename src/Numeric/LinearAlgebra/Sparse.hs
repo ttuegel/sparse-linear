@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Numeric.LinearAlgebra.Sparse
@@ -155,7 +156,8 @@ class FormatR (fmt :: FormatK) where
 
     transpose :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a
 
-    slice :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Int -> Vector (Int, a)
+    slice :: (OrderR ord, Unbox a)
+          => Int -> Lens' (Matrix fmt ord a) (Vector (Int, a))
 
 instance FormatR U where
     dim = lens getDim setDim
@@ -204,19 +206,37 @@ instance FormatR U where
             let (Ux r c vals) = proxy ux witness
             in sortUx witness $ Ux c r $ U.map (\(x, y, z) -> (y, x, z)) vals
 
-    slice mat@(MatU ux) i =
-        untag $ unproxy $ \witness ->
-            let Ux _ _ vals = proxy ux witness
-                startEl = untag $ set major i $ tag witness (0, 0, undefined)
-                endEl = untag $ set major (succ i) $ tag witness (0, 0, undefined)
-                (start, end) = runST $ do
+    slice i = lens getSlice setSlice
+      where
+        getSliceExtents (MatU ux) =
+            untag $ unproxy $ \witness ->
+                let Ux _ _ vals = proxy ux witness
+                    startEl = untag $ set major i $ tag witness (0, 0, undefined)
+                    endEl = untag $ set major (succ i) $ tag witness (0, 0, undefined)
+                in runST $ do
                     vals_ <- U.thaw vals
-                    start_ <- binarySearchLBy (comparator witness) vals_ startEl
-                    end_ <- binarySearchLBy (comparator witness) vals_ endEl
-                    return (start_, end_)
-                (rs, cs, xs) = U.unzip3 $ U.slice start (end - start) vals
-                minors = view minor $ copyTag ux (rs, cs)
-            in assert (i < view (dimF . _1) mat) $ U.zip minors xs
+                    start <- binarySearchLBy (comparator witness) vals_ startEl
+                    end <- binarySearchLBy (comparator witness) vals_ endEl
+                    return (start, end)
+        getSlice mat@(MatU ux) =
+            untag $ unproxy $ \witness ->
+                let Ux _ _ vals = proxy ux witness
+                    (start, end) = getSliceExtents mat
+                    (rs, cs, xs) = U.unzip3 $ U.slice start (end - start) vals
+                    minors = view minor $ copyTag ux (rs, cs)
+                in assert (i < view (dimF . _1) mat) $ U.zip minors xs
+        setSlice mat@(MatU ux) sl =
+            MatU $ unproxy $ \witness ->
+                let Ux r c vals = proxy ux witness
+                    (start, end) = getSliceExtents mat
+                    (mnrs, xs) = U.unzip sl
+                    mjrs = U.replicate (U.length sl) i
+                    _ixs = copyTag ux $ (mjrs, mnrs)
+                    rs = view row _ixs
+                    cs = view col _ixs
+                    (prefix, _) = U.splitAt start vals
+                    (_, suffix) = U.splitAt end vals
+                in Ux r c $ prefix U.++ (U.zip3 rs cs xs) U.++ suffix
 
     fromU x = x
     fromC = decompress
@@ -303,12 +323,27 @@ instance FormatR C where
 
     transpose = compress . transpose . decompress
 
-    slice (MatC cx) i =
-        let Cx _ starts vals = untag cx
-            start = starts U.! i
-            end = fromMaybe (U.length vals) $ starts U.!? i
-        in assert (i < U.length starts)
-        $ (U.slice start $ end - start) vals
+    slice i = lens getSlice setSlice
+      where
+        getSlice (MatC cx) =
+            let Cx _ starts vals = untag cx
+                start = starts U.! i
+                end = fromMaybe (U.length vals) $ starts U.!? i
+            in assert (i < U.length starts)
+            $ (U.slice start $ end - start) vals
+        setSlice (MatC cx) sl =
+            MatC $ unproxy $ \witness ->
+                let Cx mnr starts vals = proxy cx witness
+                    start = starts U.! i
+                    end = fromMaybe (U.length vals) $ starts U.!? i
+                    dLen = U.length sl - (end - start)
+                    starts' = flip U.imap starts
+                        $ \j x -> if j > i then (x + dLen) else x
+                    prefix = U.take start vals
+                    suffix = U.drop end vals
+                    vals' = prefix U.++ sl U.++ suffix
+                in assert (i < U.length starts)
+                $ Cx mnr starts' vals'
 
     fromC x = x
     fromU = compress
@@ -349,7 +384,7 @@ empty = fromU $ pack 0 0 $ U.empty
 {-# INLINE slicesF #-}
 slicesF :: (FormatR fmt, OrderR ord, Unbox a)
         => Fold (Matrix fmt ord a) (Vector (Int, a))
-slicesF = folding $ \mat -> generate (view (dimF . _1) mat) $ slice mat
+slicesF = folding $ \mat -> generate (view (dimF . _1) mat) $ \i -> view (slice i) mat
 
 {-# INLINE rowsF #-}
 rowsF :: (FormatR fmt, Unbox a)
@@ -410,7 +445,7 @@ mul :: (Num a, OrderR ord, Unbox a)
     => Matrix C Col a -> Matrix C Row a -> Matrix C ord a
 mul a b =
     assert (inner == inner')
-    $ foldl' add empty_ $ generate inner $ \i -> expand (slice a i) (slice b i)
+    $ foldl' add empty_ $ generate inner $ \i -> expand (view (slice i) a) (view (slice i) b)
   where
     (inner, left) = view dimF a
     (inner', right) = view dimF b
@@ -440,8 +475,8 @@ add a b =
           let go i start
                 | i < majorA = do
                   MU.unsafeWrite ixs i start
-                  let sliceA = slice a i
-                      sliceB = slice b i
+                  let sliceA = view (slice i) a
+                      sliceB = view (slice i) b
                   len <- addSlicesInto
                     (MU.slice start (U.length sliceA + U.length sliceB) vals)
                     sliceA sliceB
