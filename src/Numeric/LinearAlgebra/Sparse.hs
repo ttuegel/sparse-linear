@@ -15,6 +15,7 @@ import Control.Lens
 import Control.Monad (liftM, liftM2, when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
+import Data.AEq
 import Data.List (foldl')
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mappend)
@@ -83,6 +84,19 @@ instance (Eq a, Unbox a) => Eq (Cx a) where
     (==) (Cx mnrA ixsA valsA) (Cx mnrB ixsB valsB) =
         mnrA == mnrB && ixsA == ixsB && valsA == valsB
 
+instance (AEq a, Unbox a) => AEq (Cx a) where
+    (===) (Cx mnrA ixsA valsA) (Cx mnrB ixsB valsB) =
+        let (nsA, coeffsA) = U.unzip valsA
+            (nsB, coeffsB) = U.unzip valsB
+        in mnrA == mnrB && ixsA == ixsB && nsA == nsB
+            && U.and (U.zipWith (===) coeffsA coeffsB)
+
+    (~==) (Cx mnrA ixsA valsA) (Cx mnrB ixsB valsB) =
+        let (nsA, coeffsA) = U.unzip valsA
+            (nsB, coeffsB) = U.unzip valsB
+        in mnrA == mnrB && ixsA == ixsB && nsA == nsB
+            && U.and (U.zipWith (~==) coeffsA coeffsB)
+
 -- | Uncompressed sparse format
 data Ux a = Ux !Int -- ^ row dimension
                !Int -- ^ column dimension
@@ -92,6 +106,19 @@ data Ux a = Ux !Int -- ^ row dimension
 instance (Eq a, Unbox a) => Eq (Ux a) where
     (==) (Ux rA cA valsA) (Ux rB cB valsB) =
         rA == rB && cA == cB && valsA == valsB
+
+instance (AEq a, Unbox a) => AEq (Ux a) where
+    (===) (Ux rA cA valsA) (Ux rB cB valsB) =
+        let (rsA, csA, coeffsA) = U.unzip3 valsA
+            (rsB, csB, coeffsB) = U.unzip3 valsB
+        in rA == rB && cA == cB && rsA == rsB && csA == csB
+            && U.and (U.zipWith (===) coeffsA coeffsB)
+
+    (~==) (Ux rA cA valsA) (Ux rB cB valsB) =
+        let (rsA, csA, coeffsA) = U.unzip3 valsA
+            (rsB, csB, coeffsB) = U.unzip3 valsB
+        in rA == rB && cA == cB && rsA == rsB && csA == csB
+            && U.and (U.zipWith (~==) coeffsA coeffsB)
 
 data family Matrix :: FormatK -> OrderK -> * -> *
 newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
@@ -191,6 +218,14 @@ instance (Eq a, Unbox a) => Eq (Matrix C ord a) where
 
 instance (Eq a, Unbox a) => Eq (Matrix U ord a) where
     (==) (MatU a) (MatU b) = untag a == untag b
+
+instance (AEq a, Unbox a) => AEq (Matrix C ord a) where
+    (===) (MatC a) (MatC b) = untag a === untag b
+    (~==) (MatC a) (MatC b) = untag a ~== untag b
+
+instance (AEq a, Unbox a) => AEq (Matrix U ord a) where
+    (===) (MatU a) (MatU b) = untag a === untag b
+    (~==) (MatU a) (MatU b) = untag a ~== untag b
 
 {-# INLINE generate #-}
 generate :: Int -> (Int -> a) -> [a]

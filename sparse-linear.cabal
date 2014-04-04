@@ -22,6 +22,7 @@ library
   hs-source-dirs:      src
   other-extensions:    DataKinds, FlexibleInstances, PolyKinds, TypeFamilies
   build-depends:       base,
+                       ieee754 ==0.7.*,
                        lens ==4.1.*,
                        primitive ==0.5.*,
                        vector ==0.10.*,
