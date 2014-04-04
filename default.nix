@@ -11,6 +11,8 @@ haskellPackages.cabal.mkDerivation (self: {
     ieee754
     lens
     primitive
+    tasty
+    tastyQuickcheck
     vector
     vectorAlgorithms
   ];
