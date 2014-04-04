@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
 module Numeric.LinearAlgebra.Sparse.QuickCheck where
@@ -17,9 +18,10 @@ import Numeric.LinearAlgebra.Sparse
 
 arbitraryMat  :: (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
               => Int -> Int -> Gen (Matrix fmt ord a)
-arbitraryMat r c = (fromU . pack r c . U.fromList) <$> resize nnz arbitrary
+arbitraryMat r c = (fromU . pack r c . U.fromList . map fixIndices) <$> resize nnz arbitrary
   where
     nnz = (r * c) `div` 2
+    fixIndices (i, j, x) = (abs i, abs j, x)
 
 shrinkMat :: (FormatR fmt, OrderR ord, Unbox a)
           => Matrix fmt ord a -> [Matrix fmt ord a]
