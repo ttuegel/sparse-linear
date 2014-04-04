@@ -7,7 +7,7 @@ module Numeric.LinearAlgebra.Sparse
     ( Matrix
     , OrderK(..), OrderR(..)
     , FormatK(..), FormatR(..)
-    , slices, rows, cols, slice
+    , slicesF, rowsF, colsF, slice
     , pack, reorder
     , mulV, mulVM, mul, add
     ) where
@@ -136,11 +136,11 @@ newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
 
 class FormatR (fmt :: FormatK) where
     -- | The dimensions of a matrix in (row, column) order.
-    dim :: OrderR ord => Matrix fmt ord a -> (Int, Int)
+    dim :: (OrderR ord, Unbox a) => Lens' (Matrix fmt ord a) (Int, Int)
 
     -- | The dimensions of a matrix in format-specific (major, minor)
     -- order.
-    dimF :: OrderR ord => Matrix fmt ord a -> (Int, Int)
+    dimF :: (OrderR ord, Unbox a) => Lens' (Matrix fmt ord a) (Int, Int)
 
     -- | The number of non-zero entries in the matrix.
     nonzero :: Unbox a => Matrix fmt ord a -> Int
@@ -152,14 +152,28 @@ class FormatR (fmt :: FormatK) where
     transpose :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a
 
 instance FormatR U where
-    dim (MatU (Tagged (Ux r c _))) = (r, c)
+    dim = lens getDim setDim
+      where
+        getDim (MatU ux) = let Ux r c _ = untag ux in (r, c)
+        setDim (MatU ux) (r', c') =
+            MatU $ unproxy $ \witness ->
+                let Ux r c vals = proxy ux witness
+                    vals' | r' < r || c' < c =
+                        U.filter (\(i, j, _) -> i < r' && j < c') vals
+                          | otherwise = vals
+                in Ux r' c' vals'
 
-    dimF mat@(MatU ux) =
-      -- TODO: Find a lens-y way to do this
-      let _dim = copyTag ux $ dim mat
-          m = view major _dim
-          n = view minor _dim
-      in (m, n)
+    dimF = lens getDimF setDimF
+      where
+        getDimF mat@(MatU ux) =
+            let _dim = copyTag ux $ view dim mat
+                mjr = view major _dim
+                mnr = view minor _dim
+            in (mjr, mnr)
+        setDimF mat@(MatU ux) _dimF =
+            let r = view row $ copyTag ux _dimF
+                c = view col $ copyTag ux _dimF
+            in set dim (r, c) mat
 
     nonzero (MatU ux) =
       let Ux _ _ vals = untag ux
@@ -169,7 +183,7 @@ instance FormatR U where
         MatC $ unproxy $ \witness ->
           let (Ux _ _ vals) = proxy ux witness
               (rows_, cols_, coeffs) = U.unzip3 vals
-              (m, n) = dimF mat
+              (m, n) = view dimF mat
               majors = view major $ tag witness (rows_, cols_)
               minors = view minor $ tag witness (rows_, cols_)
               ixs = runST $ do
@@ -192,14 +206,50 @@ instance FormatR U where
     {-# INLINE transpose #-}
 
 instance FormatR C where
-    dimF (MatC (Tagged (Cx n ixs _))) = (U.length ixs, n)
+    dim = lens getDim setDim
+      where
+        getDim mat@(MatC cx) =
+            let _dimF = copyTag cx $ view dimF mat
+                r = view row _dimF
+                c = view col _dimF
+            in (r, c)
+        setDim mat@(MatC cx) _dim =
+            let mjr' = view major $ copyTag cx _dim
+                mnr' = view minor $ copyTag cx _dim
+            in set dimF (mjr', mnr') mat
 
-    dim mat@(MatC cx) =
-      -- TODO: Find a lens-y way to do this
-      let _dim = copyTag cx $ dimF mat
-          r = view row _dim
-          c = view col _dim
-      in (r, c)
+
+    dimF = lens getDimF setDimF
+      where
+        getDimF mat@(MatC cx) =
+            let Cx mnr ixs _ = untag cx
+                mjr = U.length ixs
+            in (mjr, mnr)
+        setDimF mat@(MatC cx) (mjr', mnr') =
+            MatC $ unproxy $ \witness ->
+                let Cx _ ixs vals = proxy cx witness
+                    (mjr, mnr) = getDimF mat
+                    nnz = U.length vals
+                    dMjr = mjr' - mjr
+                    ixs' = case compare dMjr 0 of
+                        EQ -> ixs
+                        LT -> U.take mjr' ixs
+                        GT -> ixs U.++ U.replicate dMjr nnz
+                    vals' = case compare dMjr 0 of
+                        EQ -> vals
+                        LT -> U.take (ixs U.! (succ mjr')) vals
+                        GT -> vals
+                    vals'' | mnr' < mnr = U.filter (\(j, _) -> j < mnr') vals
+                           | otherwise = vals
+                    ixs''
+                        | mnr' < mnr = flip U.map ixs' $ \start ->
+                            let numRemoved =
+                                    U.length
+                                    $ U.findIndices ((>= mnr') . view _1)
+                                    $ U.slice 0 start vals'
+                            in start - numRemoved
+                        | otherwise = ixs'
+                in Cx mnr' ixs'' vals''
 
     compress x = x
 
@@ -211,7 +261,7 @@ instance FormatR C where
         MatU $ unproxy $ \witness ->
           let (Cx _ majorIxs valsC) = proxy cx witness
               (minors, coeffs) = U.unzip valsC
-              (m, _) = dimF mat
+              m = view (dimF . _1) mat
               majorLengths =
                 U.generate m $ \r ->
                   let this = majorIxs U.! r
@@ -222,7 +272,7 @@ instance FormatR C where
                 $ U.indexed majorLengths
               rows_ = view row $ tag witness (majors, minors)
               cols_ = view col $ tag witness (majors, minors)
-              (nr, nc) = dim mat
+              (nr, nc) = view dim mat
           in Ux nr nc $ U.zip3 rows_ cols_ coeffs
 
     transpose = compress . transpose . decompress
@@ -258,17 +308,17 @@ generate len f = map f $ take len $ [0..]
 -- suitable for modifying the matrix. If you want to do that, you'll
 -- probably get better speed by manipulating the structure directly. This
 -- is just for consumption.
-{-# INLINE slices #-}
+{-# INLINE slicesF #-}
 slicesF :: (Unbox a, OrderR ord) => Fold (Matrix C ord a) (Vector (Int, a))
-slicesF = folding $ \mat -> generate (fst $ dimF mat) $ slice mat
+slicesF = folding $ \mat -> generate (view (dimF . _1) mat) $ slice mat
 
-{-# INLINE rows #-}
+{-# INLINE rowsF #-}
 rowsF :: Unbox a => Fold (Matrix C Row a) (Vector (Int, a))
-rowsF = slices
+rowsF = slicesF
 
-{-# INLINE cols #-}
+{-# INLINE colsF #-}
 colsF :: Unbox a => Fold (Matrix C Col a) (Vector (Int, a))
-colsF = slices
+colsF = slicesF
 
 {-# INLINE sortUx #-}
 sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
@@ -291,7 +341,7 @@ mulV mat xs_ =
     assert (c == U.length xs)
     $ V.convert $ U.create $ do
       ys <- MU.new r
-      iforMOf_ (indexing rows) mat $ \ixR _row -> do
+      iforMOf_ (indexing rowsF) mat $ \ixR _row -> do
         let (cols_, coeffs) = U.unzip _row
         MU.write ys ixR
           $ U.sum $ U.zipWith (*) coeffs
@@ -299,7 +349,7 @@ mulV mat xs_ =
       return ys
   where
     xs = V.convert xs_
-    (r, c) = dim mat
+    (r, c) = view dim mat
 
 {-# INLINE mulVM #-}
 mulVM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
@@ -307,12 +357,12 @@ mulVM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
 mulVM mat src dst =
     assert (c == MV.length src)
     $ assert (r == MV.length dst)
-    $ iforMOf_ (indexing rows) mat $ \ixR _row -> do
+    $ iforMOf_ (indexing rowsF) mat $ \ixR _row -> do
       let (_cols, _coeffs) = U.unzip _row
       x <- liftM (U.sum . U.zipWith (*) _coeffs) $ U.mapM (MV.read src) _cols
       MV.write dst ixR x
   where
-    (r, c) = dim mat
+    (r, c) = view dim mat
 
 {-# INLINE mul #-}
 mul :: (Num a, OrderR ord, Unbox a)
@@ -321,8 +371,8 @@ mul a b =
     assert (inner == inner')
     $ foldl' add empty $ generate inner $ \i -> expand (slice a i) (slice b i)
   where
-    (inner, left) = dimF a
-    (inner', right) = dimF b
+    (inner, left) = view dimF a
+    (inner', right) = view dimF b
     empty = compress $ pack left right U.empty
     expand :: (Num a, OrderR ord, Unbox a)
            => Vector (Int, a) -> Vector (Int, a) -> Matrix C ord a
@@ -351,7 +401,7 @@ slice (MatC cx) i =
 add :: (Num a, OrderR ord, Unbox a)
     => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
 add a b =
-    let (majorA, minorA) = dimF a
+    let (majorA, minorA) = view dimF a
         (valsC, ixsC) = runST $ do
           vals <- MU.new $ nonzero a + nonzero b
           ixs <- MU.new majorA
@@ -369,7 +419,7 @@ add a b =
           vals_ <- U.unsafeFreeze $ MU.unsafeSlice 0 len vals
           ixs_ <- U.unsafeFreeze ixs
           return (vals_, ixs_)
-    in assert (dimF a == dimF b)
+    in assert (view dimF a == view dimF b)
         $ MatC $ tag Proxy $ Cx minorA ixsC valsC
   where
     addSlicesInto :: (Monad m, Num a, PrimMonad m, Unbox a)
