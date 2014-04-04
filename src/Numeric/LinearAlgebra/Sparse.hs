@@ -139,6 +139,8 @@ class FormatR (fmt :: FormatK) where
 
     decompress :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix U ord a
 
+    transpose :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a
+
 instance FormatR U where
     dim (MatU (Tagged (Ux r c _))) = (r, c)
 
@@ -167,11 +169,17 @@ instance FormatR U where
 
     decompress x = x
 
+    transpose (MatU ux) =
+        MatU $ unproxy $ \witness ->
+            let (Ux r c vals) = proxy ux witness
+            in sortUx witness $ Ux c r $ U.map (\(x, y, z) -> (y, x, z)) vals
+
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
     {-# INLINE nonzero #-}
     {-# INLINE compress #-}
     {-# INLINE decompress #-}
+    {-# INLINE transpose #-}
 
 instance FormatR C where
     dimF (MatC (Tagged (Cx n ixs _))) = (U.length ixs, n)
@@ -207,11 +215,14 @@ instance FormatR C where
               (nr, nc) = dim mat
           in Ux nr nc $ U.zip3 rows_ cols_ coeffs
 
+    transpose = compress . transpose . decompress
+
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
     {-# INLINE nonzero #-}
     {-# INLINE compress #-}
     {-# INLINE decompress #-}
+    {-# INLINE transpose #-}
 
 instance (Eq a, Unbox a) => Eq (Matrix C ord a) where
     (==) (MatC a) (MatC b) = untag a == untag b
