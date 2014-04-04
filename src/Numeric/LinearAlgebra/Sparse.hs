@@ -2,7 +2,12 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Numeric.LinearAlgebra.Sparse where
+module Numeric.LinearAlgebra.Sparse
+    ( Matrix, OrderK(..), FormatK(..), OrderR(..), FormatR(..)
+    , slices, rows, cols, slice
+    , pack, reorder
+    , mulV, mulVM, mul, add
+    ) where
 
 import Control.Exception (assert)
 import Control.Lens
@@ -171,11 +176,6 @@ instance FormatR C where
     {-# INLINE nonzero #-}
     {-# INLINE compress #-}
     {-# INLINE decompress #-}
-
--- Names come from Wikipedia: http://en.wikipedia.org/wiki/Sparse_matrix
-type MatrixCSR = Matrix C Row
-type MatrixCSC = Matrix C Col
-type MatrixCOO = Matrix U Row
 
 {-# INLINE generate #-}
 generate :: Int -> (Int -> a) -> [a]
