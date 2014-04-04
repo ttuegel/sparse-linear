@@ -4,9 +4,11 @@ module Data.Proxy.PolyKind where
 
 -- | PolyKind Proxy
 data Proxy p = Proxy
+  deriving (Show)
 
 -- | PolyKind Tagged
 newtype Tagged t a = Tagged { untag :: a }
+  deriving (Show)
 
 {-# INLINE tag #-}
 tag :: Proxy t -> a -> Tagged t a

@@ -6,6 +6,7 @@
 
 module Numeric.LinearAlgebra.Sparse
     ( Matrix
+    , Unbox
     , OrderK(..), OrderR(..)
     , FormatK(..), FormatR(..)
     , slicesF, rowsF, colsF
@@ -90,6 +91,7 @@ instance OrderR Col where
 data Cx a = Cx !Int -- ^ minor dimension
                !(Vector Int) -- ^ starting indices of each major slice
                !(Vector (Int, a)) -- ^ (minor index, coefficient)
+  deriving (Show)
 
 instance (Eq a, Unbox a) => Eq (Cx a) where
     (==) (Cx mnrA ixsA valsA) (Cx mnrB ixsB valsB) =
@@ -113,6 +115,7 @@ data Ux a = Ux !Int -- ^ row dimension
                !Int -- ^ column dimension
                !(Vector (Int, Int, a))
                -- ^ (row index, column index, coefficient)
+  deriving (Show)
 
 instance (Eq a, Unbox a) => Eq (Ux a) where
     (==) (Ux rA cA valsA) (Ux rB cB valsB) =
@@ -133,7 +136,10 @@ instance (AEq a, Unbox a) => AEq (Ux a) where
 
 data family Matrix :: FormatK -> OrderK -> * -> *
 newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
+  deriving (Show)
 newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
+  deriving (Show)
+
 
 class FormatR (fmt :: FormatK) where
     -- | The dimensions of a matrix in (row, column) order.
