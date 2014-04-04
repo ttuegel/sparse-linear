@@ -20,7 +20,7 @@ library
                        Numeric.LinearAlgebra.Sparse
   -- other-modules:       
   hs-source-dirs:      src
-  other-extensions:    DataKinds, PolyKinds, TypeFamilies
+  other-extensions:    DataKinds, FlexibleInstances, PolyKinds, TypeFamilies
   build-depends:       base,
                        lens ==4.1.*,
                        primitive ==0.5.*,

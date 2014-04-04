@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -78,11 +79,19 @@ data Cx a = Cx !Int -- ^ minor dimension
                !(Vector Int) -- ^ starting indices of each major slice
                !(Vector (Int, a)) -- ^ (minor index, coefficient)
 
+instance (Eq a, Unbox a) => Eq (Cx a) where
+    (==) (Cx mnrA ixsA valsA) (Cx mnrB ixsB valsB) =
+        mnrA == mnrB && ixsA == ixsB && valsA == valsB
+
 -- | Uncompressed sparse format
 data Ux a = Ux !Int -- ^ row dimension
                !Int -- ^ column dimension
                !(Vector (Int, Int, a))
                -- ^ (row index, column index, coefficient)
+
+instance (Eq a, Unbox a) => Eq (Ux a) where
+    (==) (Ux rA cA valsA) (Ux rB cB valsB) =
+        rA == rB && cA == cB && valsA == valsB
 
 data family Matrix :: FormatK -> OrderK -> * -> *
 newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
@@ -176,6 +185,12 @@ instance FormatR C where
     {-# INLINE nonzero #-}
     {-# INLINE compress #-}
     {-# INLINE decompress #-}
+
+instance (Eq a, Unbox a) => Eq (Matrix C ord a) where
+    (==) (MatC a) (MatC b) = untag a == untag b
+
+instance (Eq a, Unbox a) => Eq (Matrix U ord a) where
+    (==) (MatU a) (MatU b) = untag a == untag b
 
 {-# INLINE generate #-}
 generate :: Int -> (Int -> a) -> [a]
