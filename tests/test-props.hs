@@ -135,16 +135,29 @@ main = defaultMain $ testGroup "Properties"
 
         , QC.testProperty
             "a + 0 == a :: Matrix C Row Double"
-            (prop_add_ident :: Prop_Add_Ident Row Double)
+            (prop_add_ident :: Prop_Add Row Double)
         , QC.testProperty
             "a + 0 == a :: Matrix C Row (Complex Double)"
-            (prop_add_ident :: Prop_Add_Ident Row (Complex Double))
+            (prop_add_ident :: Prop_Add Row (Complex Double))
         , QC.testProperty
             "a + 0 == a :: Matrix C Col Double"
-            (prop_add_ident :: Prop_Add_Ident Col Double)
+            (prop_add_ident :: Prop_Add Col Double)
         , QC.testProperty
             "a + 0 == a :: Matrix C Col (Complex Double)"
-            (prop_add_ident :: Prop_Add_Ident Col (Complex Double))
+            (prop_add_ident :: Prop_Add Col (Complex Double))
+
+        , QC.testProperty
+            "a - a == 0 :: Matrix C Row Double"
+            (prop_add_inv :: Prop_Add Row Double)
+        , QC.testProperty
+            "a - a == 0 :: Matrix C Row (Complex Double)"
+            (prop_add_inv :: Prop_Add Row (Complex Double))
+        , QC.testProperty
+            "a - a == 0 :: Matrix C Col Double"
+            (prop_add_inv :: Prop_Add Col Double)
+        , QC.testProperty
+            "a - a == 0 :: Matrix C Col (Complex Double)"
+            (prop_add_inv :: Prop_Add Col (Complex Double))
         ]
     , testGroup "Multiplicative"
         [
@@ -181,10 +194,13 @@ prop_fmt_id_U (a, _) = a === (decompress . compress) a
 
 type Prop_Add_Assoc ord a = (Matrix C ord a, Matrix C ord a, Matrix C ord a) -> Property
 
-prop_add_assoc :: (Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add_Assoc ord a
+prop_add_assoc :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add_Assoc ord a
 prop_add_assoc (a, b, c) = (a `add` b) `add` c === a `add` (b `add` c)
 
-type Prop_Add_Ident ord a = (Matrix C ord a, Matrix C ord a) -> Property
+type Prop_Add ord a = (Matrix C ord a, Matrix C ord a) -> Property
 
-prop_add_ident :: (Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add_Ident ord a
+prop_add_ident :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
 prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
+
+prop_add_inv :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
+prop_add_inv (a, _) = add a (over each negate a) === (over each (const 0) a)
