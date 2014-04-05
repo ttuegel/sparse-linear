@@ -162,6 +162,8 @@ class FormatR (fmt :: FormatK) where
             => Int -> Matrix fmt ord a -> Vector (Int, a) -> Matrix fmt ord a
 
     _eq :: (Eq a, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a -> Bool
+    _aeq :: (AEq a, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a -> Bool
+    _eeq :: (AEq a, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a -> Bool
     _each :: (Unbox a, Unbox b)
           => Traversal (Matrix fmt ord a) (Matrix fmt ord b) a b
 
@@ -237,6 +239,8 @@ instance FormatR U where
     fromC = decompress
 
     _eq (MatU a) (MatU b) = untag a == untag b
+    _aeq (MatU a) (MatU b) = untag a ~== untag b
+    _eeq (MatU a) (MatU b) = untag a === untag b
 
     _each f (MatU ux) =
         let Ux r c vals = untag ux
@@ -351,6 +355,8 @@ instance FormatR C where
     fromU = compress
 
     _eq (MatC a) (MatC b) = untag a == untag b
+    _aeq (MatC a) (MatC b) = untag a ~== untag b
+    _eeq (MatC a) (MatC b) = untag a === untag b
 
     _each f (MatC cx) =
         let Cx mnr ixs vals = untag cx
@@ -359,13 +365,9 @@ instance FormatR C where
 instance (Eq a, FormatR fmt, Unbox a) => Eq (Matrix fmt ord a) where
     (==) = _eq
 
-instance (AEq a, Unbox a) => AEq (Matrix C ord a) where
-    (===) (MatC a) (MatC b) = untag a === untag b
-    (~==) (MatC a) (MatC b) = untag a ~== untag b
-
-instance (AEq a, Unbox a) => AEq (Matrix U ord a) where
-    (===) (MatU a) (MatU b) = untag a === untag b
-    (~==) (MatU a) (MatU b) = untag a ~== untag b
+instance (AEq a, FormatR fmt, Unbox a) => AEq (Matrix fmt ord a) where
+    (===) = _eeq
+    (~==) = _aeq
 
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]

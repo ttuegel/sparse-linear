@@ -19,78 +19,78 @@ main = defaultMain $ testGroup "Properties"
     [ testGroup "Equality"
         [ QC.testProperty
             "a == a :: Matrix C Row Double"
-            (prop_eq_trans :: Prop_Eq_Trans C Row Double)
+            (prop_eq_trans :: Prop2Bool C Row Double)
         , QC.testProperty
             "a == a :: Matrix C Col Double"
-            (prop_eq_trans :: Prop_Eq_Trans C Col Double)
+            (prop_eq_trans :: Prop2Bool C Col Double)
         , QC.testProperty
             "a == a :: Matrix U Row Double"
-            (prop_eq_trans :: Prop_Eq_Trans U Row Double)
+            (prop_eq_trans :: Prop2Bool U Row Double)
         , QC.testProperty
             "a == a :: Matrix U Col Double"
-            (prop_eq_trans :: Prop_Eq_Trans U Col Double)
+            (prop_eq_trans :: Prop2Bool U Col Double)
         , QC.testProperty
             "a == a :: Matrix C Row (Complex Double)"
-            (prop_eq_trans :: Prop_Eq_Trans C Row (Complex Double))
+            (prop_eq_trans :: Prop2Bool C Row (Complex Double))
         , QC.testProperty
             "a == a :: Matrix C Col (Complex Double)"
-            (prop_eq_trans :: Prop_Eq_Trans C Col (Complex Double))
+            (prop_eq_trans :: Prop2Bool C Col (Complex Double))
         , QC.testProperty
             "a == a :: Matrix U Row (Complex Double)"
-            (prop_eq_trans :: Prop_Eq_Trans U Row (Complex Double))
+            (prop_eq_trans :: Prop2Bool U Row (Complex Double))
         , QC.testProperty
             "a == a :: Matrix U Col (Complex Double)"
-            (prop_eq_trans :: Prop_Eq_Trans U Col (Complex Double))
+            (prop_eq_trans :: Prop2Bool U Col (Complex Double))
 
         , QC.testProperty
             "a ~== a :: Matrix C Row Double"
-            (prop_aeq_trans :: Prop_Eq_Trans C Row Double)
+            (prop_aeq_trans :: Prop2Bool C Row Double)
         , QC.testProperty
             "a ~== a :: Matrix C Col Double"
-            (prop_aeq_trans :: Prop_Eq_Trans C Col Double)
+            (prop_aeq_trans :: Prop2Bool C Col Double)
         , QC.testProperty
             "a ~== a :: Matrix U Row Double"
-            (prop_aeq_trans :: Prop_Eq_Trans U Row Double)
+            (prop_aeq_trans :: Prop2Bool U Row Double)
         , QC.testProperty
             "a ~== a :: Matrix U Col Double"
-            (prop_aeq_trans :: Prop_Eq_Trans U Col Double)
+            (prop_aeq_trans :: Prop2Bool U Col Double)
         , QC.testProperty
             "a ~== a :: Matrix C Row (Complex Double)"
-            (prop_aeq_trans :: Prop_Eq_Trans C Row (Complex Double))
+            (prop_aeq_trans :: Prop2Bool C Row (Complex Double))
         , QC.testProperty
             "a ~== a :: Matrix C Col (Complex Double)"
-            (prop_aeq_trans :: Prop_Eq_Trans C Col (Complex Double))
+            (prop_aeq_trans :: Prop2Bool C Col (Complex Double))
         , QC.testProperty
             "a ~== a :: Matrix U Row (Complex Double)"
-            (prop_aeq_trans :: Prop_Eq_Trans U Row (Complex Double))
+            (prop_aeq_trans :: Prop2Bool U Row (Complex Double))
         , QC.testProperty
             "a ~== a :: Matrix U Col (Complex Double)"
-            (prop_aeq_trans :: Prop_Eq_Trans U Col (Complex Double))
+            (prop_aeq_trans :: Prop2Bool U Col (Complex Double))
 
         , QC.testProperty
             "a === a :: Matrix C Row Double"
-            (prop_eeq_trans :: Prop_Eq_Trans C Row Double)
+            (prop_eeq_trans :: Prop2Bool C Row Double)
         , QC.testProperty
             "a === a :: Matrix C Col Double"
-            (prop_eeq_trans :: Prop_Eq_Trans C Col Double)
+            (prop_eeq_trans :: Prop2Bool C Col Double)
         , QC.testProperty
             "a === a :: Matrix U Row Double"
-            (prop_eeq_trans :: Prop_Eq_Trans U Row Double)
+            (prop_eeq_trans :: Prop2Bool U Row Double)
         , QC.testProperty
             "a === a :: Matrix U Col Double"
-            (prop_eeq_trans :: Prop_Eq_Trans U Col Double)
+            (prop_eeq_trans :: Prop2Bool U Col Double)
         , QC.testProperty
             "a === a :: Matrix C Row (Complex Double)"
-            (prop_eeq_trans :: Prop_Eq_Trans C Row (Complex Double))
+            (prop_eeq_trans :: Prop2Bool C Row (Complex Double))
         , QC.testProperty
             "a === a :: Matrix C Col (Complex Double)"
-            (prop_eeq_trans :: Prop_Eq_Trans C Col (Complex Double))
+            (prop_eeq_trans :: Prop2Bool C Col (Complex Double))
         , QC.testProperty
             "a === a :: Matrix U Row (Complex Double)"
-            (prop_eeq_trans :: Prop_Eq_Trans U Row (Complex Double))
+            (prop_eeq_trans :: Prop2Bool U Row (Complex Double))
         , QC.testProperty
             "a === a :: Matrix U Col (Complex Double)"
-            (prop_eeq_trans :: Prop_Eq_Trans U Col (Complex Double))
+            (prop_eeq_trans :: Prop2Bool U Col (Complex Double))
         ]
     , testGroup "Format"
         [ QC.testProperty
@@ -209,15 +209,15 @@ main = defaultMain $ testGroup "Properties"
         ]
     ]
 
-type Prop_Eq_Trans fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Bool
+type Prop2Bool fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Bool
 
-prop_eq_trans :: Eq (Matrix fmt ord a) => Prop_Eq_Trans fmt ord a
+prop_eq_trans :: (Eq a, FormatR fmt, Unbox a) => Prop2Bool fmt ord a
 prop_eq_trans (a, _) = a == a
 
-prop_aeq_trans :: AEq.AEq (Matrix fmt ord a) => Prop_Eq_Trans fmt ord a
+prop_aeq_trans :: (AEq.AEq a, FormatR fmt, Unbox a) => Prop2Bool fmt ord a
 prop_aeq_trans (a, _) = a AEq.~== a
 
-prop_eeq_trans :: AEq.AEq (Matrix fmt ord a) => Prop_Eq_Trans fmt ord a
+prop_eeq_trans :: (AEq.AEq a, FormatR fmt, Unbox a) => Prop2Bool fmt ord a
 prop_eeq_trans (a, _) = a AEq.=== a
 
 type Prop_Fmt_Id fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
