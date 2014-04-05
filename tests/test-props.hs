@@ -95,82 +95,82 @@ main = defaultMain $ testGroup "Properties"
     , testGroup "Format"
         [ QC.testProperty
             "compress . decompress == id :: Matrix C Row Double)"
-            (prop_fmt_id_C :: Prop_Fmt_Id C Row Double)
+            (prop_fmt_id_C :: Prop2 C Row Double)
         , QC.testProperty
             "compress . decompress == id :: Matrix C Row (Complex Double))"
-            (prop_fmt_id_C :: Prop_Fmt_Id C Row (Complex Double))
+            (prop_fmt_id_C :: Prop2 C Row (Complex Double))
         , QC.testProperty
             "compress . decompress == id :: Matrix C Col Double)"
-            (prop_fmt_id_C :: Prop_Fmt_Id C Col Double)
+            (prop_fmt_id_C :: Prop2 C Col Double)
         , QC.testProperty
             "compress . decompress == id :: Matrix C Col (Complex Double))"
-            (prop_fmt_id_C :: Prop_Fmt_Id C Col (Complex Double))
+            (prop_fmt_id_C :: Prop2 C Col (Complex Double))
 
         , QC.testProperty
             "decompress . compress == id :: Matrix U Row Double)"
-            (prop_fmt_id_U :: Prop_Fmt_Id U Row Double)
+            (prop_fmt_id_U :: Prop2 U Row Double)
         , QC.testProperty
             "decompress . compress == id :: Matrix U Row (Complex Double))"
-            (prop_fmt_id_U :: Prop_Fmt_Id U Row (Complex Double))
+            (prop_fmt_id_U :: Prop2 U Row (Complex Double))
         , QC.testProperty
             "decompress . compress == id :: Matrix U Col Double)"
-            (prop_fmt_id_U :: Prop_Fmt_Id U Col Double)
+            (prop_fmt_id_U :: Prop2 U Col Double)
         , QC.testProperty
             "decompress . compress == id :: Matrix U Col (Complex Double))"
-            (prop_fmt_id_U :: Prop_Fmt_Id U Col (Complex Double))
+            (prop_fmt_id_U :: Prop2 U Col (Complex Double))
         ]
     , testGroup "Additive"
         [ QC.testProperty
             "(a + b) + c == a + (b + c) :: Matrix C Row Double"
-            (prop_add_assoc :: Prop_Add_Assoc Row Double)
+            (prop_add_assoc :: Prop3 C Row Double)
         , QC.testProperty
             "(a + b) + c == a + (b + c) :: Matrix C Row (Complex Double)"
-            (prop_add_assoc :: Prop_Add_Assoc Row (Complex Double))
+            (prop_add_assoc :: Prop3 C Row (Complex Double))
         , QC.testProperty
             "(a + b) + c == a + (b + c) :: Matrix C Col Double"
-            (prop_add_assoc :: Prop_Add_Assoc Col Double)
+            (prop_add_assoc :: Prop3 C Col Double)
         , QC.testProperty
             "(a + b) + c == a + (b + c) :: Matrix C Col (Complex Double)"
-            (prop_add_assoc :: Prop_Add_Assoc Col (Complex Double))
+            (prop_add_assoc :: Prop3 C Col (Complex Double))
 
         , QC.testProperty
             "a + 0 == a :: Matrix C Row Double"
-            (prop_add_ident :: Prop_Add Row Double)
+            (prop_add_ident :: Prop2 C Row Double)
         , QC.testProperty
             "a + 0 == a :: Matrix C Row (Complex Double)"
-            (prop_add_ident :: Prop_Add Row (Complex Double))
+            (prop_add_ident :: Prop2 C Row (Complex Double))
         , QC.testProperty
             "a + 0 == a :: Matrix C Col Double"
-            (prop_add_ident :: Prop_Add Col Double)
+            (prop_add_ident :: Prop2 C Col Double)
         , QC.testProperty
             "a + 0 == a :: Matrix C Col (Complex Double)"
-            (prop_add_ident :: Prop_Add Col (Complex Double))
+            (prop_add_ident :: Prop2 C Col (Complex Double))
 
         , QC.testProperty
             "a - a == 0 :: Matrix C Row Double"
-            (prop_add_inv :: Prop_Add Row Double)
+            (prop_add_inv :: Prop2 C Row Double)
         , QC.testProperty
             "a - a == 0 :: Matrix C Row (Complex Double)"
-            (prop_add_inv :: Prop_Add Row (Complex Double))
+            (prop_add_inv :: Prop2 C Row (Complex Double))
         , QC.testProperty
             "a - a == 0 :: Matrix C Col Double"
-            (prop_add_inv :: Prop_Add Col Double)
+            (prop_add_inv :: Prop2 C Col Double)
         , QC.testProperty
             "a - a == 0 :: Matrix C Col (Complex Double)"
-            (prop_add_inv :: Prop_Add Col (Complex Double))
+            (prop_add_inv :: Prop2 C Col (Complex Double))
 
         , QC.testProperty
             "a + b == b + a :: Matrix C Row Double"
-            (prop_add_commute :: Prop_Add Row Double)
+            (prop_add_commute :: Prop2 C Row Double)
         , QC.testProperty
             "a + b == b + a :: Matrix C Row (Complex Double)"
-            (prop_add_commute :: Prop_Add Row (Complex Double))
+            (prop_add_commute :: Prop2 C Row (Complex Double))
         , QC.testProperty
             "a + b == b + a :: Matrix C Col Double"
-            (prop_add_commute :: Prop_Add Col Double)
+            (prop_add_commute :: Prop2 C Col Double)
         , QC.testProperty
             "a + b == b + a :: Matrix C Col (Complex Double)"
-            (prop_add_commute :: Prop_Add Col (Complex Double))
+            (prop_add_commute :: Prop2 C Col (Complex Double))
         ]
     , testGroup "Involutive"
         [ QC.testProperty
@@ -220,34 +220,32 @@ prop_aeq_trans (a, _) = a AEq.~== a
 prop_eeq_trans :: (AEq.AEq a, FormatR fmt, Unbox a) => Prop2Bool fmt ord a
 prop_eeq_trans (a, _) = a AEq.=== a
 
-type Prop_Fmt_Id fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
-
-prop_fmt_id_C :: (Eq a, OrderR ord, Show a, Unbox a) => Prop_Fmt_Id C ord a
-prop_fmt_id_C (a, _) = a === (compress . decompress) a
-
-prop_fmt_id_U :: (Eq a, OrderR ord, Show a, Unbox a) => Prop_Fmt_Id U ord a
-prop_fmt_id_U (a, _) = a === (decompress . compress) a
-
-type Prop_Add_Assoc ord a = (Matrix C ord a, Matrix C ord a, Matrix C ord a) -> Property
-
-prop_add_assoc :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop_Add_Assoc ord a
-prop_add_assoc (a, b, c) = (a `add` b) `add` c === a `add` (b `add` c)
-
-type Prop_Add ord a = (Matrix C ord a, Matrix C ord a) -> Property
-
-prop_add_ident :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
-prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
-
-prop_add_inv :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
-prop_add_inv (a, _) = add a (over each negate a) === (over each (const 0) a)
-
-prop_add_commute :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
-prop_add_commute (a, b) = add a b === add b a
-
 type Prop2 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
 
-prop_trans_trans :: (FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord a), Unbox a) => Prop2 fmt ord a
+prop_fmt_id_C :: (Eq a, OrderR ord, Show a, Unbox a) => Prop2 C ord a
+prop_fmt_id_C (a, _) = a === (compress . decompress) a
+
+prop_fmt_id_U :: (Eq a, OrderR ord, Show a, Unbox a) => Prop2 U ord a
+prop_fmt_id_U (a, _) = a === (decompress . compress) a
+
+type Prop3 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a, Matrix fmt ord a) -> Property
+
+prop_add_assoc :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop3 C ord a
+prop_add_assoc (a, b, c) = (a `add` b) `add` c === a `add` (b `add` c)
+
+prop_add_ident :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop2 C ord a
+prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
+
+prop_add_inv :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop2 C ord a
+prop_add_inv (a, _) = add a (over each negate a) === (over each (const 0) a)
+
+prop_add_commute :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop2 C ord a
+prop_add_commute (a, b) = add a b === add b a
+
+prop_trans_trans  :: (FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord a), Unbox a)
+                  => Prop2 fmt ord a
 prop_trans_trans (a, _) = transpose (transpose a) === a
 
-prop_adj_adj :: (FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord (Complex a)), Unbox a) => Prop2 fmt ord (Complex a)
+prop_adj_adj  :: (FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord (Complex a)), Unbox a)
+              => Prop2 fmt ord (Complex a)
 prop_adj_adj (a, _) = adjoint (adjoint a) === a
