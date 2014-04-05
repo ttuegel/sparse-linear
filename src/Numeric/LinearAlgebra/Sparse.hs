@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -559,3 +560,8 @@ add a b =
       let len' = len - start
       when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
       return len'
+
+instance Unbox a => Each (Matrix C ord a) (Matrix C ord a) a a where
+    each f mat@(MatC cx) =
+        let Cx mnr ixs vals = untag cx
+        in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
