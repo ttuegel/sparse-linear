@@ -172,6 +172,32 @@ main = defaultMain $ testGroup "Properties"
             "a + b == b + a :: Matrix C Col (Complex Double)"
             (prop_add_commute :: Prop_Add Col (Complex Double))
         ]
+    , testGroup "Involutive"
+        [ QC.testProperty
+            "transpose (transpose a) == a :: Matrix C Row Double"
+            (prop_trans_trans :: Prop2 C Row Double)
+        , QC.testProperty
+            "transpose (transpose a) == a :: Matrix C Col Double"
+            (prop_trans_trans :: Prop2 C Col Double)
+        , QC.testProperty
+            "transpose (transpose a) == a :: Matrix U Row Double"
+            (prop_trans_trans :: Prop2 U Row Double)
+        , QC.testProperty
+            "transpose (transpose a) == a :: Matrix U Col Double"
+            (prop_trans_trans :: Prop2 U Col Double)
+        , QC.testProperty
+            "transpose (transpose a) == a :: Matrix C Row (Complex Double)"
+            (prop_adj_adj :: Prop2 C Row (Complex Double))
+        , QC.testProperty
+            "transpose (transpose a) == a :: Matrix C Col (Complex Double)"
+            (prop_adj_adj :: Prop2 C Col (Complex Double))
+        , QC.testProperty
+            "transpose (transpose a) == a :: Matrix U Row (Complex Double)"
+            (prop_adj_adj :: Prop2 U Row (Complex Double))
+        , QC.testProperty
+            "transpose (transpose a) == a :: Matrix U Col (Complex Double)"
+            (prop_adj_adj :: Prop2 U Col (Complex Double))
+        ]
     , testGroup "Multiplicative"
         [
         ]
@@ -179,9 +205,6 @@ main = defaultMain $ testGroup "Properties"
         [
         ]
     , testGroup "RightModule"
-        [
-        ]
-    , testGroup "Involutive"
         [
         ]
     ]
@@ -220,3 +243,11 @@ prop_add_inv (a, _) = add a (over each negate a) === (over each (const 0) a)
 
 prop_add_commute :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
 prop_add_commute (a, b) = add a b === add b a
+
+type Prop2 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
+
+prop_trans_trans :: (Each (Matrix fmt ord a) (Matrix fmt ord a) a a, Eq (Matrix fmt ord a), FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord a), Unbox a) => Prop2 fmt ord a
+prop_trans_trans (a, _) = transpose (transpose a) === a
+
+prop_adj_adj :: (Each (Matrix fmt ord (Complex a)) (Matrix fmt ord (Complex a)) (Complex a) (Complex a), Eq (Matrix fmt ord (Complex a)), FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord (Complex a)), Unbox a) => Prop2 fmt ord (Complex a)
+prop_adj_adj (a, _) = adjoint (adjoint a) === a

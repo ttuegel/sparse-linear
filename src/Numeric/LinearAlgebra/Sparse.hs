@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
@@ -11,7 +12,7 @@ module Numeric.LinearAlgebra.Sparse
     , OrderK(..), OrderR(..)
     , FormatK(..), FormatR(..)
     , slicesF, rowsF, colsF, slice
-    , pack, reorder
+    , pack, reorder, adjoint
     , empty, diag, ident
     , mulV, mulVM, mul, add
     ) where
@@ -23,6 +24,7 @@ import Control.Monad (liftM, liftM2, when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.AEq
+import Data.Complex
 import Data.List (foldl')
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
@@ -565,3 +567,16 @@ instance Unbox a => Each (Matrix C ord a) (Matrix C ord a) a a where
     each f mat@(MatC cx) =
         let Cx mnr ixs vals = untag cx
         in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
+
+instance Unbox a => Each (Matrix U ord a) (Matrix U ord a) a a where
+    each f mat@(MatU ux) =
+        let Ux r c vals = untag ux
+        in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
+
+adjoint :: ( Each (Matrix fmt ord (Complex a))
+                  (Matrix fmt ord (Complex a))
+                  (Complex a) (Complex a)
+           , FormatR fmt, OrderR ord, RealFloat a, Unbox a
+           )
+        => Matrix fmt ord (Complex a) -> Matrix fmt ord (Complex a)
+adjoint = over each conjugate . transpose
