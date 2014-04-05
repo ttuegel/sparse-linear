@@ -171,6 +171,19 @@ main = defaultMain $ testGroup "Properties"
         , QC.testProperty
             "a + b == b + a :: Matrix C Col (Complex Double)"
             (prop_add_commute :: Prop2 C Col (Complex Double))
+
+        , QC.testProperty
+            "c(a + b) == cb + ca (Scalar) :: Matrix C Row Double"
+            (prop_add_linear :: Double -> Prop2Bool C Row Double)
+        , QC.testProperty
+            "c(a + b) == cb + ca (Scalar) :: Matrix C Row (Complex Double)"
+            (prop_add_linear :: Complex Double -> Prop2Bool C Row (Complex Double))
+        , QC.testProperty
+            "c(a + b) == cb + ca (Scalar) :: Matrix C Col Double"
+            (prop_add_linear :: Double -> Prop2Bool C Col Double)
+        , QC.testProperty
+            "c(a + b) == cb + ca (Scalar) :: Matrix C Col (Complex Double)"
+            (prop_add_linear :: Complex Double -> Prop2Bool C Col (Complex Double))
         ]
     , testGroup "Involutive"
         [ QC.testProperty
@@ -241,6 +254,10 @@ prop_add_inv (a, _) = add a (over each negate a) === (over each (const 0) a)
 
 prop_add_commute :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop2 C ord a
 prop_add_commute (a, b) = add a b === add b a
+
+prop_add_linear :: (AEq.AEq a, Num a, OrderR ord, Show a, Unbox a) => a -> Prop2Bool C ord a
+prop_add_linear factor (a, b) = scale (add a b) AEq.~== add (scale a) (scale b)
+  where scale = over each (* factor)
 
 prop_trans_trans  :: (FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord a), Unbox a)
                   => Prop2 fmt ord a
