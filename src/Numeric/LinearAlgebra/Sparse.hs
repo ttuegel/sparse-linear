@@ -64,7 +64,6 @@ class OrderR (ord :: OrderK) where
     col :: (Field1 s s a a, Field2 s s a a)
         => Lens' (Tagged ord s) a
 
-{-# INLINE comparator #-}
 comparator  :: (Field1 s s a a, Field2 s s a a, Ord a, OrderR ord)
             => Proxy ord -> s -> s -> Ordering
 comparator witness a' b' =
@@ -77,20 +76,12 @@ instance OrderR Row where
     minor f = fmap (tag Proxy) . _2 f . untag
     row f = fmap (tag Proxy) . _1 f . untag
     col f = fmap (tag Proxy) . _2 f . untag
-    {-# INLINE major #-}
-    {-# INLINE minor #-}
-    {-# INLINE row #-}
-    {-# INLINE col #-}
 
 instance OrderR Col where
     major f = fmap (tag Proxy) . _2 f . untag
     minor f = fmap (tag Proxy) . _1 f . untag
     row f = fmap (tag Proxy) . _2 f . untag
     col f = fmap (tag Proxy) . _1 f . untag
-    {-# INLINE major #-}
-    {-# INLINE minor #-}
-    {-# INLINE row #-}
-    {-# INLINE col #-}
 
 -- | Compressed sparse format
 data Cx a = Cx !Int -- ^ minor dimension
@@ -252,17 +243,6 @@ instance FormatR U where
         let Ux r c vals = untag ux
         in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
 
-    {-# INLINE dim #-}
-    {-# INLINE dimF #-}
-    {-# INLINE nonzero #-}
-    {-# INLINE compress #-}
-    {-# INLINE decompress #-}
-    {-# INLINE transpose #-}
-    {-# INLINE sliceG #-}
-    {-# INLINE sliceS #-}
-    {-# INLINE fromU #-}
-    {-# INLINE fromC #-}
-
 getSliceExtentsU :: (OrderR ord, Unbox a) => Int -> Matrix U ord a -> (Int, Int)
 getSliceExtentsU i (MatU ux) =
     untag $ unproxy $ \witness ->
@@ -377,17 +357,6 @@ instance FormatR C where
         let Cx mnr ixs vals = untag cx
         in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
 
-    {-# INLINE dim #-}
-    {-# INLINE dimF #-}
-    {-# INLINE nonzero #-}
-    {-# INLINE compress #-}
-    {-# INLINE decompress #-}
-    {-# INLINE sliceG #-}
-    {-# INLINE sliceS #-}
-    {-# INLINE transpose #-}
-    {-# INLINE fromU #-}
-    {-# INLINE fromC #-}
-
 instance (Eq a, FormatR fmt, Unbox a) => Eq (Matrix fmt ord a) where
     (==) = _eq
 
@@ -399,15 +368,12 @@ instance (AEq a, Unbox a) => AEq (Matrix U ord a) where
     (===) (MatU a) (MatU b) = untag a === untag b
     (~==) (MatU a) (MatU b) = untag a ~== untag b
 
-{-# INLINE generate #-}
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
 
-{-# INLINE empty #-}
 empty :: (FormatR fmt, OrderR ord, Unbox a) => Matrix fmt ord a
 empty = fromU $ pack 0 0 $ U.empty
 
-{-# INLINE slice #-}
 -- | 'Lens' for accessing slices of a matrix. If you aren't modifying the
 -- matrix, you probably want 'sliceG' instead. This function will create
 -- a copy of the matrix.
@@ -415,33 +381,27 @@ slice :: (FormatR fmt, OrderR ord, Unbox a)
       => Int -> Lens' (Matrix fmt ord a) (Vector (Int, a))
 slice i = lens (sliceG i) (sliceS i)
 
-{-# INLINE slicesF #-}
 -- | Fold over the slices in a matrix using 'sliceG'.
 slicesF :: (FormatR fmt, OrderR ord, Unbox a)
         => Fold (Matrix fmt ord a) (Vector (Int, a))
 slicesF = folding $ \mat -> generate (view (dimF . _1) mat) $ \i -> sliceG i mat
 
-{-# INLINE rowsF #-}
 rowsF :: (FormatR fmt, Unbox a)
       => Fold (Matrix fmt Row a) (Vector (Int, a))
 rowsF = slicesF
 
-{-# INLINE colsF #-}
 colsF :: (FormatR fmt, Unbox a)
       => Fold (Matrix fmt Col a) (Vector (Int, a))
 colsF = slicesF
 
-{-# INLINE sortUx #-}
 sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
 sortUx witness (Ux nr nc vals) =
     Ux nr nc $ U.modify (sortBy $ comparator witness) vals
 
-{-# INLINE reorder #-}
 reorder :: (OrderR ord', Unbox a) => Matrix U ord a -> Matrix U ord' a
 reorder (MatU mat) =
     MatU $ unproxy $ \witness -> sortUx witness $ untag mat
 
-{-# INLINE pack #-}
 pack :: (FormatR fmt, OrderR ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt ord a
 pack r c v
@@ -458,7 +418,6 @@ diag v =
 ident :: (FormatR fmt, Num a, OrderR ord, Unbox a) => Int -> Matrix fmt ord a
 ident i = diag $ U.replicate i 1
 
-{-# INLINE mulV #-}
 mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
 mulV mat xs_ =
     assert (c == U.length xs)
@@ -474,7 +433,6 @@ mulV mat xs_ =
     xs = V.convert xs_
     (r, c) = view dim mat
 
-{-# INLINE mulVM #-}
 mulVM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
       => Matrix C Row a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 mulVM mat src dst =
@@ -487,7 +445,6 @@ mulVM mat src dst =
   where
     (r, c) = view dim mat
 
-{-# INLINE mul #-}
 mul :: (Num a, OrderR ord, Unbox a)
     => Matrix C Col a -> Matrix C Row a -> Matrix C ord a
 mul a b =
@@ -511,7 +468,6 @@ mul a b =
           ixs = U.iterateN mjr (+ stride) 0
       in Cx mnr ixs vals
 
-{-# INLINE add #-}
 add :: (Num a, OrderR ord, Unbox a)
     => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
 add a b =
