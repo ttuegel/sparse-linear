@@ -9,12 +9,13 @@ module Numeric.LinearAlgebra.Sparse
     , Unbox
     , OrderK(..), OrderR(..)
     , FormatK(..), FormatR(..)
-    , slicesF, rowsF, colsF
+    , slicesF, rowsF, colsF, slice
     , pack, reorder
     , empty, diag, ident
     , mulV, mulVM, mul, add
     ) where
 
+import Control.Applicative hiding (empty)
 import Control.Exception (assert)
 import Control.Lens
 import Control.Monad (liftM, liftM2, when)
@@ -337,7 +338,7 @@ instance FormatR C where
     sliceG i (MatC cx) =
         let Cx _ starts vals = untag cx
             start = starts U.! i
-            end = fromMaybe (U.length vals) $ starts U.!? i
+            end = fromMaybe (U.length vals) $ starts U.!? succ i
         in assert (i < U.length starts)
         $ (U.slice start $ end - start) vals
 
@@ -507,17 +508,15 @@ add a b =
           let go i start
                 | i < majorA = do
                   MU.unsafeWrite ixs i start
-                  let sliceA = view (slice i) a
-                      sliceB = view (slice i) b
+                  let sliceA = sliceG i a
+                      sliceB = sliceG i b
                   len <- addSlicesInto
                     (MU.slice start (U.length sliceA + U.length sliceB) vals)
                     sliceA sliceB
                   go (succ i) (start + len)
                 | otherwise = return start
           len <- go 0 0
-          vals_ <- U.unsafeFreeze $ MU.unsafeSlice 0 len vals
-          ixs_ <- U.unsafeFreeze ixs
-          return (vals_, ixs_)
+          (,) <$> U.unsafeFreeze (MU.unsafeSlice 0 len vals) <*> U.unsafeFreeze ixs
     in assert (view dimF a == view dimF b)
         $ MatC $ tag Proxy $ Cx minorA ixsC valsC
   where
@@ -531,7 +530,7 @@ add a b =
           len2 = U.length src2
           len = MU.length dst
       MU.move (MU.slice 0 len1 dst) =<< U.thaw src1
-      MU.move (MU.slice len1 (len1 + len2) dst) =<< U.thaw src2
+      MU.move (MU.slice len1 len2 dst) =<< U.thaw src2
       sortBy (comparing fst) dst
 
       -- Accumulate elements in same minor dimension by adding their

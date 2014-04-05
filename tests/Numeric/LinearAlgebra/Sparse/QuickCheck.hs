@@ -8,6 +8,8 @@ module Numeric.LinearAlgebra.Sparse.QuickCheck where
 import Control.Applicative
 import Control.Lens
 import Control.Monad (liftM)
+import Data.Function (on)
+import Data.List (nubBy)
 import Data.Maybe (catMaybes)
 import Data.Proxy.PolyKind
 import Data.Vector.Unboxed (Unbox)
@@ -18,11 +20,12 @@ import Numeric.LinearAlgebra.Sparse
 
 arbitraryMat  :: (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
               => Int -> Int -> Gen (Matrix fmt ord a)
-arbitraryMat r c = (fromU . pack r c . U.fromList . take nnz . filter checkBounds . map fixIndices) <$> arbitrary
+arbitraryMat r c = (fromU . pack r c . U.fromList . nubBy ((==) `on` indices) . take nnz . filter checkBounds . map fixIndices) <$> arbitrary
   where
     nnz = (r * c) `div` 2
     fixIndices (i, j, x) = (abs i, abs j, x)
     checkBounds (i, j, _) = i < r && j < c
+    indices (i, j, _) = (i, j)
 
 shrinkMat :: (FormatR fmt, OrderR ord, Unbox a)
           => Matrix fmt ord a -> [Matrix fmt ord a]

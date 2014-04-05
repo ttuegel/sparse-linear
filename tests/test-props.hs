@@ -4,6 +4,7 @@
 {-# LANGUAGE PolyKinds #-}
 module Main where
 
+import Control.Lens
 import qualified Data.AEq as AEq
 import Data.Complex
 import Test.Tasty
@@ -40,6 +41,7 @@ main = defaultMain $ testGroup "Properties"
         , QC.testProperty
             "a == a :: Matrix U Col (Complex Double)"
             (prop_eq_trans :: Prop_Eq_Trans U Col (Complex Double))
+
         , QC.testProperty
             "a ~== a :: Matrix C Row Double"
             (prop_aeq_trans :: Prop_Eq_Trans C Row Double)
@@ -64,6 +66,7 @@ main = defaultMain $ testGroup "Properties"
         , QC.testProperty
             "a ~== a :: Matrix U Col (Complex Double)"
             (prop_aeq_trans :: Prop_Eq_Trans U Col (Complex Double))
+
         , QC.testProperty
             "a === a :: Matrix C Row Double"
             (prop_eeq_trans :: Prop_Eq_Trans C Row Double)
@@ -117,7 +120,31 @@ main = defaultMain $ testGroup "Properties"
             (prop_fmt_id_U :: Prop_Fmt_Id U Col (Complex Double))
         ]
     , testGroup "Additive"
-        [
+        [ QC.testProperty
+            "(a + b) + c == a + (b + c) :: Matrix C Row Double"
+            (prop_add_assoc :: Prop_Add_Assoc Row Double)
+        , QC.testProperty
+            "(a + b) + c == a + (b + c) :: Matrix C Row (Complex Double)"
+            (prop_add_assoc :: Prop_Add_Assoc Row (Complex Double))
+        , QC.testProperty
+            "(a + b) + c == a + (b + c) :: Matrix C Col Double"
+            (prop_add_assoc :: Prop_Add_Assoc Col Double)
+        , QC.testProperty
+            "(a + b) + c == a + (b + c) :: Matrix C Col (Complex Double)"
+            (prop_add_assoc :: Prop_Add_Assoc Col (Complex Double))
+
+        , QC.testProperty
+            "a + 0 == a :: Matrix C Row Double"
+            (prop_add_ident :: Prop_Add_Ident Row Double)
+        , QC.testProperty
+            "a + 0 == a :: Matrix C Row (Complex Double)"
+            (prop_add_ident :: Prop_Add_Ident Row (Complex Double))
+        , QC.testProperty
+            "a + 0 == a :: Matrix C Col Double"
+            (prop_add_ident :: Prop_Add_Ident Col Double)
+        , QC.testProperty
+            "a + 0 == a :: Matrix C Col (Complex Double)"
+            (prop_add_ident :: Prop_Add_Ident Col (Complex Double))
         ]
     , testGroup "Multiplicative"
         [
@@ -151,3 +178,13 @@ prop_fmt_id_C (a, _) = a === (compress . decompress) a
 
 prop_fmt_id_U :: (Eq a, OrderR ord, Show a, Unbox a) => Prop_Fmt_Id U ord a
 prop_fmt_id_U (a, _) = a === (decompress . compress) a
+
+type Prop_Add_Assoc ord a = (Matrix C ord a, Matrix C ord a, Matrix C ord a) -> Property
+
+prop_add_assoc :: (Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add_Assoc ord a
+prop_add_assoc (a, b, c) = (a `add` b) `add` c === a `add` (b `add` c)
+
+type Prop_Add_Ident ord a = (Matrix C ord a, Matrix C ord a) -> Property
+
+prop_add_ident :: (Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add_Ident ord a
+prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
