@@ -230,6 +230,15 @@ main = defaultMain $ testGroup "Properties"
         , QC.testProperty
             "(a * b) * c == a * (b * c) :: Matrix C ord (Complex Double)"
             (prop_mul_assoc :: Prop3'Bool (Complex Double))
+        , QC.testProperty
+            "transpose (a * b) == transpose a * transpose b :: Matrix C Col Double"
+            (prop_mul_trans :: Prop2Bool C Col Double)
+        , QC.testProperty
+            "transpose (a * b) == transpose a * transpose b :: Matrix C Col (Complex Double)"
+            (prop_mul_trans :: Prop2Bool C Col (Complex Double))
+        , QC.testProperty
+            "adjoint (a * b) == adjoint a * adjoint b :: Matrix C Col (Complex Double)"
+            (prop_mul_adj :: Prop2Bool C Col (Complex Double))
         ]
     , testGroup "LeftModule"
         [
@@ -301,3 +310,15 @@ prop_mul_assoc (a, b, c) = ab a b c AEq.~== bc a b c
     ab d e f = (d `mul` transpose e) `mul` f
     bc :: (Num a, Show a, Unbox a) => Matrix C Col a -> Matrix C Row a -> Matrix C Row a -> Matrix C Row a
     bc d e f = d `mul` (reorder (transpose e) `mul` f)
+
+prop_mul_trans :: (AEq.AEq a, Num a, Unbox a) => Prop2Bool C Col a
+prop_mul_trans (a, b) = c AEq.~== transpose b `mul` reorder a
+  where
+    c = transpose (transpose a `mul` reorder b)
+    _ = c `add` a
+
+prop_mul_adj :: (AEq.AEq (Complex a), Num a, RealFloat a, Unbox a) => Prop2Bool C Col (Complex a)
+prop_mul_adj (a, b) = c AEq.~== adjoint b `mul` reorder a
+  where
+    c = adjoint (adjoint a `mul` reorder b)
+    _ = c `add` a
