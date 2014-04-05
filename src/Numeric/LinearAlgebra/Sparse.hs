@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
@@ -239,7 +238,7 @@ instance FormatR U where
 
     _eq (MatU a) (MatU b) = untag a == untag b
 
-    _each f mat@(MatU ux) =
+    _each f (MatU ux) =
         let Ux r c vals = untag ux
         in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
 
@@ -353,7 +352,7 @@ instance FormatR C where
 
     _eq (MatC a) (MatC b) = untag a == untag b
 
-    _each f mat@(MatC cx) =
+    _each f (MatC cx) =
         let Cx mnr ixs vals = untag cx
         in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
 
@@ -534,10 +533,6 @@ instance (FormatR fmt, Unbox a, Unbox b) =>
     Each (Matrix fmt ord a) (Matrix fmt ord b) a b where
     each = _each
 
-adjoint :: ( Each (Matrix fmt ord (Complex a))
-                  (Matrix fmt ord (Complex a))
-                  (Complex a) (Complex a)
-           , FormatR fmt, OrderR ord, RealFloat a, Unbox a
-           )
+adjoint :: (FormatR fmt, OrderR ord, RealFloat a, Unbox a)
         => Matrix fmt ord (Complex a) -> Matrix fmt ord (Complex a)
 adjoint = over each conjugate . transpose
