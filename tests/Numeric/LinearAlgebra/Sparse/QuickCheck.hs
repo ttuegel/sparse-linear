@@ -18,8 +18,8 @@ import Test.QuickCheck
 
 import Numeric.LinearAlgebra.Sparse
 
-arbitraryMat  :: (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
-              => Int -> Int -> Gen (Matrix fmt ord a)
+arbitraryMat  :: (Arbitrary a, FormatR fmt, Orient or, Unbox a)
+              => Int -> Int -> Gen (Matrix fmt or a)
 arbitraryMat r c = (fromU . pack r c . U.fromList . nubBy ((==) `on` indices) . take nnz . filter checkBounds . map fixIndices) <$> arbitrary
   where
     nnz = (r * c) `div` 2
@@ -27,8 +27,8 @@ arbitraryMat r c = (fromU . pack r c . U.fromList . nubBy ((==) `on` indices) . 
     checkBounds (i, j, _) = i < r && j < c
     indices (i, j, _) = (i, j)
 
-shrinkMat :: (FormatR fmt, OrderR ord, Unbox a)
-          => Matrix fmt ord a -> [Matrix fmt ord a]
+shrinkMat :: (FormatR fmt, Orient or, Unbox a)
+          => Matrix fmt or a -> [Matrix fmt or a]
 shrinkMat mat =
     let (r, c) = view dim mat
         dropRow | r > 1 = Just $ set dim (pred r, c) mat
@@ -38,9 +38,9 @@ shrinkMat mat =
     in catMaybes [dropRow, dropCol]
 
 -- Need pairs of matrices that are the same size, so we don't want an
--- Arbitrary instance for just (Matrix U ord a).
-instance (Arbitrary a, FormatR fmt, OrderR ord, OrderR ord', Unbox a)
-    => Arbitrary (Matrix fmt ord a, Matrix fmt ord' a) where
+-- Arbitrary instance for just (Matrix U or a).
+instance (Arbitrary a, FormatR fmt, Orient or, Orient or', Unbox a)
+    => Arbitrary (Matrix fmt or a, Matrix fmt or' a) where
 
     arbitrary = do
       r <- abs <$> arbitrarySizedIntegral
@@ -50,10 +50,10 @@ instance (Arbitrary a, FormatR fmt, OrderR ord, OrderR ord', Unbox a)
     shrink (a, b) = zip (shrinkMat a) (shrinkMat b)
 
 -- Need triples of matrices that are the same size, so we don't want an
--- Arbitrary instance for just (Matrix U ord a).
+-- Arbitrary instance for just (Matrix U or a).
 instance
-    (Arbitrary a, FormatR fmt, OrderR ord, OrderR ord', OrderR ord'', Unbox a)
-    => Arbitrary (Matrix fmt ord a, Matrix fmt ord' a, Matrix fmt ord'' a) where
+    (Arbitrary a, FormatR fmt, Orient or, Orient or', Orient or'', Unbox a)
+    => Arbitrary (Matrix fmt or a, Matrix fmt or' a, Matrix fmt or'' a) where
 
     arbitrary = do
       r <- abs <$> arbitrarySizedIntegral
@@ -63,9 +63,9 @@ instance
     shrink (a, b, c) = zip3 (shrinkMat a) (shrinkMat b) (shrinkMat c)
 
 -- Need pairs of matrices that are the same size, so we don't want an
--- Arbitrary instance for just (Matrix U ord a).
-instance (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
-    => Arbitrary (Matrix fmt ord a, Vector a) where
+-- Arbitrary instance for just (Matrix U or a).
+instance (Arbitrary a, FormatR fmt, Orient or, Unbox a)
+    => Arbitrary (Matrix fmt or a, Vector a) where
 
     arbitrary = do
       r <- abs <$> arbitrarySizedIntegral
@@ -77,9 +77,9 @@ instance (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
         (r, c) = view dim a
 
 -- Need pairs of matrices that are the same size, so we don't want an
--- Arbitrary instance for just (Matrix U ord a).
-instance (Arbitrary a, FormatR fmt, OrderR ord, OrderR ord', Unbox a)
-    => Arbitrary (Matrix fmt ord a, Matrix fmt ord' a, Vector a) where
+-- Arbitrary instance for just (Matrix U or a).
+instance (Arbitrary a, FormatR fmt, Orient or, Orient or', Unbox a)
+    => Arbitrary (Matrix fmt or a, Matrix fmt or' a, Vector a) where
 
     arbitrary = do
       r <- abs <$> arbitrarySizedIntegral

@@ -8,7 +8,7 @@
 module Numeric.LinearAlgebra.Sparse
     ( Matrix
     , Unbox
-    , OrderK(..), OrderR(..)
+    , OrientK(..), Orient(..)
     , FormatK(..), FormatR(..)
     , slicesF, rowsF, colsF, slice
     , pack, reorder, adjoint
@@ -40,47 +40,28 @@ import Data.Vector.Algorithms.Search (binarySearchL, binarySearchLBy)
 import Data.Proxy.PolyKind
 
 -- | Matrix order
-data OrderK
-    = Row -- ^ row-major
+data OrientK
+    = Row  -- ^ row-major
     | Col -- ^ column-major
+
+class Orient (ord :: OrientK) where
+    -- | Operate on a (major, minor, ...) tuple as if it were in
+    -- (row, column, ...) order, or vice versa
+    reorient :: (Field1 s s a a, Field2 s s a a)
+             => Proxy ord -> s -> s
+
+instance Orient Row where
+    reorient Proxy = id
+    {-# INLINE reorient #-}
+
+instance Orient Col where
+    reorient Proxy x = x & _1 .~ (x ^. _2) & _2 .~ (x ^. _1)
+    {-# INLINE reorient #-}
 
 -- | Matrix formats
 data FormatK
     = U -- ^ uncompressed
     | C -- ^ compressed
-
-class OrderR (ord :: OrderK) where
-    -- | Extract the major index from a tuple in (row, column, ...) order.
-    major :: (Field1 s s a a, Field2 s s a a)
-          => Lens' (Tagged ord s) a
-    -- | Extract the minor index from a tuple in (row, column, ...) order
-    minor :: (Field1 s s a a, Field2 s s a a)
-          => Lens' (Tagged ord s) a
-    -- | Extract the row index from a tuple in (major, minor, ...) order.
-    row :: (Field1 s s a a, Field2 s s a a)
-        => Lens' (Tagged ord s) a
-    -- | Extract the column index from a tuple in (major, minor, ...) order
-    col :: (Field1 s s a a, Field2 s s a a)
-        => Lens' (Tagged ord s) a
-
-comparator  :: (Field1 s s a a, Field2 s s a a, Ord a, OrderR ord)
-            => Proxy ord -> s -> s -> Ordering
-comparator witness a' b' =
-    let a = tag witness a'
-        b = tag witness b'
-    in comparing (view major) a b <> comparing (view minor) a b
-
-instance OrderR Row where
-    major f = fmap (tag Proxy) . _1 f . untag
-    minor f = fmap (tag Proxy) . _2 f . untag
-    row f = fmap (tag Proxy) . _1 f . untag
-    col f = fmap (tag Proxy) . _2 f . untag
-
-instance OrderR Col where
-    major f = fmap (tag Proxy) . _2 f . untag
-    minor f = fmap (tag Proxy) . _1 f . untag
-    row f = fmap (tag Proxy) . _2 f . untag
-    col f = fmap (tag Proxy) . _1 f . untag
 
 -- | Compressed sparse format
 data Cx a = Cx !Int -- ^ minor dimension
@@ -89,21 +70,26 @@ data Cx a = Cx !Int -- ^ minor dimension
   deriving (Show)
 
 instance (Eq a, Unbox a) => Eq (Cx a) where
-    (==) (Cx mnrA ixsA valsA) (Cx mnrB ixsB valsB) =
-        mnrA == mnrB && ixsA == ixsB && valsA == valsB
+    (==) (Cx minorA ixsA valsA) (Cx minorB ixsB valsB) =
+        minorA == minorB && ixsA == ixsB && valsA == valsB
+    {-# INLINE (==) #-} -- Just boilerplate
+
+{-# INLINE cxAEqHelper #-}
+-- Inlined because it's boilerplate and not exported
+cxAEqHelper :: Unbox a => (a -> a -> Bool) -> (Cx a -> Cx a -> Bool)
+cxAEqHelper f (Cx minorA ixsA valsA) (Cx minorB ixsB valsB) =
+    let (minorsA, coeffsA) = U.unzip valsA
+        (minorsB, coeffsB) = U.unzip valsB
+    in minorA == minorB && ixsA == ixsB && minorsA == minorsB
+        && U.and (U.zipWith f coeffsA coeffsB)
 
 instance (AEq a, Unbox a) => AEq (Cx a) where
-    (===) (Cx mnrA ixsA valsA) (Cx mnrB ixsB valsB) =
-        let (nsA, coeffsA) = U.unzip valsA
-            (nsB, coeffsB) = U.unzip valsB
-        in mnrA == mnrB && ixsA == ixsB && nsA == nsB
-            && U.and (U.zipWith (===) coeffsA coeffsB)
-
-    (~==) (Cx mnrA ixsA valsA) (Cx mnrB ixsB valsB) =
-        let (nsA, coeffsA) = U.unzip valsA
-            (nsB, coeffsB) = U.unzip valsB
-        in mnrA == mnrB && ixsA == ixsB && nsA == nsB
-            && U.and (U.zipWith (~==) coeffsA coeffsB)
+    (===) = cxAEqHelper (===)
+    (~==) = cxAEqHelper (~==)
+    {-# INLINE (===) #-}
+    {-# INLINE (~==) #-}
+    -- These are inlined because they are boilerplate, but they could stop
+    -- vector fusion rules from firing.
 
 -- | Uncompressed sparse format
 data Ux a = Ux !Int -- ^ row dimension
@@ -113,60 +99,65 @@ data Ux a = Ux !Int -- ^ row dimension
   deriving (Show)
 
 instance (Eq a, Unbox a) => Eq (Ux a) where
-    (==) (Ux rA cA valsA) (Ux rB cB valsB) =
-        rA == rB && cA == cB && valsA == valsB
+    (==) (Ux nRowsA nColsA coeffsA) (Ux nRowsB nColsB coeffsB) =
+        nRowsA == nRowsB && nColsA == nColsB && coeffsA == coeffsB
+    {-# INLINE (==) #-} -- Just boilerplate
+
+{-# INLINE uxAEqHelper #-}
+-- Inlined because it's boilerplate and not exported
+uxAEqHelper :: Unbox a => (a -> a -> Bool) -> (Ux a -> Ux a -> Bool)
+uxAEqHelper f (Ux nRowsA nColsA triplesA) (Ux nRowsB nColsB triplesB) =
+    let (rowsA, colsA, coeffsA) = U.unzip3 triplesA
+        (rowsB, colsB, coeffsB) = U.unzip3 triplesB
+    in nRowsA == nRowsB
+        && nColsA == nColsB && rowsA == rowsB && colsA == colsB
+        && U.and (U.zipWith f coeffsA coeffsB)
 
 instance (AEq a, Unbox a) => AEq (Ux a) where
-    (===) (Ux rA cA valsA) (Ux rB cB valsB) =
-        let (rsA, csA, coeffsA) = U.unzip3 valsA
-            (rsB, csB, coeffsB) = U.unzip3 valsB
-        in rA == rB && cA == cB && rsA == rsB && csA == csB
-            && U.and (U.zipWith (===) coeffsA coeffsB)
+    (===) = uxAEqHelper (===)
+    (~==) = uxAEqHelper (~==)
+    {-# INLINE (===) #-}
+    {-# INLINE (~==) #-}
+    -- These are inlined because they are boilerplate, but they could stop
+    -- vector fusion rules from firing.
 
-    (~==) (Ux rA cA valsA) (Ux rB cB valsB) =
-        let (rsA, csA, coeffsA) = U.unzip3 valsA
-            (rsB, csB, coeffsB) = U.unzip3 valsB
-        in rA == rB && cA == cB && rsA == rsB && csA == csB
-            && U.and (U.zipWith (~==) coeffsA coeffsB)
-
-data family Matrix :: FormatK -> OrderK -> * -> *
+data family Matrix :: FormatK -> OrientK -> * -> *
 newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
   deriving (Show)
 newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
   deriving (Show)
 
 class FormatR (fmt :: FormatK) where
-    -- | The dimensions of a matrix in (row, column) order.
-    dim :: (OrderR ord, Unbox a) => Lens' (Matrix fmt ord a) (Int, Int)
+    -- | The dimensions of a matrix in (row, column) orer.
+    dim :: (Orient or, Unbox a) => Lens' (Matrix fmt or a) (Int, Int)
 
-    -- | The dimensions of a matrix in format-specific (major, minor)
-    -- order.
-    dimF :: (OrderR ord, Unbox a) => Lens' (Matrix fmt ord a) (Int, Int)
+    -- | The dimensions of a matrix in (major, minor) orer.
+    dimF :: (Orient or, Unbox a) => Lens' (Matrix fmt or a) (Int, Int)
 
     -- | The number of non-zero entries in the matrix.
-    nonzero :: Unbox a => Matrix fmt ord a -> Int
+    nonzero :: Unbox a => Matrix fmt or a -> Int
 
-    compress :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix C ord a
+    compress :: (Orient or, Unbox a) => Matrix fmt or a -> Matrix C or a
 
-    decompress :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix U ord a
+    decompress :: (Orient or, Unbox a) => Matrix fmt or a -> Matrix U or a
 
-    fromU :: (OrderR ord, Unbox a) => Matrix U ord a -> Matrix fmt ord a
+    fromU :: (Orient or, Unbox a) => Matrix U or a -> Matrix fmt or a
 
-    fromC :: (OrderR ord, Unbox a) => Matrix C ord a -> Matrix fmt ord a
+    fromC :: (Orient or, Unbox a) => Matrix C or a -> Matrix fmt or a
 
-    transpose :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a
-    reorder :: (OrderR ord, OrderR ord', Unbox a) => Matrix fmt ord a -> Matrix fmt ord' a
+    transpose :: (Orient or, Unbox a) => Matrix fmt or a -> Matrix fmt or a
+    reorder :: (Orient or, Orient or', Unbox a) => Matrix fmt or a -> Matrix fmt or' a
 
-    sliceG  :: (OrderR ord, Unbox a)
-            => Int -> Matrix fmt ord a -> Vector (Int, a)
-    sliceS  :: (OrderR ord, Unbox a)
-            => Int -> Matrix fmt ord a -> Vector (Int, a) -> Matrix fmt ord a
+    sliceG  :: (Orient or, Unbox a)
+            => Int -> Matrix fmt or a -> Vector (Int, a)
+    sliceS  :: (Orient or, Unbox a)
+            => Int -> Matrix fmt or a -> Vector (Int, a) -> Matrix fmt or a
 
-    _eq :: (Eq a, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a -> Bool
-    _aeq :: (AEq a, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a -> Bool
-    _eeq :: (AEq a, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a -> Bool
+    _eq :: (Eq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
+    _aeq :: (AEq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
+    _eeq :: (AEq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
     _each :: (Unbox a, Unbox b)
-          => Traversal (Matrix fmt ord a) (Matrix fmt ord b) a b
+          => Traversal (Matrix fmt or a) (Matrix fmt or b) a b
 
 instance FormatR U where
     dim = lens getDim setDim
@@ -175,37 +166,32 @@ instance FormatR U where
         setDim (MatU ux) (r', c') =
             MatU $ unproxy $ \witness ->
                 let Ux r c vals = proxy ux witness
-                    vals' | r' < r || c' < c =
-                        U.filter (\(i, j, _) -> i < r' && j < c') vals
-                          | otherwise = vals
-                in Ux r' c' vals'
+                    inBounds (i, j, _) = i < r' && j < c'
+                    truncate | r' < r || c' < c = U.filter inBounds
+                             | otherwise = id
+                in Ux r' c' $ truncate vals
 
-    dimF = lens getDimF setDimF
+    dimF = lens getDim setDim
       where
-        getDimF mat@(MatU ux) =
-            let _dim = copyTag ux $ view dim mat
-                mjr = view major _dim
-                mnr = view minor _dim
-            in (mjr, mnr)
-        setDimF mat@(MatU ux) _dimF =
-            let r = view row $ copyTag ux _dimF
-                c = view col $ copyTag ux _dimF
-            in set dim (r, c) mat
+        getDim mat@(MatU ux) =
+            untag $ unproxy $ \witness ->
+                let _ = proxy ux witness
+                in reorient witness $ mat ^. dim
+        setDim mat@(MatU ux) dim' =
+            untag $ unproxy $ \witness ->
+                let _ = proxy ux witness
+                in mat & dim .~ reorient witness dim'
 
-    nonzero (MatU ux) =
-      let Ux _ _ vals = untag ux
-      in U.length vals
+    nonzero (MatU ux) = let Ux _ _ vals = untag ux in U.length vals
 
     compress mat@(MatU ux) =
         MatC $ unproxy $ \witness ->
           let (Ux _ _ vals) = proxy ux witness
-              (rows_, cols_, coeffs) = U.unzip3 vals
-              (m, n) = view dimF mat
-              majors = view major $ tag witness (rows_, cols_)
-              minors = view minor $ tag witness (rows_, cols_)
+              (m, n) = mat ^. dimF
+              (majors, minors, coeffs) = reorient witness $ U.unzip3 vals
               ixs = runST $ do
-                majorsM <- U.thaw majors
-                U.generateM m $ binarySearchL majorsM
+                majors_ <- U.thaw majors
+                U.generateM m $ binarySearchL majors_
           in Cx n ixs $ U.zip minors coeffs
 
     decompress x = x
@@ -215,31 +201,30 @@ instance FormatR U where
             let (Ux r c vals) = proxy ux witness
             in sortUx witness $ Ux c r $ U.map (\(x, y, z) -> (y, x, z)) vals
 
-    reorder (MatU mat) =
-        MatU $ unproxy $ \witness -> sortUx witness $ untag mat
+    reorder (MatU mat) = MatU $ unproxy $ \witness -> sortUx witness $ untag mat
 
     sliceG i mat@(MatU ux)
         | i < view (dimF . _1) mat =
             untag $ unproxy $ \witness ->
                 let Ux _ _ vals = proxy ux witness
                     (start, end) = getSliceExtentsU i mat
-                    (rs, cs, xs) = U.unzip3 $ U.slice start (end - start) vals
-                    minors = view minor $ copyTag ux (rs, cs)
-                in U.zip minors xs
+                    (_, minors, coeffs) =
+                        reorient witness
+                        $ U.unzip3
+                        $ U.slice start (end - start) vals
+                in U.zip minors coeffs
         | otherwise = error "sliceG: index out of bounds!"
 
     sliceS i mat@(MatU ux) sl =
         MatU $ unproxy $ \witness ->
             let Ux r c vals = proxy ux witness
                 (start, end) = getSliceExtentsU i mat
-                (mnrs, xs) = U.unzip sl
-                mjrs = U.replicate (U.length sl) i
-                _ixs = copyTag ux $ (mjrs, mnrs)
-                rs = view row _ixs
-                cs = view col _ixs
+                (minors, coeffs) = U.unzip sl
+                majors = U.replicate (U.length sl) i
+                (rows, cols) = reorient witness (majors, minors)
                 (prefix, _) = U.splitAt start vals
                 (_, suffix) = U.splitAt end vals
-            in Ux r c $ prefix U.++ (U.zip3 rs cs xs) U.++ suffix
+            in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
 
     fromU x = x
     fromC = decompress
@@ -252,87 +237,78 @@ instance FormatR U where
         let Ux r c vals = untag ux
         in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
 
-getSliceExtentsU :: (OrderR ord, Unbox a) => Int -> Matrix U ord a -> (Int, Int)
+getSliceExtentsU :: (Orient or, Unbox a) => Int -> Matrix U or a -> (Int, Int)
 getSliceExtentsU i (MatU ux) =
     untag $ unproxy $ \witness ->
         let Ux _ _ vals = proxy ux witness
-            startEl = untag $ set major i $ tag witness (0, 0, undefined)
-            endEl = untag $ set major (succ i) $ tag witness (0, 0, undefined)
+            (majors, _, _) = reorient witness $ U.unzip3 vals
         in runST $ do
-            vals_ <- U.thaw vals
-            start <- binarySearchLBy (comparator witness) vals_ startEl
-            end <- binarySearchLBy (comparator witness) vals_ endEl
-            return (start, end)
+            majors_ <- U.thaw majors
+            (,) <$> binarySearchL majors_ i <*> binarySearchL majors_ (succ i)
 
 instance FormatR C where
     dim = lens getDim setDim
       where
         getDim mat@(MatC cx) =
-            let _dimF = copyTag cx $ view dimF mat
-                r = view row _dimF
-                c = view col _dimF
-            in (r, c)
-        setDim mat@(MatC cx) _dim =
-            let mjr' = view major $ copyTag cx _dim
-                mnr' = view minor $ copyTag cx _dim
-            in set dimF (mjr', mnr') mat
-
-
-    dimF = lens getDimF setDimF
-      where
-        getDimF (MatC cx) =
-            let Cx mnr ixs _ = untag cx
-                mjr = U.length ixs
-            in (mjr, mnr)
-        setDimF mat@(MatC cx) (mjr', mnr') =
+            untag $ unproxy $ \witness ->
+                let Cx minor ixs _ = proxy cx witness
+                in reorient witness $ (U.length ixs, minor)
+        setDim mat@(MatC cx) dim' =
             MatC $ unproxy $ \witness ->
                 let Cx _ ixs vals = proxy cx witness
-                    (mjr, mnr) = getDimF mat
+                    (major', minor') = reorient witness dim'
+                    (major, minor) = reorient witness $ getDim mat
                     nnz = U.length vals
-                    dMjr = mjr' - mjr
-                    ixs' = case compare dMjr 0 of
+                    truncateMinor
+                        | minor' < minor = U.filter (\(j, _) -> j < minor')
+                        | otherwise = id
+                    truncateMajor
+                        | major' < major = U.take (ixs U.! succ major')
+                        | otherwise = id
+                    vals' = truncateMinor $ truncateMajor vals
+                    ixs' = fixIxs $ case compare major' major of
                         EQ -> ixs
-                        LT -> U.take mjr' ixs
-                        GT -> ixs U.++ U.replicate dMjr nnz
-                    vals' = case compare dMjr 0 of
-                        EQ -> vals
-                        LT -> U.take (ixs U.! (succ mjr')) vals
-                        GT -> vals
-                    vals'' | mnr' < mnr = U.filter (\(j, _) -> j < mnr') vals
-                           | otherwise = vals
-                    ixs''
-                        | mnr' < mnr = flip U.map ixs' $ \start ->
-                            let numRemoved =
+                        LT -> U.take major' ixs
+                        GT -> ixs U.++ U.replicate (major' - major) nnz
+                    fixIxs starts
+                        | minor' < minor = flip U.map starts $ \start ->
+                            let removed =
                                     U.length
-                                    $ U.findIndices ((>= mnr') . view _1)
-                                    $ U.slice 0 start vals'
-                            in start - numRemoved
-                        | otherwise = ixs'
-                in Cx mnr' ixs'' vals''
+                                    $ U.findIndices ((>= minor') . view _1)
+                                    $ U.slice 0 start vals
+                            in start - removed
+                        | otherwise = starts
+                in Cx minor' ixs' vals'
+
+    dimF = lens getDim setDim
+      where
+        getDim mat@(MatC cx) =
+            untag $ unproxy $ \witness ->
+                let _ = proxy cx witness
+                in reorient witness $ mat ^. dim
+        setDim mat@(MatC cx) dim' =
+            untag $ unproxy $ \witness -> 
+                let _ = proxy cx witness
+                in mat & dim .~ reorient witness dim'
 
     compress x = x
 
-    nonzero (MatC cx) =
-      let Cx _ _ vals = untag cx
-      in U.length vals
+    nonzero (MatC cx) = let Cx _ _ vals = untag cx in U.length vals
 
     decompress mat@(MatC cx) =
         MatU $ unproxy $ \witness ->
-          let (Cx _ majorIxs valsC) = proxy cx witness
-              (minors, coeffs) = U.unzip valsC
-              m = view (dimF . _1) mat
-              majorLengths =
-                U.generate m $ \r ->
-                  let this = majorIxs U.! r
-                      next = fromMaybe (U.length valsC) (majorIxs U.!? (succ r))
-                  in next - this
+          let (Cx _ ixs vals) = proxy cx witness
+              (minors, coeffs) = U.unzip vals
+              major = mat ^. dimF . _1
+              nnz = U.length vals
+              lens = flip U.imap ixs $ \m start ->
+                  let next = fromMaybe nnz (ixs U.!? succ m)
+                  in next - start
               majors =
-                U.concatMap (\(r, len) -> U.replicate len r)
-                $ U.indexed majorLengths
-              rows_ = view row $ tag witness (majors, minors)
-              cols_ = view col $ tag witness (majors, minors)
-              (nr, nc) = view dim mat
-          in Ux nr nc $ U.zip3 rows_ cols_ coeffs
+                  U.concatMap (\(r, len) -> U.replicate len r) $ U.indexed lens
+              (rows, cols) = reorient witness (majors, minors)
+              (r, c) = view dim mat
+          in Ux r c $ U.zip3 rows cols coeffs
 
     transpose = compress . transpose . decompress
     reorder = compress . reorder . decompress
@@ -341,22 +317,24 @@ instance FormatR C where
         let Cx _ starts vals = untag cx
             start = starts U.! i
             end = fromMaybe (U.length vals) $ starts U.!? succ i
-        in assert (i < U.length starts)
-        $ (U.slice start $ end - start) vals
+        in if i < U.length starts
+              then U.slice start (end - start) vals
+              else error "sliceG: major index out of bounds"
 
     sliceS i (MatC cx) sl =
         MatC $ unproxy $ \witness ->
-            let Cx mnr starts vals = proxy cx witness
+            let Cx minor starts vals = proxy cx witness
                 start = starts U.! i
                 end = fromMaybe (U.length vals) $ starts U.!? i
                 dLen = U.length sl - (end - start)
-                starts' = flip U.imap starts
-                    $ \j x -> if j > i then (x + dLen) else x
+                starts' = flip U.imap starts $ \j x ->
+                    if j > i then (x + dLen) else x
                 prefix = U.take start vals
                 suffix = U.drop end vals
                 vals' = prefix U.++ sl U.++ suffix
-            in assert (i < U.length starts)
-            $ Cx mnr starts' vals'
+            in if i < U.length starts
+                  then Cx minor starts' vals'
+                  else error "sliceS: major index out of bounds"
 
     fromC x = x
     fromU = compress
@@ -379,19 +357,19 @@ instance (AEq a, FormatR fmt, Unbox a) => AEq (Matrix fmt ord a) where
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
 
-empty :: (FormatR fmt, OrderR ord, Unbox a) => Matrix fmt ord a
+empty :: (FormatR fmt, Orient or, Unbox a) => Matrix fmt or a
 empty = fromU $ pack 0 0 $ U.empty
 
 -- | 'Lens' for accessing slices of a matrix. If you aren't modifying the
 -- matrix, you probably want 'sliceG' instead. This function will create
 -- a copy of the matrix.
-slice :: (FormatR fmt, OrderR ord, Unbox a)
-      => Int -> Lens' (Matrix fmt ord a) (Vector (Int, a))
+slice :: (FormatR fmt, Orient or, Unbox a)
+      => Int -> Lens' (Matrix fmt or a) (Vector (Int, a))
 slice i = lens (sliceG i) (sliceS i)
 
 -- | Fold over the slices in a matrix using 'sliceG'.
-slicesF :: (FormatR fmt, OrderR ord, Unbox a)
-        => Fold (Matrix fmt ord a) (Vector (Int, a))
+slicesF :: (FormatR fmt, Orient or, Unbox a)
+        => Fold (Matrix fmt or a) (Vector (Int, a))
 slicesF = folding $ \mat -> generate (view (dimF . _1) mat) $ \i -> sliceG i mat
 
 rowsF :: (FormatR fmt, Unbox a)
@@ -402,24 +380,33 @@ colsF :: (FormatR fmt, Unbox a)
       => Fold (Matrix fmt Col a) (Vector (Int, a))
 colsF = slicesF
 
-sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
-sortUx witness (Ux nr nc vals) =
-    Ux nr nc $ U.modify (sortBy $ comparator witness) vals
+sortUx :: (Orient or, Unbox a) => Proxy or -> Ux a -> Ux a
+sortUx witness (Ux nr nc triples) =
+    let (majors, minors, coeffs) = reorient witness $ U.unzip3 triples
+        (rows', cols', coeffs') =
+            reorient witness
+            $ U.unzip3
+            $ U.modify (sortBy comparator)
+            $ U.zip3 majors minors coeffs
+    in Ux nr nc $ U.zip3 rows' cols' coeffs'
+  where
+    comparator a b = comparing (view _1) a b <> comparing (view _2) a b
 
-pack :: (FormatR fmt, OrderR ord, Unbox a)
-     => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt ord a
+pack :: (FormatR fmt, Orient or, Unbox a)
+     => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt or a
 pack r c v
-    | U.any (\(i, j, _) -> i >= r || i < 0 || j >= c || j < 0) v =
-        error "pack: Index out of bounds!"
+    | U.any outOfBounds v = error "pack: Index out of bounds!"
     | otherwise = fromU $ MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
+  where
+    outOfBounds (i, j, _) = i >= r || i < 0 || j >= c || j < 0
 
-diag :: (FormatR fmt, OrderR ord, Unbox a) => Vector a -> Matrix fmt ord a
+diag :: (FormatR fmt, Orient or, Unbox a) => Vector a -> Matrix fmt or a
 diag v =
     let len = U.length v
         ixs = U.enumFromN 0 len
     in pack len len $ U.zip3 ixs ixs v
 
-ident :: (FormatR fmt, Num a, OrderR ord, Unbox a) => Int -> Matrix fmt ord a
+ident :: (FormatR fmt, Num a, Orient or, Unbox a) => Int -> Matrix fmt or a
 ident i = diag $ U.replicate i 1
 
 mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
@@ -451,8 +438,8 @@ mulVM mat src dst =
   where
     (r, c) = view dim mat
 
-mul :: (Num a, OrderR ord, Unbox a)
-    => Matrix C Col a -> Matrix C Row a -> Matrix C ord a
+mul :: (Num a, Orient or, Unbox a)
+    => Matrix C Col a -> Matrix C Row a -> Matrix C or a
 mul a b
     | inner == inner' =
         foldl' add empty_ $ generate inner $ \i -> expand (sliceG i a) (sliceG i b)
@@ -461,12 +448,12 @@ mul a b
     (inner, left) = view dimF a
     (inner', right) = view dimF b
     empty_ = set dim (left, right) empty
-    expand :: (Num a, OrderR ord, Unbox a)
-           => Vector (Int, a) -> Vector (Int, a) -> Matrix C ord a
+    expand :: (Num a, Orient or, Unbox a)
+           => Vector (Int, a) -> Vector (Int, a) -> Matrix C or a
     expand ls rs = pack left right $ U.concatMap (\(r, x) -> U.map (\(c, y) -> (r, c, x * y)) rs) ls
 
-add :: (Num a, OrderR ord, Unbox a)
-    => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
+add :: (Num a, Orient or, Unbox a)
+    => Matrix C or a -> Matrix C or a -> Matrix C or a
 add a b =
     let (majorA, minorA) = view dimF a
         (valsC, ixsC) = runST $ do
@@ -531,6 +518,6 @@ instance (FormatR fmt, Unbox a, Unbox b) =>
     Each (Matrix fmt ord a) (Matrix fmt ord b) a b where
     each = _each
 
-adjoint :: (FormatR fmt, OrderR ord, RealFloat a, Unbox a)
-        => Matrix fmt ord (Complex a) -> Matrix fmt ord (Complex a)
+adjoint :: (FormatR fmt, Orient or, RealFloat a, Unbox a)
+        => Matrix fmt or (Complex a) -> Matrix fmt or (Complex a)
 adjoint = over each conjugate . transpose
