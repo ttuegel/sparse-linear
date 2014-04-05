@@ -18,10 +18,11 @@ import Numeric.LinearAlgebra.Sparse
 
 arbitraryMat  :: (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
               => Int -> Int -> Gen (Matrix fmt ord a)
-arbitraryMat r c = (fromU . pack r c . U.fromList . map fixIndices) <$> resize nnz arbitrary
+arbitraryMat r c = (fromU . pack r c . U.fromList . take nnz . filter checkBounds . map fixIndices) <$> arbitrary
   where
     nnz = (r * c) `div` 2
     fixIndices (i, j, x) = (abs i, abs j, x)
+    checkBounds (i, j, _) = i < r && j < c
 
 shrinkMat :: (FormatR fmt, OrderR ord, Unbox a)
           => Matrix fmt ord a -> [Matrix fmt ord a]
