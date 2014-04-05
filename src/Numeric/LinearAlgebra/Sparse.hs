@@ -423,16 +423,18 @@ ident :: (FormatR fmt, Num a, OrderR ord, Unbox a) => Int -> Matrix fmt ord a
 ident i = diag $ U.replicate i 1
 
 mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
-mulV mat xs_ =
-    assert (c == U.length xs)
-    $ V.convert $ U.create $ do
-      ys <- MU.new r
-      iforMOf_ (indexing rowsF) mat $ \ixR _row -> do
-        let (cols_, coeffs) = U.unzip _row
-        MU.write ys ixR
-          $ U.sum $ U.zipWith (*) coeffs
-          $ U.backpermute xs cols_
-      return ys
+mulV mat xs_
+    | c == U.length xs =
+        assert (c == U.length xs)
+        $ V.convert $ U.create $ do
+          ys <- MU.new r
+          iforMOf_ (indexing rowsF) mat $ \ixR _row -> do
+            let (cols_, coeffs) = U.unzip _row
+            MU.write ys ixR
+              $ U.sum $ U.zipWith (*) coeffs
+              $ U.backpermute xs cols_
+          return ys
+    | otherwise = error "mulV: matrix width does not match vector length!"
   where
     xs = V.convert xs_
     (r, c) = view dim mat

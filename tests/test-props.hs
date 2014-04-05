@@ -7,6 +7,8 @@ module Main where
 import Control.Lens
 import qualified Data.AEq as AEq
 import Data.Complex
+import Data.Vector.Unboxed (Vector)
+import qualified Data.Vector.Unboxed as U
 import Test.Tasty
 import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck
@@ -241,10 +243,12 @@ main = defaultMain $ testGroup "Properties"
             (prop_mul_adj :: Prop2Bool C Col (Complex Double))
         ]
     , testGroup "LeftModule"
-        [
-        ]
-    , testGroup "RightModule"
-        [
+        [ QC.testProperty
+            "(m1 + m2) .* v == (m1 .* v) + (m2 .* v) :: Matrix C Row Double"
+            (prop_mod_distrib :: Prop3VBool Row Row Double)
+        , QC.testProperty
+            "(m1 + m2) .* v == (m1 .* v) + (m2 .* v) :: Matrix C Row (Complex Double)"
+            (prop_mod_distrib :: Prop3VBool Row Row (Complex Double))
         ]
     ]
 
@@ -322,3 +326,8 @@ prop_mul_adj (a, b) = c AEq.~== adjoint b `mul` reorder a
   where
     c = adjoint (adjoint a `mul` reorder b)
     _ = c `add` a
+
+type Prop3VBool ord ord' a = (Matrix C ord a, Matrix C ord' a, Vector a) -> Bool
+
+prop_mod_distrib :: (AEq.AEq a, Num a, Unbox a) => Prop3VBool Row Row a
+prop_mod_distrib (m1, m2, v) = U.toList ((m1 `add` m2) `mulV` v) AEq.~== U.toList (U.zipWith (+) (m1 `mulV` v) (m2 `mulV` v))

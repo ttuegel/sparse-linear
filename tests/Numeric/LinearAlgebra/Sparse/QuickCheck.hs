@@ -12,7 +12,7 @@ import Data.Function (on)
 import Data.List (nubBy)
 import Data.Maybe (catMaybes)
 import Data.Proxy.PolyKind
-import Data.Vector.Unboxed (Unbox)
+import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U
 import Test.QuickCheck
 
@@ -61,3 +61,32 @@ instance
       (,,) <$> arbitraryMat r c <*> arbitraryMat r c <*> arbitraryMat r c
 
     shrink (a, b, c) = zip3 (shrinkMat a) (shrinkMat b) (shrinkMat c)
+
+-- Need pairs of matrices that are the same size, so we don't want an
+-- Arbitrary instance for just (Matrix U ord a).
+instance (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
+    => Arbitrary (Matrix fmt ord a, Vector a) where
+
+    arbitrary = do
+      r <- abs <$> arbitrarySizedIntegral
+      c <- abs <$> arbitrarySizedIntegral
+      (,) <$> arbitraryMat r c <*> (U.fromList . take c <$> arbitrary)
+
+    shrink (a, b) = [(set dim (r, c - 1) a, U.take (c - 1) b)]
+      where
+        (r, c) = view dim a
+
+-- Need pairs of matrices that are the same size, so we don't want an
+-- Arbitrary instance for just (Matrix U ord a).
+instance (Arbitrary a, FormatR fmt, OrderR ord, OrderR ord', Unbox a)
+    => Arbitrary (Matrix fmt ord a, Matrix fmt ord' a, Vector a) where
+
+    arbitrary = do
+      r <- abs <$> arbitrarySizedIntegral
+      c <- abs <$> arbitrarySizedIntegral
+      (,,) <$> arbitraryMat r c <*> arbitraryMat r c <*> U.replicateM c arbitrary
+
+    shrink (a, b, d) | c > 1 = [(set dim (r, c - 1) a, set dim (r, c - 1) b, U.take (c - 1) d)]
+                     | otherwise = []
+      where
+        (r, c) = view dim a
