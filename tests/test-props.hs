@@ -249,6 +249,12 @@ main = defaultMain $ testGroup "Properties"
         , QC.testProperty
             "(m1 + m2) .* v == (m1 .* v) + (m2 .* v) :: Matrix C Row (Complex Double)"
             (prop_mod_distrib :: Prop3VBool Row Row (Complex Double))
+        , QC.testProperty
+            "(m1 * m2) .* v == m1 .* m2 .* v :: Matrix C Row Double"
+            (prop_mod_assoc :: Prop3VBool Col Row Double)
+        , QC.testProperty
+            "(m1 * m2) .* v == m1 .* m2 .* v :: Matrix C Row (Complex Double)"
+            (prop_mod_assoc :: Prop3VBool Col Row (Complex Double))
         ]
     ]
 
@@ -331,3 +337,6 @@ type Prop3VBool ord ord' a = (Matrix C ord a, Matrix C ord' a, Vector a) -> Bool
 
 prop_mod_distrib :: (AEq.AEq a, Num a, Unbox a) => Prop3VBool Row Row a
 prop_mod_distrib (m1, m2, v) = U.toList ((m1 `add` m2) `mulV` v) AEq.~== U.toList (U.zipWith (+) (m1 `mulV` v) (m2 `mulV` v))
+
+prop_mod_assoc :: (AEq.AEq a, Num a, Unbox a) => Prop3VBool Col Row a
+prop_mod_assoc (a, b, v) = U.toList ((transpose a `mul` b) `mulV` v) AEq.~== U.toList (reorder (transpose a) `mulV` (b `mulV` v))
