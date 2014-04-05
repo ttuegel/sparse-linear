@@ -230,24 +230,24 @@ prop_fmt_id_U (a, _) = a === (decompress . compress) a
 
 type Prop_Add_Assoc ord a = (Matrix C ord a, Matrix C ord a, Matrix C ord a) -> Property
 
-prop_add_assoc :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add_Assoc ord a
+prop_add_assoc :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop_Add_Assoc ord a
 prop_add_assoc (a, b, c) = (a `add` b) `add` c === a `add` (b `add` c)
 
 type Prop_Add ord a = (Matrix C ord a, Matrix C ord a) -> Property
 
-prop_add_ident :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
+prop_add_ident :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
 prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
 
-prop_add_inv :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
+prop_add_inv :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
 prop_add_inv (a, _) = add a (over each negate a) === (over each (const 0) a)
 
-prop_add_commute :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
+prop_add_commute :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
 prop_add_commute (a, b) = add a b === add b a
 
 type Prop2 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
 
-prop_trans_trans :: (Each (Matrix fmt ord a) (Matrix fmt ord a) a a, Eq (Matrix fmt ord a), FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord a), Unbox a) => Prop2 fmt ord a
+prop_trans_trans :: (FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord a), Unbox a) => Prop2 fmt ord a
 prop_trans_trans (a, _) = transpose (transpose a) === a
 
-prop_adj_adj :: (Each (Matrix fmt ord (Complex a)) (Matrix fmt ord (Complex a)) (Complex a) (Complex a), Eq (Matrix fmt ord (Complex a)), FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord (Complex a)), Unbox a) => Prop2 fmt ord (Complex a)
+prop_adj_adj :: (FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord (Complex a)), Unbox a) => Prop2 fmt ord (Complex a)
 prop_adj_adj (a, _) = adjoint (adjoint a) === a

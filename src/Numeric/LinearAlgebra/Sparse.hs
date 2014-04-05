@@ -145,7 +145,6 @@ newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
 newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
   deriving (Show)
 
-
 class FormatR (fmt :: FormatK) where
     -- | The dimensions of a matrix in (row, column) order.
     dim :: (OrderR ord, Unbox a) => Lens' (Matrix fmt ord a) (Int, Int)
@@ -171,6 +170,10 @@ class FormatR (fmt :: FormatK) where
             => Int -> Matrix fmt ord a -> Vector (Int, a)
     sliceS  :: (OrderR ord, Unbox a)
             => Int -> Matrix fmt ord a -> Vector (Int, a) -> Matrix fmt ord a
+
+    _eq :: (Eq a, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a -> Bool
+    _each :: (Unbox a, Unbox b)
+          => Traversal (Matrix fmt ord a) (Matrix fmt ord b) a b
 
 instance FormatR U where
     dim = lens getDim setDim
@@ -242,6 +245,12 @@ instance FormatR U where
 
     fromU x = x
     fromC = decompress
+
+    _eq (MatU a) (MatU b) = untag a == untag b
+
+    _each f mat@(MatU ux) =
+        let Ux r c vals = untag ux
+        in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
 
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
@@ -362,6 +371,11 @@ instance FormatR C where
     fromC x = x
     fromU = compress
 
+    _eq (MatC a) (MatC b) = untag a == untag b
+
+    _each f mat@(MatC cx) =
+        let Cx mnr ixs vals = untag cx
+        in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
 
     {-# INLINE dim #-}
     {-# INLINE dimF #-}
@@ -374,11 +388,8 @@ instance FormatR C where
     {-# INLINE fromU #-}
     {-# INLINE fromC #-}
 
-instance (Eq a, Unbox a) => Eq (Matrix C ord a) where
-    (==) (MatC a) (MatC b) = untag a == untag b
-
-instance (Eq a, Unbox a) => Eq (Matrix U ord a) where
-    (==) (MatU a) (MatU b) = untag a == untag b
+instance (Eq a, FormatR fmt, Unbox a) => Eq (Matrix fmt ord a) where
+    (==) = _eq
 
 instance (AEq a, Unbox a) => AEq (Matrix C ord a) where
     (===) (MatC a) (MatC b) = untag a === untag b
@@ -563,15 +574,9 @@ add a b =
       when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
       return len'
 
-instance Unbox a => Each (Matrix C ord a) (Matrix C ord a) a a where
-    each f mat@(MatC cx) =
-        let Cx mnr ixs vals = untag cx
-        in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
-
-instance Unbox a => Each (Matrix U ord a) (Matrix U ord a) a a where
-    each f mat@(MatU ux) =
-        let Ux r c vals = untag ux
-        in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
+instance (FormatR fmt, Unbox a, Unbox b) =>
+    Each (Matrix fmt ord a) (Matrix fmt ord b) a b where
+    each = _each
 
 adjoint :: ( Each (Matrix fmt ord (Complex a))
                   (Matrix fmt ord (Complex a))
