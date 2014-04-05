@@ -122,16 +122,16 @@ main = defaultMain $ testGroup "Properties"
     , testGroup "Additive"
         [ QC.testProperty
             "(a + b) + c == a + (b + c) :: Matrix C Row Double"
-            (prop_add_assoc :: Prop3 C Row Double)
+            (prop_add_assoc :: Prop3Bool C Row Double)
         , QC.testProperty
             "(a + b) + c == a + (b + c) :: Matrix C Row (Complex Double)"
-            (prop_add_assoc :: Prop3 C Row (Complex Double))
+            (prop_add_assoc :: Prop3Bool C Row (Complex Double))
         , QC.testProperty
             "(a + b) + c == a + (b + c) :: Matrix C Col Double"
-            (prop_add_assoc :: Prop3 C Col Double)
+            (prop_add_assoc :: Prop3Bool C Col Double)
         , QC.testProperty
             "(a + b) + c == a + (b + c) :: Matrix C Col (Complex Double)"
-            (prop_add_assoc :: Prop3 C Col (Complex Double))
+            (prop_add_assoc :: Prop3Bool C Col (Complex Double))
 
         , QC.testProperty
             "a + 0 == a :: Matrix C Row Double"
@@ -212,7 +212,24 @@ main = defaultMain $ testGroup "Properties"
             (prop_adj_adj :: Prop2 U Col (Complex Double))
         ]
     , testGroup "Multiplicative"
-        [
+        [ QC.testProperty
+            "a * 1 == a :: Matrix C Col Double"
+            (prop_mul_ident_r :: Prop2 C Col Double)
+        , QC.testProperty
+            "a * 1 == a :: Matrix C Col (Complex Double)"
+            (prop_mul_ident_r :: Prop2 C Col (Complex Double))
+        , QC.testProperty
+            "1 * a == a :: Matrix C Row Double"
+            (prop_mul_ident_l :: Prop2 C Row Double)
+        , QC.testProperty
+            "1 * a == a :: Matrix C Row (Complex Double)"
+            (prop_mul_ident_l :: Prop2 C Row (Complex Double))
+        , QC.testProperty
+            "(a * b) * c == a * (b * c) :: Matrix C ord Double"
+            (prop_mul_assoc :: Prop3'Bool Double)
+        , QC.testProperty
+            "(a * b) * c == a * (b * c) :: Matrix C ord (Complex Double)"
+            (prop_mul_assoc :: Prop3'Bool (Complex Double))
         ]
     , testGroup "LeftModule"
         [
@@ -242,9 +259,10 @@ prop_fmt_id_U :: (Eq a, OrderR ord, Show a, Unbox a) => Prop2 U ord a
 prop_fmt_id_U (a, _) = a === (decompress . compress) a
 
 type Prop3 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a, Matrix fmt ord a) -> Property
+type Prop3Bool fmt ord a = (Matrix fmt ord a, Matrix fmt ord a, Matrix fmt ord a) -> Bool
 
-prop_add_assoc :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop3 C ord a
-prop_add_assoc (a, b, c) = (a `add` b) `add` c === a `add` (b `add` c)
+prop_add_assoc :: (AEq.AEq a, Num a, OrderR ord, Show a, Unbox a) => Prop3Bool C ord a
+prop_add_assoc (a, b, c) = (a `add` b) `add` c AEq.~== a `add` (b `add` c)
 
 prop_add_ident :: (Eq a, Num a, OrderR ord, Show a, Unbox a) => Prop2 C ord a
 prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
@@ -266,3 +284,20 @@ prop_trans_trans (a, _) = transpose (transpose a) === a
 prop_adj_adj  :: (FormatR fmt, OrderR ord, RealFloat a, Show (Matrix fmt ord (Complex a)), Unbox a)
               => Prop2 fmt ord (Complex a)
 prop_adj_adj (a, _) = adjoint (adjoint a) === a
+
+prop_mul_ident_r :: (Eq a, Num a, Show a, Unbox a) => Prop2 C Col a
+prop_mul_ident_r (a, _) = a `mul` (ident $ view (dim . _2) a) === a
+
+prop_mul_ident_l :: (Eq a, Num a, Show a, Unbox a) => Prop2 C Row a
+prop_mul_ident_l (a, _) = (ident $ view (dim . _1) a) `mul` a === a
+
+type Prop3' a = (Matrix C Col a, Matrix C Row a, Matrix C Row a) -> Property
+type Prop3'Bool a = (Matrix C Col a, Matrix C Row a, Matrix C Row a) -> Bool
+
+prop_mul_assoc :: (AEq.AEq a, Num a, Show a, Unbox a) => Prop3'Bool a
+prop_mul_assoc (a, b, c) = ab a b c AEq.~== bc a b c
+  where
+    ab :: (Num a, Show a, Unbox a) => Matrix C Col a -> Matrix C Row a -> Matrix C Row a -> Matrix C Row a
+    ab d e f = (d `mul` transpose e) `mul` f
+    bc :: (Num a, Show a, Unbox a) => Matrix C Col a -> Matrix C Row a -> Matrix C Row a -> Matrix C Row a
+    bc d e f = d `mul` (reorder (transpose e) `mul` f)

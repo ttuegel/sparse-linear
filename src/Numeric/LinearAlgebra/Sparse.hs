@@ -155,6 +155,7 @@ class FormatR (fmt :: FormatK) where
     fromC :: (OrderR ord, Unbox a) => Matrix C ord a -> Matrix fmt ord a
 
     transpose :: (OrderR ord, Unbox a) => Matrix fmt ord a -> Matrix fmt ord a
+    reorder :: (OrderR ord, OrderR ord', Unbox a) => Matrix fmt ord a -> Matrix fmt ord' a
 
     sliceG  :: (OrderR ord, Unbox a)
             => Int -> Matrix fmt ord a -> Vector (Int, a)
@@ -214,13 +215,18 @@ instance FormatR U where
             let (Ux r c vals) = proxy ux witness
             in sortUx witness $ Ux c r $ U.map (\(x, y, z) -> (y, x, z)) vals
 
-    sliceG i mat@(MatU ux) =
-        untag $ unproxy $ \witness ->
-            let Ux _ _ vals = proxy ux witness
-                (start, end) = getSliceExtentsU i mat
-                (rs, cs, xs) = U.unzip3 $ U.slice start (end - start) vals
-                minors = view minor $ copyTag ux (rs, cs)
-            in assert (i < view (dimF . _1) mat) $ U.zip minors xs
+    reorder (MatU mat) =
+        MatU $ unproxy $ \witness -> sortUx witness $ untag mat
+
+    sliceG i mat@(MatU ux)
+        | i < view (dimF . _1) mat =
+            untag $ unproxy $ \witness ->
+                let Ux _ _ vals = proxy ux witness
+                    (start, end) = getSliceExtentsU i mat
+                    (rs, cs, xs) = U.unzip3 $ U.slice start (end - start) vals
+                    minors = view minor $ copyTag ux (rs, cs)
+                in U.zip minors xs
+        | otherwise = error "sliceG: index out of bounds!"
 
     sliceS i mat@(MatU ux) sl =
         MatU $ unproxy $ \witness ->
@@ -329,6 +335,7 @@ instance FormatR C where
           in Ux nr nc $ U.zip3 rows_ cols_ coeffs
 
     transpose = compress . transpose . decompress
+    reorder = compress . reorder . decompress
 
     sliceG i (MatC cx) =
         let Cx _ starts vals = untag cx
@@ -399,10 +406,6 @@ sortUx :: (OrderR ord, Unbox a) => Proxy ord -> Ux a -> Ux a
 sortUx witness (Ux nr nc vals) =
     Ux nr nc $ U.modify (sortBy $ comparator witness) vals
 
-reorder :: (OrderR ord', Unbox a) => Matrix U ord a -> Matrix U ord' a
-reorder (MatU mat) =
-    MatU $ unproxy $ \witness -> sortUx witness $ untag mat
-
 pack :: (FormatR fmt, OrderR ord, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt ord a
 pack r c v
@@ -448,26 +451,17 @@ mulVM mat src dst =
 
 mul :: (Num a, OrderR ord, Unbox a)
     => Matrix C Col a -> Matrix C Row a -> Matrix C ord a
-mul a b =
-    assert (inner == inner')
-    $ foldl' add empty_ $ generate inner $ \i -> expand (sliceG i a) (sliceG i b)
+mul a b
+    | inner == inner' =
+        foldl' add empty_ $ generate inner $ \i -> expand (sliceG i a) (sliceG i b)
+    | otherwise = error "mul: matrix inner dimensions do not match!"
   where
     (inner, left) = view dimF a
     (inner', right) = view dimF b
     empty_ = set dim (left, right) empty
     expand :: (Num a, OrderR ord, Unbox a)
            => Vector (Int, a) -> Vector (Int, a) -> Matrix C ord a
-    expand ls rs = MatC $ unproxy $ \witness ->
-      let dimC = tag witness (left, right)
-          lsrs = tag witness (ls, rs)
-          mjr = view major dimC
-          mnr = view minor dimC
-          ms = view major lsrs
-          ns = view minor lsrs
-          vals = U.concatMap (\(_, x) -> U.map (\(n, y) -> (n, x * y)) ns) ms
-          stride = U.length ns
-          ixs = U.iterateN mjr (+ stride) 0
-      in Cx mnr ixs vals
+    expand ls rs = pack left right $ U.concatMap (\(r, x) -> U.map (\(c, y) -> (r, c, x * y)) rs) ls
 
 add :: (Num a, OrderR ord, Unbox a)
     => Matrix C ord a -> Matrix C ord a -> Matrix C ord a
