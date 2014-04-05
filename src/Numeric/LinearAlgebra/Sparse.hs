@@ -11,6 +11,7 @@ module Numeric.LinearAlgebra.Sparse
     , FormatK(..), FormatR(..)
     , slicesF, rowsF, colsF
     , pack, reorder
+    , empty, diag, ident
     , mulV, mulVM, mul, add
     ) where
 
@@ -431,7 +432,16 @@ pack :: (FormatR fmt, OrderR ord, Unbox a)
 pack r c v
     | U.any (\(i, j, _) -> i >= r || i < 0 || j >= c || j < 0) v =
         error "pack: Index out of bounds!"
-    | otherwise = MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
+    | otherwise = fromU $ MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
+
+diag :: (FormatR fmt, OrderR ord, Unbox a) => Vector a -> Matrix fmt ord a
+diag v =
+    let len = U.length v
+        ixs = U.enumFromN 0 len
+    in pack len len $ U.zip3 ixs ixs v
+
+ident :: (FormatR fmt, Num a, OrderR ord, Unbox a) => Int -> Matrix fmt ord a
+ident i = diag $ U.replicate i 1
 
 {-# INLINE mulV #-}
 mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
