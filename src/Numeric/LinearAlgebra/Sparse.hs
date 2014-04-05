@@ -11,7 +11,7 @@ module Numeric.LinearAlgebra.Sparse
     , OrientK(..), Orient(..)
     , FormatK(..), FormatR(..)
     , slicesF, rowsF, colsF, slice
-    , pack, reorder, adjoint
+    , pack, adjoint
     , empty, diag, ident
     , mulV, mulVM, mul, add
     ) where
@@ -19,7 +19,7 @@ module Numeric.LinearAlgebra.Sparse
 import Control.Applicative hiding (empty)
 import Control.Exception (assert)
 import Control.Lens
-import Control.Monad (liftM, liftM2, when)
+import Control.Monad (liftM2, when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.AEq
@@ -35,7 +35,7 @@ import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Algorithms.Intro (sortBy)
-import Data.Vector.Algorithms.Search (binarySearchL, binarySearchLBy)
+import Data.Vector.Algorithms.Search (binarySearchL)
 
 import Data.Proxy.PolyKind
 
@@ -167,9 +167,9 @@ instance FormatR U where
             MatU $ unproxy $ \witness ->
                 let Ux r c vals = proxy ux witness
                     inBounds (i, j, _) = i < r' && j < c'
-                    truncate | r' < r || c' < c = U.filter inBounds
-                             | otherwise = id
-                in Ux r' c' $ truncate vals
+                    truncateOutOfBounds | r' < r || c' < c = U.filter inBounds
+                                        | otherwise = id
+                in Ux r' c' $ truncateOutOfBounds vals
 
     dimF = lens getDim setDim
       where
@@ -249,7 +249,7 @@ getSliceExtentsU i (MatU ux) =
 instance FormatR C where
     dim = lens getDim setDim
       where
-        getDim mat@(MatC cx) =
+        getDim (MatC cx) =
             untag $ unproxy $ \witness ->
                 let Cx minor ixs _ = proxy cx witness
                 in reorient witness $ (U.length ixs, minor)
@@ -299,16 +299,16 @@ instance FormatR C where
         MatU $ unproxy $ \witness ->
           let (Cx _ ixs vals) = proxy cx witness
               (minors, coeffs) = U.unzip vals
-              major = mat ^. dimF . _1
               nnz = U.length vals
-              lens = flip U.imap ixs $ \m start ->
+              lengths = flip U.imap ixs $ \m start ->
                   let next = fromMaybe nnz (ixs U.!? succ m)
                   in next - start
               majors =
-                  U.concatMap (\(r, len) -> U.replicate len r) $ U.indexed lens
+                  U.concatMap (\(r, len) -> U.replicate len r)
+                  $ U.indexed lengths
               (rows, cols) = reorient witness (majors, minors)
-              (r, c) = view dim mat
-          in Ux r c $ U.zip3 rows cols coeffs
+              (nRows, nCols) = view dim mat
+          in Ux nRows nCols $ U.zip3 rows cols coeffs
 
     transpose = compress . transpose . decompress
     reorder = compress . reorder . decompress
@@ -370,7 +370,7 @@ slice i = lens (sliceG i) (sliceS i)
 -- | Fold over the slices in a matrix using 'sliceG'.
 slicesF :: (FormatR fmt, Orient or, Unbox a)
         => Fold (Matrix fmt or a) (Vector (Int, a))
-slicesF = folding $ \mat -> generate (view (dimF . _1) mat) $ \i -> sliceG i mat
+slicesF = folding $ \mat -> generate (mat ^. dimF . _1) $ \i -> sliceG i mat
 
 rowsF :: (FormatR fmt, Unbox a)
       => Fold (Matrix fmt Row a) (Vector (Int, a))
@@ -412,15 +412,14 @@ ident i = diag $ U.replicate i 1
 mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
 mulV mat xs_
     | c == U.length xs =
-        assert (c == U.length xs)
-        $ V.convert $ U.create $ do
-          ys <- MU.new r
-          iforMOf_ (indexing rowsF) mat $ \ixR _row -> do
-            let (cols_, coeffs) = U.unzip _row
-            MU.write ys ixR
-              $ U.sum $ U.zipWith (*) coeffs
-              $ U.backpermute xs cols_
-          return ys
+        V.convert $ U.create $ do
+            ys <- MU.new r
+            iforMOf_ (indexing rowsF) mat $ \ixR row -> do
+              let (cols, coeffs) = U.unzip row
+              MU.write ys ixR
+                $ U.sum $ U.zipWith (*) coeffs
+                $ U.backpermute xs cols
+            return ys
     | otherwise = error "mulV: matrix width does not match vector length!"
   where
     xs = V.convert xs_
@@ -428,13 +427,16 @@ mulV mat xs_
 
 mulVM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
       => Matrix C Row a -> v (PrimState m) a -> v (PrimState m) a -> m ()
-mulVM mat src dst =
-    assert (c == MV.length src)
-    $ assert (r == MV.length dst)
-    $ iforMOf_ (indexing rowsF) mat $ \ixR _row -> do
-      let (_cols, _coeffs) = U.unzip _row
-      x <- liftM (U.sum . U.zipWith (*) _coeffs) $ U.mapM (MV.read src) _cols
-      MV.write dst ixR x
+mulVM mat src dst
+    | c /= MV.length src =
+        error "mulVM: input vector dimension does not match matrix width"
+    | r /= MV.length dst =
+        error "mulVM: output vector dimension does not match matrix height"
+    | otherwise =
+        iforMOf_ (indexing rowsF) mat $ \i row -> do
+            let (cols, coeffs) = U.unzip row
+            x <- U.mapM (MV.read src) cols
+            MV.write dst i $ U.sum $ U.zipWith (*) coeffs x
   where
     (r, c) = view dim mat
 
