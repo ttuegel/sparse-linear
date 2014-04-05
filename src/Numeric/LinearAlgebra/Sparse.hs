@@ -426,8 +426,8 @@ reorder (MatU mat) =
     MatU $ unproxy $ \witness -> sortUx witness $ untag mat
 
 {-# INLINE pack #-}
-pack :: (OrderR ord, Unbox a)
-     => Int -> Int -> Vector (Int, Int, a) -> Matrix U ord a
+pack :: (FormatR fmt, OrderR ord, Unbox a)
+     => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt ord a
 pack r c v
     | U.any (\(i, j, _) -> i >= r || i < 0 || j >= c || j < 0) v =
         error "pack: Index out of bounds!"
