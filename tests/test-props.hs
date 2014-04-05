@@ -158,6 +158,19 @@ main = defaultMain $ testGroup "Properties"
         , QC.testProperty
             "a - a == 0 :: Matrix C Col (Complex Double)"
             (prop_add_inv :: Prop_Add Col (Complex Double))
+
+        , QC.testProperty
+            "a + b == b + a :: Matrix C Row Double"
+            (prop_add_commute :: Prop_Add Row Double)
+        , QC.testProperty
+            "a + b == b + a :: Matrix C Row (Complex Double)"
+            (prop_add_commute :: Prop_Add Row (Complex Double))
+        , QC.testProperty
+            "a + b == b + a :: Matrix C Col Double"
+            (prop_add_commute :: Prop_Add Col Double)
+        , QC.testProperty
+            "a + b == b + a :: Matrix C Col (Complex Double)"
+            (prop_add_commute :: Prop_Add Col (Complex Double))
         ]
     , testGroup "Multiplicative"
         [
@@ -204,3 +217,6 @@ prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
 
 prop_add_inv :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
 prop_add_inv (a, _) = add a (over each negate a) === (over each (const 0) a)
+
+prop_add_commute :: (Eq a, Eq (Matrix C ord a), Num a, OrderR ord, Show a, Unbox a) => Prop_Add ord a
+prop_add_commute (a, b) = add a b === add b a
