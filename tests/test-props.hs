@@ -9,6 +9,7 @@ import qualified Data.AEq as AEq
 import Data.Complex
 import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Unboxed.Mutable as MU
 import Test.Tasty
 import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck
@@ -350,3 +351,13 @@ prop_mod_assoc (a, b, v) = U.toList ((transpose a `mul` b) `mulV` v) AEq.~== U.t
 
 prop_mod_ident :: (AEq.AEq a, Num a, Unbox a) => Prop2VBool Row a
 prop_mod_ident (_, v) = U.toList v AEq.~== U.toList (ident (U.length v) `mulV` v)
+
+prop_mod_mut :: (AEq.AEq a, Num a, Unbox a) => Prop2VBool Row a
+prop_mod_mut (m, v) = U.toList (m `mulV` v) AEq.~== U.toList v'
+  where
+    v' = U.create $ do
+        v_ <- U.thaw v
+        v'_ <- MU.new $ view (dim . _1) m
+        MU.set v'_ 0
+        mulVM m v_ v'_
+        return v'_
