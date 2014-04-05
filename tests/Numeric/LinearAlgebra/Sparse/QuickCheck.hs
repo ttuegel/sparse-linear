@@ -70,7 +70,7 @@ instance (Arbitrary a, FormatR fmt, OrderR ord, Unbox a)
     arbitrary = do
       r <- abs <$> arbitrarySizedIntegral
       c <- abs <$> arbitrarySizedIntegral
-      (,) <$> arbitraryMat r c <*> (U.fromList . take c <$> arbitrary)
+      (,) <$> arbitraryMat r c <*> U.replicateM c arbitrary
 
     shrink (a, b) = [(set dim (r, c - 1) a, U.take (c - 1) b)]
       where

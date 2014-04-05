@@ -255,6 +255,12 @@ main = defaultMain $ testGroup "Properties"
         , QC.testProperty
             "(m1 * m2) .* v == m1 .* m2 .* v :: Matrix C Row (Complex Double)"
             (prop_mod_assoc :: Prop3VBool Col Row (Complex Double))
+        , QC.testProperty
+            "1 * v == v :: Matrix C Row Double"
+            (prop_mod_ident :: Prop2VBool Row Double)
+        , QC.testProperty
+            "1 * v == v :: Matrix C Row (Complex Double)"
+            (prop_mod_ident :: Prop2VBool Row (Complex Double))
         ]
     ]
 
@@ -334,9 +340,13 @@ prop_mul_adj (a, b) = c AEq.~== adjoint b `mul` reorder a
     _ = c `add` a
 
 type Prop3VBool ord ord' a = (Matrix C ord a, Matrix C ord' a, Vector a) -> Bool
+type Prop2VBool ord a = (Matrix C ord a, Vector a) -> Bool
 
 prop_mod_distrib :: (AEq.AEq a, Num a, Unbox a) => Prop3VBool Row Row a
 prop_mod_distrib (m1, m2, v) = U.toList ((m1 `add` m2) `mulV` v) AEq.~== U.toList (U.zipWith (+) (m1 `mulV` v) (m2 `mulV` v))
 
 prop_mod_assoc :: (AEq.AEq a, Num a, Unbox a) => Prop3VBool Col Row a
 prop_mod_assoc (a, b, v) = U.toList ((transpose a `mul` b) `mulV` v) AEq.~== U.toList (reorder (transpose a) `mulV` (b `mulV` v))
+
+prop_mod_ident :: (AEq.AEq a, Num a, Unbox a) => Prop2VBool Row a
+prop_mod_ident (_, v) = U.toList v AEq.~== U.toList (ident (U.length v) `mulV` v)
