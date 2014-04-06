@@ -10,7 +10,7 @@ module Numeric.LinearAlgebra.Sparse
     , Unbox
     , OrientK(..), Orient(..)
     , FormatK(..), FormatR(..)
-    , slicesF, rowsF, colsF, slice
+    , slicesF, rowsF, colsF
     , pack, adjoint
     , empty, diag, ident
     , mulV, mulVM, mul, add
@@ -127,6 +127,8 @@ newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
 newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
   deriving (Show)
 
+type Slice a = Vector (Int, a)
+
 class FormatR (fmt :: FormatK) where
     -- | The dimensions of a matrix in (row, column) orer.
     dim :: (Orient or, Unbox a) => Lens' (Matrix fmt or a) (Int, Int)
@@ -148,10 +150,9 @@ class FormatR (fmt :: FormatK) where
     transpose :: (Orient or, Unbox a) => Matrix fmt or a -> Matrix fmt or a
     reorder :: (Orient or, Orient or', Unbox a) => Matrix fmt or a -> Matrix fmt or' a
 
-    sliceG  :: (Orient or, Unbox a)
-            => Int -> Matrix fmt or a -> Vector (Int, a)
-    sliceS  :: (Orient or, Unbox a)
-            => Int -> Matrix fmt or a -> Vector (Int, a) -> Matrix fmt or a
+    slice :: (Functor f, Orient or, Unbox a)
+          => Int
+          -> LensLike f (Matrix fmt or a) (Matrix fmt or a) (Slice a) (Slice a)
 
     _eq :: (Eq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
     _aeq :: (AEq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
@@ -203,28 +204,30 @@ instance FormatR U where
 
     reorder (MatU mat) = MatU $ unproxy $ \witness -> sortUx witness $ untag mat
 
-    sliceG i mat@(MatU ux)
-        | i < view (dimF . _1) mat =
-            untag $ unproxy $ \witness ->
-                let Ux _ _ vals = proxy ux witness
-                    (start, end) = getSliceExtentsU i mat
-                    (_, minors, coeffs) =
-                        reorient witness
-                        $ U.unzip3
-                        $ U.slice start (end - start) vals
-                in U.zip minors coeffs
-        | otherwise = error "sliceG: index out of bounds!"
+    slice i = lens sliceG sliceS
+      where
+        sliceG mat@(MatU ux)
+            | i < view (dimF . _1) mat =
+                untag $ unproxy $ \witness ->
+                    let Ux _ _ vals = proxy ux witness
+                        (start, end) = getSliceExtentsU i mat
+                        (_, minors, coeffs) =
+                            reorient witness
+                            $ U.unzip3
+                            $ U.slice start (end - start) vals
+                    in U.zip minors coeffs
+            | otherwise = error "sliceG: index out of bounds!"
 
-    sliceS i mat@(MatU ux) sl =
-        MatU $ unproxy $ \witness ->
-            let Ux r c vals = proxy ux witness
-                (start, end) = getSliceExtentsU i mat
-                (minors, coeffs) = U.unzip sl
-                majors = U.replicate (U.length sl) i
-                (rows, cols) = reorient witness (majors, minors)
-                (prefix, _) = U.splitAt start vals
-                (_, suffix) = U.splitAt end vals
-            in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
+        sliceS mat@(MatU ux) sl =
+            MatU $ unproxy $ \witness ->
+                let Ux r c vals = proxy ux witness
+                    (start, end) = getSliceExtentsU i mat
+                    (minors, coeffs) = U.unzip sl
+                    majors = U.replicate (U.length sl) i
+                    (rows, cols) = reorient witness (majors, minors)
+                    (prefix, _) = U.splitAt start vals
+                    (_, suffix) = U.splitAt end vals
+                in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
 
     fromU x = x
     fromC = decompress
@@ -313,28 +316,30 @@ instance FormatR C where
     transpose = compress . transpose . decompress
     reorder = compress . reorder . decompress
 
-    sliceG i (MatC cx) =
-        let Cx _ starts vals = untag cx
-            start = starts U.! i
-            end = fromMaybe (U.length vals) $ starts U.!? succ i
-        in if i < U.length starts
-              then U.slice start (end - start) vals
-              else error "sliceG: major index out of bounds"
-
-    sliceS i (MatC cx) sl =
-        MatC $ unproxy $ \witness ->
-            let Cx minor starts vals = proxy cx witness
+    slice i = lens sliceG sliceS
+      where
+        sliceG (MatC cx) =
+            let Cx _ starts vals = untag cx
                 start = starts U.! i
-                end = fromMaybe (U.length vals) $ starts U.!? i
-                dLen = U.length sl - (end - start)
-                starts' = flip U.imap starts $ \j x ->
-                    if j > i then (x + dLen) else x
-                prefix = U.take start vals
-                suffix = U.drop end vals
-                vals' = prefix U.++ sl U.++ suffix
+                end = fromMaybe (U.length vals) $ starts U.!? succ i
             in if i < U.length starts
-                  then Cx minor starts' vals'
-                  else error "sliceS: major index out of bounds"
+                  then U.slice start (end - start) vals
+                  else error "sliceG: major index out of bounds"
+
+        sliceS (MatC cx) sl =
+            MatC $ unproxy $ \witness ->
+                let Cx minor starts vals = proxy cx witness
+                    start = starts U.! i
+                    end = fromMaybe (U.length vals) $ starts U.!? i
+                    dLen = U.length sl - (end - start)
+                    starts' = flip U.imap starts $ \j x ->
+                        if j > i then (x + dLen) else x
+                    prefix = U.take start vals
+                    suffix = U.drop end vals
+                    vals' = prefix U.++ sl U.++ suffix
+                in if i < U.length starts
+                      then Cx minor starts' vals'
+                      else error "sliceS: major index out of bounds"
 
     fromC x = x
     fromU = compress
@@ -360,24 +365,15 @@ generate len f = map f $ take len $ [0..]
 empty :: (FormatR fmt, Orient or, Unbox a) => Matrix fmt or a
 empty = fromU $ pack 0 0 $ U.empty
 
--- | 'Lens' for accessing slices of a matrix. If you aren't modifying the
--- matrix, you probably want 'sliceG' instead. This function will create
--- a copy of the matrix.
-slice :: (FormatR fmt, Orient or, Unbox a)
-      => Int -> Lens' (Matrix fmt or a) (Vector (Int, a))
-slice i = lens (sliceG i) (sliceS i)
-
 -- | Fold over the slices in a matrix using 'sliceG'.
 slicesF :: (FormatR fmt, Orient or, Unbox a)
-        => Fold (Matrix fmt or a) (Vector (Int, a))
-slicesF = folding $ \mat -> generate (mat ^. dimF . _1) $ \i -> sliceG i mat
+        => Fold (Matrix fmt or a) (Slice a)
+slicesF = folding $ \mat -> generate (mat ^. dimF . _1) $ \i -> mat ^. slice i
 
-rowsF :: (FormatR fmt, Unbox a)
-      => Fold (Matrix fmt Row a) (Vector (Int, a))
+rowsF :: (FormatR fmt, Unbox a) => Fold (Matrix fmt Row a) (Slice a)
 rowsF = slicesF
 
-colsF :: (FormatR fmt, Unbox a)
-      => Fold (Matrix fmt Col a) (Vector (Int, a))
+colsF :: (FormatR fmt, Unbox a) => Fold (Matrix fmt Col a) (Slice a)
 colsF = slicesF
 
 sortUx :: (Orient or, Unbox a) => Proxy or -> Ux a -> Ux a
@@ -444,7 +440,7 @@ mul :: (Num a, Orient or, Unbox a)
     => Matrix C Col a -> Matrix C Row a -> Matrix C or a
 mul a b
     | inner == inner' =
-        foldl' add empty_ $ generate inner $ \i -> expand (sliceG i a) (sliceG i b)
+        foldl' add empty_ $ generate inner $ \i -> expand (a ^. slice i) (b ^. slice i)
     | otherwise = error "mul: matrix inner dimensions do not match!"
   where
     (inner, left) = view dimF a
@@ -464,8 +460,8 @@ add a b =
           let go i start
                 | i < majorA = do
                   MU.unsafeWrite ixs i start
-                  let sliceA = sliceG i a
-                      sliceB = sliceG i b
+                  let sliceA = a ^. slice i
+                      sliceB = b ^. slice i
                   len <- addSlicesInto
                     (MU.slice start (U.length sliceA + U.length sliceB) vals)
                     sliceA sliceB
