@@ -11,7 +11,7 @@ module Numeric.LinearAlgebra.Sparse
     , OrientK(..), Orient(..)
     , FormatK(..), FormatR(..)
     , slicesF, rowsF, colsF
-    , pack, adjoint
+    , pack, adjoint, unpack
     , empty, diag, ident
     , mulV, mulVM, mul, add
     ) where
@@ -519,3 +519,6 @@ instance (FormatR fmt, Unbox a, Unbox b) =>
 adjoint :: (FormatR fmt, Orient or, RealFloat a, Unbox a)
         => Matrix fmt or (Complex a) -> Matrix fmt or (Complex a)
 adjoint = over each conjugate . transpose
+
+unpack :: Matrix U or a -> Vector (Int, Int, a)
+unpack (MatU ux) = let Ux _ _ triples = untag ux in triples
