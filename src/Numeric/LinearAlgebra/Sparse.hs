@@ -210,24 +210,31 @@ instance FormatR U where
             | i < view (dimF . _1) mat =
                 untag $ unproxy $ \witness ->
                     let Ux _ _ vals = proxy ux witness
-                        (start, end) = getSliceExtentsU i mat
+                        (start, end) = getSliceExtentsU mat
                         (_, minors, coeffs) =
                             reorient witness
                             $ U.unzip3
                             $ U.slice start (end - start) vals
                     in U.zip minors coeffs
             | otherwise = error "sliceG: index out of bounds!"
-
         sliceS mat@(MatU ux) sl =
             MatU $ unproxy $ \witness ->
                 let Ux r c vals = proxy ux witness
-                    (start, end) = getSliceExtentsU i mat
+                    (start, end) = getSliceExtentsU mat
                     (minors, coeffs) = U.unzip sl
                     majors = U.replicate (U.length sl) i
                     (rows, cols) = reorient witness (majors, minors)
                     (prefix, _) = U.splitAt start vals
                     (_, suffix) = U.splitAt end vals
                 in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
+        getSliceExtentsU (MatU ux) =
+            untag $ unproxy $ \witness ->
+                let Ux _ _ vals = proxy ux witness
+                    (majors, _, _) = reorient witness $ U.unzip3 vals
+                in runST $ do
+                    majors_ <- U.thaw majors
+                    (,) <$> binarySearchL majors_ i
+                        <*> binarySearchL majors_ (succ i)
 
     fromU x = x
     fromC = decompress
@@ -239,15 +246,6 @@ instance FormatR U where
     _each f (MatU ux) =
         let Ux r c vals = untag ux
         in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
-
-getSliceExtentsU :: (Orient or, Unbox a) => Int -> Matrix U or a -> (Int, Int)
-getSliceExtentsU i (MatU ux) =
-    untag $ unproxy $ \witness ->
-        let Ux _ _ vals = proxy ux witness
-            (majors, _, _) = reorient witness $ U.unzip3 vals
-        in runST $ do
-            majors_ <- U.thaw majors
-            (,) <$> binarySearchL majors_ i <*> binarySearchL majors_ (succ i)
 
 instance FormatR C where
     dim = lens getDim setDim
