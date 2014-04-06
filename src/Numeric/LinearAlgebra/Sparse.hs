@@ -361,7 +361,7 @@ generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
 
 empty :: (FormatR fmt, Orient or, Unbox a) => Matrix fmt or a
-empty = fromU $ pack 0 0 $ U.empty
+empty = fromU $ pack 1 1 $ U.empty
 
 -- | Fold over the slices in a matrix using 'sliceG'.
 slicesF :: (FormatR fmt, Orient or, Unbox a)
