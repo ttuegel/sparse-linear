@@ -316,13 +316,13 @@ instance FormatR C where
 
     slice i = lens sliceG sliceS
       where
-        sliceG (MatC cx) =
-            let Cx _ starts vals = untag cx
-                start = starts U.! i
-                end = fromMaybe (U.length vals) $ starts U.!? succ i
-            in if i < U.length starts
-                  then U.slice start (end - start) vals
-                  else error "sliceG: major index out of bounds"
+        sliceG (MatC cx)
+            | i < U.length starts = U.slice start (end - start) vals
+            | otherwise = error "sliceG: major index out of bounds"
+          where
+            Cx _ starts vals = untag cx
+            start = starts U.! i
+            end = fromMaybe (U.length vals) $ starts U.!? succ i
 
         sliceS (MatC cx) sl =
             MatC $ unproxy $ \witness ->
