@@ -248,23 +248,23 @@ instance FormatR U where
         in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
 
 instance FormatR C where
-    dim = lens getDim setDim
+    dimF = lens getDimF setDimF
       where
-        getDim (MatC cx) =
+        getDimF (MatC cx) =
             untag $ unproxy $ \witness ->
                 let Cx minor ixs _ = proxy cx witness
-                in reorient witness $ (U.length ixs, minor)
-        setDim mat@(MatC cx) dim' =
+                in (U.length ixs, minor)
+        setDimF mat@(MatC cx) (major', minor') =
             MatC $ unproxy $ \witness ->
                 let Cx _ ixs vals = proxy cx witness
-                    (major', minor') = reorient witness dim'
-                    (major, minor) = reorient witness $ getDim mat
+                    (major, minor) = getDimF mat
                     nnz = U.length vals
                     truncateMinor
                         | minor' < minor = U.filter (\(j, _) -> j < minor')
                         | otherwise = id
                     truncateMajor
-                        | major' < major = U.take (ixs U.! succ major')
+                        | major' < major =
+                            U.take (fromMaybe nnz $ ixs U.!? succ major')
                         | otherwise = id
                     vals' = truncateMinor $ truncateMajor vals
                     ixs' = fixIxs $ case compare major' major of
@@ -281,16 +281,16 @@ instance FormatR C where
                         | otherwise = starts
                 in Cx minor' ixs' vals'
 
-    dimF = lens getDim setDim
+    dim = lens getDim setDim
       where
         getDim mat@(MatC cx) =
             untag $ unproxy $ \witness ->
                 let _ = proxy cx witness
-                in reorient witness $ mat ^. dim
+                in reorient witness $ mat ^. dimF
         setDim mat@(MatC cx) dim' =
-            untag $ unproxy $ \witness -> 
+            untag $ unproxy $ \witness ->
                 let _ = proxy cx witness
-                in mat & dim .~ reorient witness dim'
+                in mat & dimF .~ reorient witness dim'
 
     compress x = x
 
