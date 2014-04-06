@@ -389,6 +389,8 @@ sortUx witness (Ux nr nc triples) =
 pack :: (FormatR fmt, Orient or, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt or a
 pack r c v
+    | not (r > 0) = error "pack: row dimension must be positive!"
+    | not (c > 0) = error "pack: column dimension must be positive!"
     | U.any outOfBounds v = error "pack: Index out of bounds!"
     | otherwise = fromU $ MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
   where
