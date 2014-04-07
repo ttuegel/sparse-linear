@@ -8,7 +8,6 @@ haskellPackages.cabal.mkDerivation (self: {
   version = "0.1.0.0";
   src = ./.;
   buildDepends = with haskellPackages; [
-    ieee754
     lens
     primitive
     tasty

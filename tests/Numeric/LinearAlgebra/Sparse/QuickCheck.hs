@@ -9,7 +9,6 @@ module Numeric.LinearAlgebra.Sparse.QuickCheck where
 import Control.Applicative
 import Control.Lens
 import Control.Monad (liftM)
-import qualified Data.AEq as A
 import Data.Function (on)
 import Data.List (find, nubBy)
 import Data.Maybe (catMaybes, isJust)
@@ -71,7 +70,3 @@ matchDimsV2 (m, n, v) =
     let (m', n') = matchDims2 (m, n)
         c = minimum [U.length v, m' ^. dim . _2, n' ^. dim . _2]
     in (m' & dim . _2 .~ c, n' & dim . _2 .~ c, U.take c v)
-
-instance (A.AEq a, Unbox a) => A.AEq (Vector a) where
-    (===) a b = U.and $ U.zipWith (A.===) a b
-    (~==) a b = U.and $ U.zipWith (A.~==) a b

@@ -6,7 +6,6 @@
 module Main where
 
 import Control.Lens
-import qualified Data.AEq as AEq
 import Data.Complex
 import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as U
@@ -25,78 +24,53 @@ main = defaultMain $ testGroup "Properties"
     [ testGroup "Equality"
         [ QC.testProperty
             "a == a :: Matrix C Row Double"
-            (prop_eq_trans :: Prop2Bool C Row Double)
+            (prop_eq_trans :: PropEq C Row Double)
         , QC.testProperty
             "a == a :: Matrix C Col Double"
-            (prop_eq_trans :: Prop2Bool C Col Double)
+            (prop_eq_trans :: PropEq C Col Double)
         , QC.testProperty
             "a == a :: Matrix U Row Double"
-            (prop_eq_trans :: Prop2Bool U Row Double)
+            (prop_eq_trans :: PropEq U Row Double)
         , QC.testProperty
             "a == a :: Matrix U Col Double"
-            (prop_eq_trans :: Prop2Bool U Col Double)
+            (prop_eq_trans :: PropEq U Col Double)
         , QC.testProperty
             "a == a :: Matrix C Row (Complex Double)"
-            (prop_eq_trans :: Prop2Bool C Row (Complex Double))
+            (prop_eq_trans :: PropEq C Row (Complex Double))
         , QC.testProperty
             "a == a :: Matrix C Col (Complex Double)"
-            (prop_eq_trans :: Prop2Bool C Col (Complex Double))
+            (prop_eq_trans :: PropEq C Col (Complex Double))
         , QC.testProperty
             "a == a :: Matrix U Row (Complex Double)"
-            (prop_eq_trans :: Prop2Bool U Row (Complex Double))
+            (prop_eq_trans :: PropEq U Row (Complex Double))
         , QC.testProperty
             "a == a :: Matrix U Col (Complex Double)"
-            (prop_eq_trans :: Prop2Bool U Col (Complex Double))
+            (prop_eq_trans :: PropEq U Col (Complex Double))
 
         , QC.testProperty
-            "a ~== a :: Matrix C Row Double"
-            (prop_aeq_trans :: Prop2 C Row Double)
+            "not (morallyEq a b) ==> a /= b :: Matrix U Row Double"
+            (prop_morallyneq_implies_neq :: PropEq U Row Double)
         , QC.testProperty
-            "a ~== a :: Matrix C Col Double"
-            (prop_aeq_trans :: Prop2 C Col Double)
+            "not (morallyEq a b) ==> a /= b :: Matrix U Col Double"
+            (prop_morallyneq_implies_neq :: PropEq U Col Double)
         , QC.testProperty
-            "a ~== a :: Matrix U Row Double"
-            (prop_aeq_trans :: Prop2 U Row Double)
+            "not (morallyEq a b) ==> a /= b :: Matrix C Row Double"
+            (prop_morallyneq_implies_neq :: PropEq C Row Double)
         , QC.testProperty
-            "a ~== a :: Matrix U Col Double"
-            (prop_aeq_trans :: Prop2 U Col Double)
+            "not (morallyEq a b) ==> a /= b :: Matrix C Col Double"
+            (prop_morallyneq_implies_neq :: PropEq C Col Double)
         , QC.testProperty
-            "a ~== a :: Matrix C Row (Complex Double)"
-            (prop_aeq_trans :: Prop2 C Row (Complex Double))
+            "not (morallyEq a b) ==> a /= b :: Matrix U Row (Complex Double)"
+            (prop_morallyneq_implies_neq :: PropEq U Row (Complex Double))
         , QC.testProperty
-            "a ~== a :: Matrix C Col (Complex Double)"
-            (prop_aeq_trans :: Prop2 C Col (Complex Double))
+            "not (morallyEq a b) ==> a /= b :: Matrix U Col (Complex Double)"
+            (prop_morallyneq_implies_neq :: PropEq U Col (Complex Double))
         , QC.testProperty
-            "a ~== a :: Matrix U Row (Complex Double)"
-            (prop_aeq_trans :: Prop2 U Row (Complex Double))
+            "not (morallyEq a b) ==> a /= b :: Matrix C Row (Complex Double)"
+            (prop_morallyneq_implies_neq :: PropEq C Row (Complex Double))
         , QC.testProperty
-            "a ~== a :: Matrix U Col (Complex Double)"
-            (prop_aeq_trans :: Prop2 U Col (Complex Double))
-
-        , QC.testProperty
-            "a === a :: Matrix C Row Double"
-            (prop_eeq_trans :: Prop2Bool C Row Double)
-        , QC.testProperty
-            "a === a :: Matrix C Col Double"
-            (prop_eeq_trans :: Prop2Bool C Col Double)
-        , QC.testProperty
-            "a === a :: Matrix U Row Double"
-            (prop_eeq_trans :: Prop2Bool U Row Double)
-        , QC.testProperty
-            "a === a :: Matrix U Col Double"
-            (prop_eeq_trans :: Prop2Bool U Col Double)
-        , QC.testProperty
-            "a === a :: Matrix C Row (Complex Double)"
-            (prop_eeq_trans :: Prop2Bool C Row (Complex Double))
-        , QC.testProperty
-            "a === a :: Matrix C Col (Complex Double)"
-            (prop_eeq_trans :: Prop2Bool C Col (Complex Double))
-        , QC.testProperty
-            "a === a :: Matrix U Row (Complex Double)"
-            (prop_eeq_trans :: Prop2Bool U Row (Complex Double))
-        , QC.testProperty
-            "a === a :: Matrix U Col (Complex Double)"
-            (prop_eeq_trans :: Prop2Bool U Col (Complex Double))
+            "not (morallyEq a b) ==> a /= b :: Matrix C Col (Complex Double)"
+            (prop_morallyneq_implies_neq :: PropEq C Col (Complex Double))
         ]
     , testGroup "Format"
         [ QC.testProperty
@@ -237,13 +211,16 @@ main = defaultMain $ testGroup "Properties"
             "(a * b) * c == a * (b * c) :: Matrix C ord (Complex Double)"
             (prop_mul_assoc :: Prop3' (Complex Double))
         , QC.testProperty
-            "transpose (a * b) == transpose a * transpose b :: Matrix C Col Double"
+            ("transpose (a * b) == transpose a * transpose b"
+                ++ " :: Matrix C Col Double")
             (prop_mul_trans :: Prop2 C Col Double)
         , QC.testProperty
-            "transpose (a * b) == transpose a * transpose b :: Matrix C Col (Complex Double)"
+            ("transpose (a * b) == transpose a * transpose b"
+                ++ " :: Matrix C Col (Complex Double)")
             (prop_mul_trans :: Prop2 C Col (Complex Double))
         , QC.testProperty
-            "adjoint (a * b) == adjoint a * adjoint b :: Matrix C Col (Complex Double)"
+            ("adjoint (a * b) == adjoint a * adjoint b"
+                ++ " :: Matrix C Col (Complex Double)")
             (prop_mul_adj :: Prop2 C Col (Complex Double))
         ]
     , testGroup "LeftModule"
@@ -251,7 +228,8 @@ main = defaultMain $ testGroup "Properties"
             "(m1 + m2) .* v == (m1 .* v) + (m2 .* v) :: Matrix C Row Double"
             (prop_mod_distrib :: Prop3V Row Row Double)
         , QC.testProperty
-            "(m1 + m2) .* v == (m1 .* v) + (m2 .* v) :: Matrix C Row (Complex Double)"
+            ("(m1 + m2) .* v == (m1 .* v) + (m2 .* v)"
+                ++ ":: Matrix C Row (Complex Double)")
             (prop_mod_distrib :: Prop3V Row Row (Complex Double))
         , QC.testProperty
             "(m1 * m2) .* v == m1 .* m2 .* v :: Matrix C Row Double"
@@ -268,31 +246,37 @@ main = defaultMain $ testGroup "Properties"
         ]
     ]
 
-type Prop2Bool fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Bool
+type PropEq fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
 
-prop_eq_trans :: (Eq a, FormatR fmt, Unbox a) => Prop2Bool fmt ord a
-prop_eq_trans (a, _) = a == a
+prop_eq_trans :: (Eq a, FormatR fmt, Show (Matrix fmt ord a), Unbox a)
+              => PropEq fmt ord a
+prop_eq_trans (a, _) = a === a
 
-prop_aeq_trans :: (AEq.AEq a, FormatR fmt, Show (Matrix fmt ord a), Unbox a) => Prop2 fmt ord a
-prop_aeq_trans (a, _) = a ~== a
+prop_morallyneq_implies_neq :: ( Eq a, FormatR fmt, MorallyEq a, Orient or
+                               , Show a, Show (Matrix fmt or a), Unbox a )
+                            => PropEq fmt or a
+prop_morallyneq_implies_neq (a, b) =
+    counterexample (show a ++ " == " ++ show b)
+    $ not (morallyEq a b) ==> a /= b
 
-prop_eeq_trans :: (AEq.AEq a, FormatR fmt, Unbox a) => Prop2Bool fmt ord a
-prop_eeq_trans (a, _) = a AEq.=== a
+type PropFmt fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
 
-type Prop2 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
-
-prop_fmt_id_C :: (Eq a, Orient ord, Show a, Unbox a) => Prop2 C ord a
+prop_fmt_id_C :: (Eq a, Orient ord, Show a, Unbox a) => PropFmt C ord a
 prop_fmt_id_C (a, _) = a === (compress . decompress) a
 
-prop_fmt_id_U :: (Eq a, Orient ord, Show a, Unbox a) => Prop2 U ord a
+prop_fmt_id_U :: (Eq a, Orient ord, Show a, Unbox a) => PropFmt U ord a
 prop_fmt_id_U (a, _) = a === (decompress . compress) a
 
-type Prop3 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a, Matrix fmt ord a) -> Property
-type Prop3Bool fmt ord a = (Matrix fmt ord a, Matrix fmt ord a, Matrix fmt ord a) -> Bool
+type Prop3 fmt ord a =
+    (Matrix fmt ord a, Matrix fmt ord a, Matrix fmt ord a) -> Property
 
-prop_add_assoc :: (AEq.AEq a, Num a, Orient ord, Show a, Unbox a) => Prop3 C ord a
+prop_add_assoc :: ( MorallyEq (Matrix C ord a), Num a, Orient ord, Show a
+                  , Unbox a )
+               => Prop3 C ord a
 prop_add_assoc (matchDims3 -> (a, b, c)) =
     ((a `add` b) `add` c) ~== (a `add` (b `add` c))
+
+type Prop2 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
 
 prop_add_ident :: (Eq a, Num a, Orient ord, Show a, Unbox a) => Prop2 C ord a
 prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
@@ -300,19 +284,25 @@ prop_add_ident (a, _) = (add a $ set dim (view dim a) empty) === a
 prop_add_inv :: (Eq a, Num a, Orient ord, Show a, Unbox a) => Prop2 C ord a
 prop_add_inv (a, _) = add a (over each negate a) === (over each (const 0) a)
 
-prop_add_commute :: (AEq.AEq a, Num a, Orient ord, Show a, Unbox a) => Prop2 C ord a
-prop_add_commute (matchDims2 -> (a, b)) = add a b ~== add b a
+prop_add_commute :: ( MorallyEq (Matrix C ord a), Num a, Orient ord, Show a
+                    , Unbox a )
+                 => Prop2 C ord a
+prop_add_commute (matchDims2 -> (a, b)) = (add a b) ~== (add b a)
 
-prop_add_linear :: (MorallyEq (Matrix C ord a), Num a, Orient ord, Show a, Unbox a) => a -> Prop2 C ord a
+prop_add_linear :: ( MorallyEq (Matrix C ord a), Num a, Orient ord, Show a
+                   , Unbox a )
+                => a -> Prop2 C ord a
 prop_add_linear factor (matchDims2 -> (a, b)) =
-    morallyEq (scale (add a b)) (add (scale a) (scale b))
+    (scale (add a b)) ~== (add (scale a) (scale b))
   where scale = over each (* factor)
 
-prop_trans_trans  :: (FormatR fmt, Orient ord, RealFloat a, Show (Matrix fmt ord a), Unbox a)
+prop_trans_trans  :: ( FormatR fmt, Orient ord, RealFloat a
+                     , Show (Matrix fmt ord a), Unbox a )
                   => Prop2 fmt ord a
 prop_trans_trans (a, _) = transpose (transpose a) === a
 
-prop_adj_adj  :: (FormatR fmt, Orient ord, RealFloat a, Show (Matrix fmt ord (Complex a)), Unbox a)
+prop_adj_adj  :: ( FormatR fmt, Orient ord, RealFloat a
+                 , Show (Matrix fmt ord (Complex a)), Unbox a )
               => Prop2 fmt ord (Complex a)
 prop_adj_adj (a, _) = adjoint (adjoint a) === a
 
@@ -324,20 +314,20 @@ prop_mul_ident_l (a, _) = (ident $ view (dim . _1) a) `mul` a === a
 
 type Prop3' a = (Matrix C Col a, Matrix C Row a, Matrix C Row a) -> Property
 
-prop_mul_assoc :: (MorallyEq (Matrix C Col a), Num a, Show a, Unbox a) => Prop3' a
-prop_mul_assoc (matchDims3 -> (a, transpose -> b, c)) =
-    counterexample (show ab_c ++ " /= " ++ show a_bc)
-    $ morallyEq ab_c a_bc
+prop_mul_assoc :: (MorallyEq (Matrix C Col a), Num a, Show a, Unbox a)
+               => Prop3' a
+prop_mul_assoc (matchDims3 -> (a, transpose -> b, c)) = ab_c ~== a_bc
   where
     ab_c = (a `mul` b) `mul` c `asTypeOf` a
     a_bc = a `mul` (reorder b `mul` c)
 
-prop_mul_trans :: (AEq.AEq a, Num a, Show a, Unbox a) => Prop2 C Col a
+prop_mul_trans :: (MorallyEq (Matrix C Col a), Num a, Show a, Unbox a)
+               => Prop2 C Col a
 prop_mul_trans (matchDims2 -> (a, b)) = c ~== (transpose b `mul` reorder a)
   where
     c = transpose (transpose a `mul` reorder b) `asTypeOf` a
 
-prop_mul_adj :: (AEq.AEq (Complex a), Num a, RealFloat a, Show a, Unbox a) => Prop2 C Col (Complex a)
+prop_mul_adj :: Prop2 C Col (Complex Double)
 prop_mul_adj (matchDims2 -> (a, b)) = c ~== (adjoint b `mul` reorder a)
   where
     c = adjoint (adjoint a `mul` reorder b) `asTypeOf` a
@@ -345,18 +335,23 @@ prop_mul_adj (matchDims2 -> (a, b)) = c ~== (adjoint b `mul` reorder a)
 type Prop3V ord ord' a = (Matrix C ord a, Matrix C ord' a, Vector a) -> Property
 type Prop2V ord a = (Matrix C ord a, Vector a) -> Property
 
-prop_mod_distrib :: (AEq.AEq a, Num a, Show a, Unbox a) => Prop3V Row Row a
-prop_mod_distrib (matchDimsV2 -> (m1, m2, v)) = U.toList ((m1 `add` m2) `mulV` v) ~== U.toList (U.zipWith (+) (m1 `mulV` v) (m2 `mulV` v))
+prop_mod_distrib :: (Fractional a, MorallyEq a, Num a, Show a, Unbox a)
+                 => Prop3V Row Row a
+prop_mod_distrib (matchDimsV2 -> (m1, m2, v)) =
+    ((m1 `add` m2) `mulV` v) ~== (U.zipWith (+) (m1 `mulV` v) (m2 `mulV` v))
 
-prop_mod_assoc :: (AEq.AEq a, Num a, Show a, Unbox a) => Prop3V Col Row a
+prop_mod_assoc :: (Fractional a, MorallyEq a, Num a, Show a, Unbox a)
+               => Prop3V Col Row a
 prop_mod_assoc (matchDimsV2 -> (transpose -> a, b, v)) =
     ((a `mul` b) `mulV` v) ~== (reorder a `mulV` (b `mulV` v))
 
-prop_mod_ident :: (AEq.AEq a, Num a, Show a, Unbox a) => Prop2V Row a
+prop_mod_ident :: (Fractional a, MorallyEq a, Num a, Show a, Unbox a)
+               => Prop2V Row a
 prop_mod_ident (_, v) = v ~== (ident (U.length v) `mulV` v)
 
-prop_mod_mut :: (AEq.AEq a, Num a, Show a, Unbox a) => Prop2V Row a
-prop_mod_mut (matchDimsV -> (m, v)) = U.toList (m `mulV` v) ~== U.toList v'
+prop_mod_mut :: (Num a, Fractional a, MorallyEq a, Ord a, Show a, Unbox a)
+             => Prop2V Row a
+prop_mod_mut (matchDimsV -> (m, v)) = (m `mulV` v) ~== v'
   where
     v' = U.create $ do
         v_ <- U.thaw v
@@ -365,26 +360,28 @@ prop_mod_mut (matchDimsV -> (m, v)) = U.toList (m `mulV` v) ~== U.toList v'
         mulVM m v_ v'_
         return v'_
 
-(~==) :: (AEq.AEq a, Show a) => a -> a -> Property
-(~==) a b = counterexample (show a ++ " /= " ++ show b) (property $ a AEq.~== b)
+(~==) :: (MorallyEq a, Show a) => a -> a -> Property
+(~==) a b = counterexample (show a ++ " /= " ++ show b) $ a `morallyEq` b
 
 class MorallyEq a where
-    morallyEq :: Show a => a -> a -> Property
+    morallyEq :: Show a => a -> a -> Bool
 
-instance (FormatR fmt, Orient or) => MorallyEq (Matrix fmt or Double) where
-    morallyEq (decompress -> a) (decompress -> b) =
-        counterexample (show a ++ " /= " ++ show b)
-        $ U.and $ U.zipWith ok (unpack a) (unpack b)
-      where
-        relativeError x y = 2 * abs (x - y) / (abs x + abs y)
-        ok (i, j, x) (m, n, y) =
-            i == m && j == n && (x == y || relativeError x y < 1.0E-10)
+instance MorallyEq Double where
+    morallyEq x y = x == y || approxEq
+      where approxEq = (< 1.0E-10) $ 2 * abs (x - y) / (abs x + abs y)
 
-instance (FormatR fmt, Orient or) => MorallyEq (Matrix fmt or (Complex Double)) where
-    morallyEq (decompress -> a) (decompress -> b) =
-        counterexample (show a ++ " /= " ++ show b)
-        $ U.and $ U.zipWith ok (unpack a) (unpack b)
+instance MorallyEq (Complex Double) where
+    morallyEq x y = x == y || approxEq
       where
-        relativeError x y = 2 * magnitude (x - y) / (magnitude x + magnitude y)
-        ok (i, j, x) (m, n, y) =
-            i == m && j == n && (x == y || relativeError x y < 1.0E-10)
+        approxEq =
+            (< 1.0E-10) $ 2 * magnitude (x - y) / (magnitude x + magnitude y)
+
+instance (FormatR fmt, MorallyEq a, Orient or, Show a, Unbox a) =>
+         MorallyEq (Matrix fmt or a) where
+    morallyEq (decompress -> a) (decompress -> b) =
+        U.and $ U.zipWith ok (unpack a) (unpack b)
+      where
+        ok (i, j, x) (m, n, y) = i == m && j == n && morallyEq x y
+
+instance (MorallyEq a, Show a, Unbox a) => MorallyEq (Vector a) where
+    morallyEq a b = U.and $ U.zipWith morallyEq a b

@@ -22,7 +22,6 @@ library
   hs-source-dirs:      src
   other-extensions:    DataKinds, FlexibleInstances, PolyKinds, TypeFamilies
   build-depends:       base,
-                       ieee754 ==0.7.*,
                        lens ==4.1.*,
                        primitive ==0.5.*,
                        vector ==0.10.*,
@@ -38,7 +37,6 @@ test-suite test-props
   default-language: Haskell2010
   build-depends:  base,
                   lens ==4.1.*,
-                  ieee754,
                   sparse-linear,
                   QuickCheck ==2.7.*,
                   tasty ==0.8.*,

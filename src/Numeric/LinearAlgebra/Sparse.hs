@@ -22,7 +22,6 @@ import Control.Lens
 import Control.Monad (liftM2, when)
 import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
-import Data.AEq
 import Data.Complex
 import Data.List (foldl')
 import Data.Maybe (fromMaybe)
@@ -74,23 +73,6 @@ instance (Eq a, Unbox a) => Eq (Cx a) where
         minorA == minorB && ixsA == ixsB && valsA == valsB
     {-# INLINE (==) #-} -- Just boilerplate
 
-{-# INLINE cxAEqHelper #-}
--- Inlined because it's boilerplate and not exported
-cxAEqHelper :: Unbox a => (a -> a -> Bool) -> (Cx a -> Cx a -> Bool)
-cxAEqHelper f (Cx minorA ixsA valsA) (Cx minorB ixsB valsB) =
-    let (minorsA, coeffsA) = U.unzip valsA
-        (minorsB, coeffsB) = U.unzip valsB
-    in minorA == minorB && ixsA == ixsB && minorsA == minorsB
-        && U.and (U.zipWith f coeffsA coeffsB)
-
-instance (AEq a, Unbox a) => AEq (Cx a) where
-    (===) = cxAEqHelper (===)
-    (~==) = cxAEqHelper (~==)
-    {-# INLINE (===) #-}
-    {-# INLINE (~==) #-}
-    -- These are inlined because they are boilerplate, but they could stop
-    -- vector fusion rules from firing.
-
 -- | Uncompressed sparse format
 data Ux a = Ux !Int -- ^ row dimension
                !Int -- ^ column dimension
@@ -102,24 +84,6 @@ instance (Eq a, Unbox a) => Eq (Ux a) where
     (==) (Ux nRowsA nColsA coeffsA) (Ux nRowsB nColsB coeffsB) =
         nRowsA == nRowsB && nColsA == nColsB && coeffsA == coeffsB
     {-# INLINE (==) #-} -- Just boilerplate
-
-{-# INLINE uxAEqHelper #-}
--- Inlined because it's boilerplate and not exported
-uxAEqHelper :: Unbox a => (a -> a -> Bool) -> (Ux a -> Ux a -> Bool)
-uxAEqHelper f (Ux nRowsA nColsA triplesA) (Ux nRowsB nColsB triplesB) =
-    let (rowsA, colsA, coeffsA) = U.unzip3 triplesA
-        (rowsB, colsB, coeffsB) = U.unzip3 triplesB
-    in nRowsA == nRowsB
-        && nColsA == nColsB && rowsA == rowsB && colsA == colsB
-        && U.and (U.zipWith f coeffsA coeffsB)
-
-instance (AEq a, Unbox a) => AEq (Ux a) where
-    (===) = uxAEqHelper (===)
-    (~==) = uxAEqHelper (~==)
-    {-# INLINE (===) #-}
-    {-# INLINE (~==) #-}
-    -- These are inlined because they are boilerplate, but they could stop
-    -- vector fusion rules from firing.
 
 data family Matrix :: FormatK -> OrientK -> * -> *
 newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
@@ -155,8 +119,6 @@ class FormatR (fmt :: FormatK) where
           -> LensLike f (Matrix fmt or a) (Matrix fmt or a) (Slice a) (Slice a)
 
     _eq :: (Eq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
-    _aeq :: (AEq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
-    _eeq :: (AEq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
     _each :: (Unbox a, Unbox b)
           => Traversal (Matrix fmt or a) (Matrix fmt or b) a b
 
@@ -240,8 +202,6 @@ instance FormatR U where
     fromC = decompress
 
     _eq (MatU a) (MatU b) = untag a == untag b
-    _aeq (MatU a) (MatU b) = untag a ~== untag b
-    _eeq (MatU a) (MatU b) = untag a === untag b
 
     _each f (MatU ux) =
         let Ux r c vals = untag ux
@@ -343,8 +303,6 @@ instance FormatR C where
     fromU = compress
 
     _eq (MatC a) (MatC b) = untag a == untag b
-    _aeq (MatC a) (MatC b) = untag a ~== untag b
-    _eeq (MatC a) (MatC b) = untag a === untag b
 
     _each f (MatC cx) =
         let Cx mnr ixs vals = untag cx
@@ -352,10 +310,6 @@ instance FormatR C where
 
 instance (Eq a, FormatR fmt, Unbox a) => Eq (Matrix fmt ord a) where
     (==) = _eq
-
-instance (AEq a, FormatR fmt, Unbox a) => AEq (Matrix fmt ord a) where
-    (===) = _eeq
-    (~==) = _aeq
 
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
