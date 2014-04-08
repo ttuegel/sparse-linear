@@ -93,6 +93,40 @@ newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
 
 type Slice a = Vector (Int, a)
 
+-- | A class for matrix traversals dependent on storage format. These
+-- traversals have passive-voice names to indicate that they do no work,
+-- i.e., using the traversal 'uncompressed' on a compressed matrix will
+-- traverse no elements. Each instance of this class must have exactly one
+-- matching traversal. You can write a function taking a matrix in any
+-- format by traversing the input with each of these traversals, providing
+-- a distinct implementation of each. For example:
+-- @
+-- f :: Format fmt => Matrix fmt or a -> Matrix fmt or a
+-- f = forOf uncompressed uncompressedImplementation
+--   . forOf compressed compressedImplementation
+--   where
+--     uncompressedImplementation :: Matrix U or a -> Matrix U or a
+--     uncompressedImplementation = ...
+--     compressedImplementation :: Matrix C or a -> Matrix C or a
+--     compressedImplementation = ...
+-- @
+class Format (fmt :: FormatK) where
+    uncompressed :: Traversal' (Matrix fmt or a) (Matrix U or a)
+    compressed :: Traversal' (Matrix fmt or a) (Matrix C or a)
+
+instance Format U where
+    uncompressed f mat = f mat
+    compressed _ = pure
+
+instance Format C where
+    uncompressed _ = pure
+    compressed f mat = f mat
+
+{-
+compress :: Iso' (Matrix U or a) (Matrix C or a)
+compress = undefined
+-}
+
 class FormatR (fmt :: FormatK) where
     -- | The dimensions of a matrix in (row, column) orer.
     dim :: (Orient or, Unbox a) => Lens' (Matrix fmt or a) (Int, Int)
