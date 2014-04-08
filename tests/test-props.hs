@@ -262,10 +262,10 @@ prop_morallyneq_implies_neq (a, b) =
 type PropFmt fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
 
 prop_fmt_id_C :: (Eq a, Orient ord, Show a, Unbox a) => PropFmt C ord a
-prop_fmt_id_C (a, _) = a === (compress . decompress) a
+prop_fmt_id_C (a, _) = a === view (from compress . compress) a
 
 prop_fmt_id_U :: (Eq a, Orient ord, Show a, Unbox a) => PropFmt U ord a
-prop_fmt_id_U (a, _) = a === (decompress . compress) a
+prop_fmt_id_U (a, _) = a === view (compress . from compress) a
 
 type Prop3 fmt ord a =
     (Matrix fmt ord a, Matrix fmt ord a, Matrix fmt ord a) -> Property
@@ -378,7 +378,7 @@ instance MorallyEq (Complex Double) where
 
 instance (FormatR fmt, MorallyEq a, Orient or, Show a, Unbox a) =>
          MorallyEq (Matrix fmt or a) where
-    morallyEq (decompress -> a) (decompress -> b) =
+    morallyEq ((^. from compress) -> a) ((^. from compress) -> b) =
         U.and $ U.zipWith ok (unpack a) (unpack b)
       where
         ok (i, j, x) (m, n, y) = i == m && j == n && morallyEq x y

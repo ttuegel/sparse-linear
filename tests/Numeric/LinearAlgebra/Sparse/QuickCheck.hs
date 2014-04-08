@@ -19,7 +19,7 @@ import Test.QuickCheck
 
 import Numeric.LinearAlgebra.Sparse
 
-instance (Arbitrary a, FormatR fmt, Orient or, Show a, Unbox a) => Arbitrary (Matrix fmt or a) where
+instance (Arbitrary a, Format fmt, FormatR fmt, Orient or, Show a, Unbox a) => Arbitrary (Matrix fmt or a) where
     arbitrary = do
         r <- abs <$> arbitrarySizedIntegral `suchThat` (> 0)
         c <- abs <$> arbitrarySizedIntegral `suchThat` (> 0)

@@ -9,7 +9,8 @@ module Numeric.LinearAlgebra.Sparse
     ( Matrix
     , Unbox
     , OrientK(..), Orient(..)
-    , FormatK(..), FormatR(..)
+    , Format(..), FormatK(..), FormatR(..)
+    , compress, toU
     , slicesF, rowsF, colsF
     , pack, adjoint, unpack
     , empty, diag, ident
@@ -111,21 +112,51 @@ type Slice a = Vector (Int, a)
 --     compressedImplementation = ...
 -- @
 class Format (fmt :: FormatK) where
-    uncompressed :: Traversal' (Matrix fmt or a) (Matrix U or a)
-    compressed :: Traversal' (Matrix fmt or a) (Matrix C or a)
+    demote :: Prism' (Either (Matrix U or a) (Matrix C or a)) (Matrix fmt or a)
 
 instance Format U where
-    uncompressed f mat = f mat
-    compressed _ = pure
+    demote = prism' Left (either Just (const Nothing))
 
 instance Format C where
-    uncompressed _ = pure
-    compressed f mat = f mat
+    demote = prism' Right (either (const Nothing) Just)
 
-{-
-compress :: Iso' (Matrix U or a) (Matrix C or a)
-compress = undefined
--}
+uncompressed :: Prism' (Matrix fmt or a) (Matrix U or a)
+uncompressed = undefined
+
+compressed :: Prism' (Matrix fmt or a) (Matrix C or a)
+compressed = undefined
+
+fromU :: (Format fmt, Orient or, Unbox a) => Matrix U or a -> Matrix fmt or a
+fromU = view (from compress . re compressed)
+
+toU :: (Format fmt, Orient or, Unbox a) => Matrix fmt or a -> Matrix U or a
+toU = views uncompressed id
+    . views compressed (^. from compress)
+
+compress :: (Orient or, Unbox a) => Iso' (Matrix U or a) (Matrix C or a)
+compress = iso compressU decompressC
+  where
+    compressU mat@(MatU ux) = MatC $ unproxy $ \witness ->
+      let (Ux _ _ vals) = proxy ux witness
+          (m, n) = mat ^. dimF
+          (majors, minors, coeffs) = reorient witness $ U.unzip3 vals
+          ixs = runST $ do
+            majors_ <- U.thaw majors
+            U.generateM m $ binarySearchL majors_
+      in Cx n ixs $ U.zip minors coeffs
+    decompressC mat@(MatC cx) = MatU $ unproxy $ \witness ->
+      let (Cx _ ixs vals) = proxy cx witness
+          (minors, coeffs) = U.unzip vals
+          nnz = U.length vals
+          lengths = flip U.imap ixs $ \m start ->
+              let next = fromMaybe nnz (ixs U.!? succ m)
+              in next - start
+          majors =
+              U.concatMap (\(r, len) -> U.replicate len r)
+              $ U.indexed lengths
+          (rows, cols) = reorient witness (majors, minors)
+          (nRows, nCols) = view dim mat
+      in Ux nRows nCols $ U.zip3 rows cols coeffs
 
 class FormatR (fmt :: FormatK) where
     -- | The dimensions of a matrix in (row, column) orer.
@@ -136,14 +167,6 @@ class FormatR (fmt :: FormatK) where
 
     -- | The number of non-zero entries in the matrix.
     nonzero :: Unbox a => Matrix fmt or a -> Int
-
-    compress :: (Orient or, Unbox a) => Matrix fmt or a -> Matrix C or a
-
-    decompress :: (Orient or, Unbox a) => Matrix fmt or a -> Matrix U or a
-
-    fromU :: (Orient or, Unbox a) => Matrix U or a -> Matrix fmt or a
-
-    fromC :: (Orient or, Unbox a) => Matrix C or a -> Matrix fmt or a
 
     transpose :: (Orient or, Unbox a) => Matrix fmt or a -> Matrix fmt or a
     reorder :: (Orient or, Orient or', Unbox a) => Matrix fmt or a -> Matrix fmt or' a
@@ -180,18 +203,6 @@ instance FormatR U where
                 in mat & dim .~ reorient witness dim'
 
     nonzero (MatU ux) = let Ux _ _ vals = untag ux in U.length vals
-
-    compress mat@(MatU ux) =
-        MatC $ unproxy $ \witness ->
-          let (Ux _ _ vals) = proxy ux witness
-              (m, n) = mat ^. dimF
-              (majors, minors, coeffs) = reorient witness $ U.unzip3 vals
-              ixs = runST $ do
-                majors_ <- U.thaw majors
-                U.generateM m $ binarySearchL majors_
-          in Cx n ixs $ U.zip minors coeffs
-
-    decompress x = x
 
     transpose (MatU ux) =
         MatU $ unproxy $ \witness ->
@@ -231,9 +242,6 @@ instance FormatR U where
                     majors_ <- U.thaw majors
                     (,) <$> binarySearchL majors_ i
                         <*> binarySearchL majors_ (succ i)
-
-    fromU x = x
-    fromC = decompress
 
     _eq (MatU a) (MatU b) = untag a == untag b
 
@@ -286,27 +294,10 @@ instance FormatR C where
                 let _ = proxy cx witness
                 in mat & dimF .~ reorient witness dim'
 
-    compress x = x
-
     nonzero (MatC cx) = let Cx _ _ vals = untag cx in U.length vals
 
-    decompress mat@(MatC cx) =
-        MatU $ unproxy $ \witness ->
-          let (Cx _ ixs vals) = proxy cx witness
-              (minors, coeffs) = U.unzip vals
-              nnz = U.length vals
-              lengths = flip U.imap ixs $ \m start ->
-                  let next = fromMaybe nnz (ixs U.!? succ m)
-                  in next - start
-              majors =
-                  U.concatMap (\(r, len) -> U.replicate len r)
-                  $ U.indexed lengths
-              (rows, cols) = reorient witness (majors, minors)
-              (nRows, nCols) = view dim mat
-          in Ux nRows nCols $ U.zip3 rows cols coeffs
-
-    transpose = compress . transpose . decompress
-    reorder = compress . reorder . decompress
+    transpose = view $ from compress . to transpose . compress
+    reorder = view $ from compress . to reorder . compress
 
     slice i = lens sliceG sliceS
       where
@@ -333,9 +324,6 @@ instance FormatR C where
                       then Cx minor starts' vals'
                       else error "sliceS: major index out of bounds"
 
-    fromC x = x
-    fromU = compress
-
     _eq (MatC a) (MatC b) = untag a == untag b
 
     _each f (MatC cx) =
@@ -348,7 +336,7 @@ instance (Eq a, FormatR fmt, Unbox a) => Eq (Matrix fmt ord a) where
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
 
-empty :: (FormatR fmt, Orient or, Unbox a) => Matrix fmt or a
+empty :: (Format fmt, FormatR fmt, Orient or, Unbox a) => Matrix fmt or a
 empty = fromU $ pack 1 1 $ U.empty
 
 -- | Fold over the slices in a matrix using 'sliceG'.
@@ -374,7 +362,7 @@ sortUx witness (Ux nr nc triples) =
   where
     comparator a b = comparing (view _1) a b <> comparing (view _2) a b
 
-pack :: (FormatR fmt, Orient or, Unbox a)
+pack :: (Format fmt, FormatR fmt, Orient or, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt or a
 pack r c v
     | not (r > 0) = error "pack: row dimension must be positive!"
@@ -384,13 +372,13 @@ pack r c v
   where
     outOfBounds (i, j, _) = i >= r || i < 0 || j >= c || j < 0
 
-diag :: (FormatR fmt, Orient or, Unbox a) => Vector a -> Matrix fmt or a
+diag :: (Format fmt, FormatR fmt, Orient or, Unbox a) => Vector a -> Matrix fmt or a
 diag v =
     let len = U.length v
         ixs = U.enumFromN 0 len
     in pack len len $ U.zip3 ixs ixs v
 
-ident :: (FormatR fmt, Num a, Orient or, Unbox a) => Int -> Matrix fmt or a
+ident :: (Format fmt, FormatR fmt, Num a, Orient or, Unbox a) => Int -> Matrix fmt or a
 ident i = diag $ U.replicate i 1
 
 mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
