@@ -442,37 +442,38 @@ add a b =
     addSlicesInto dst src1 src2 = do
       let len1 = U.length src1
           len2 = U.length src2
-          len = MU.length dst
       MU.move (MU.slice 0 len1 dst) =<< U.thaw src1
       MU.move (MU.slice len1 len2 dst) =<< U.thaw src2
-      sortBy (comparing fst) dst
+      deduplicateSlice dst
 
-      -- Accumulate elements in same minor dimension by adding their
-      -- coefficients together. Set the minor dimension of duplicate
-      -- elements to (-1) so we can find them later.
-      let (ns, xs) = MU.unzip dst -- unzip to avoid looking up both fields
-          accumulate update check =
-            when (check < len) $ do
-              -- do the elements have the same minor dimension?
-              -- i.e., is one a duplicate?
-              dup <- liftM2 (==) (MU.read ns update) (MU.read ns check)
-              if dup
-                then do
-                  -- add the duplicate coefficients
-                  x <- liftM2 (+) (MU.read xs update) (MU.read xs check)
-                  -- insert new coefficient in place of first duplicate
-                  MU.write xs update x
-                  -- mark second duplicate for removal
-                  MU.write ns check (-1)
-                  accumulate update (succ check)
-                else accumulate check (succ check)
-      accumulate 0 1
+deduplicateSlice :: (Monad m, Num a, PrimMonad m, Unbox a)
+                 => MVector (PrimState m) (Int, a) -> m Int
+deduplicateSlice dst = do
+    let (ns, xs) = MU.unzip dst
+        len = MU.length dst
+        accumulate update check =
+          when (check < len) $ do
+            -- do the elements have the same minor dimension?
+            -- i.e., is one a duplicate?
+            dup <- liftM2 (==) (MU.read ns update) (MU.read ns check)
+            if dup
+              then do
+                -- add the duplicate coefficients
+                x <- liftM2 (+) (MU.read xs update) (MU.read xs check)
+                -- insert new coefficient in place of first duplicate
+                MU.write xs update x
+                -- mark second duplicate for removal
+                MU.write ns check (-1)
+                accumulate update (succ check)
+              else accumulate check (succ check)
 
-      sortBy (comparing fst) dst
-      start <- binarySearchL (fst $ MU.unzip dst) 0
-      let len' = len - start
-      when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
-      return len'
+    sortBy (comparing fst) dst
+    accumulate 0 1
+    sortBy (comparing fst) dst
+    start <- binarySearchL (fst $ MU.unzip dst) 0
+    let len' = len - start
+    when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
+    return len'
 
 instance (Format fmt, Unbox a, Unbox b) =>
     Each (Matrix fmt ord a) (Matrix fmt ord b) a b where
