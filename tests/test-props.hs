@@ -248,11 +248,11 @@ main = defaultMain $ testGroup "Properties"
 
 type PropEq fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
 
-prop_eq_trans :: (Eq a, FormatR fmt, Show (Matrix fmt ord a), Unbox a)
+prop_eq_trans :: (Eq a, Format fmt, Orient ord, Show (Matrix fmt ord a), Unbox a)
               => PropEq fmt ord a
 prop_eq_trans (a, _) = a === a
 
-prop_morallyneq_implies_neq :: ( Format fmt, Eq a, FormatR fmt, MorallyEq a, Orient or
+prop_morallyneq_implies_neq :: ( Eq a, Format fmt, MorallyEq a, Orient or
                                , Show a, Show (Matrix fmt or a), Unbox a )
                             => PropEq fmt or a
 prop_morallyneq_implies_neq (a, b) =
@@ -296,22 +296,22 @@ prop_add_linear factor (matchDims2 -> (a, b)) =
     (scale (add a b)) ~== (add (scale a) (scale b))
   where scale = over each (* factor)
 
-prop_trans_from_trans  :: ( Format fmt, FormatR fmt, RealFloat a
+prop_trans_from_trans  :: ( Format fmt, RealFloat a
                           , Show (Matrix fmt Row a), Unbox a )
                        => Prop2 fmt Row a
 prop_trans_from_trans (a, _) = view (transpose . from transpose) a === a
 
-prop_from_trans_trans :: ( Format fmt, FormatR fmt, RealFloat a
+prop_from_trans_trans :: ( Format fmt, RealFloat a
                          , Show (Matrix fmt Col a), Unbox a )
                       => Prop2 fmt Col a
 prop_from_trans_trans (a, _) = view (from transpose . transpose) a === a
 
-prop_adj_from_adj  :: ( Format fmt, FormatR fmt, RealFloat a
+prop_adj_from_adj  :: ( Format fmt, RealFloat a
                       , Show (Matrix fmt Row (Complex a)), Unbox a )
                    => Prop2 fmt Row (Complex a)
 prop_adj_from_adj (a, _) = view (adjoint . from adjoint) a === a
 
-prop_from_adj_adj :: ( Format fmt, FormatR fmt, RealFloat a
+prop_from_adj_adj :: ( Format fmt, RealFloat a
                   , Show (Matrix fmt Col (Complex a)), Unbox a )
                   => Prop2 fmt Col (Complex a)
 prop_from_adj_adj (a, _) = view (from adjoint . adjoint) a === a
@@ -388,7 +388,7 @@ instance MorallyEq (Complex Double) where
         approxEq =
             (< 1.0E-10) $ 2 * magnitude (x - y) / (magnitude x + magnitude y)
 
-instance (Format fmt, FormatR fmt, MorallyEq a, Orient or, Show a, Unbox a) =>
+instance (Format fmt, MorallyEq a, Orient or, Show a, Unbox a) =>
          MorallyEq (Matrix fmt or a) where
     morallyEq ((^. uncompressed) -> a) ((^. uncompressed) -> b) =
         U.and $ U.zipWith ok (unpack a) (unpack b)

@@ -9,7 +9,7 @@ module Numeric.LinearAlgebra.Sparse
     ( Matrix
     , Unbox
     , OrientK(..), Orient(..)
-    , Format(..), FormatK(..), FormatR(..)
+    , Format(..), FormatK(..)
     , dim, dimF, nonzero, reorder, transpose
     , compress, compressed, uncompressed
     , slicesF, rowsF, colsF
@@ -26,7 +26,7 @@ import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.Complex
 import Data.List (foldl')
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromJust, fromMaybe)
 import Data.Monoid ((<>))
 import Data.Ord (comparing)
 import qualified Data.Vector.Generic as V
@@ -126,6 +126,16 @@ uncompressed = formats (iso id id) (from compress)
 compressed :: (Format fmt, Orient or, Unbox a)
            => Iso' (Matrix fmt or a) (Matrix C or a)
 compressed = formats compress (iso id id)
+
+compressed' :: (Format fmt, Orient or, Unbox a)
+            => Prism' (Matrix fmt or a) (Matrix C or a)
+compressed' = formats (prism' (view uncompressed) (const Nothing))
+                      (prism' id Just)
+
+uncompressed' :: (Format fmt, Orient or, Unbox a)
+              => Prism' (Matrix fmt or a) (Matrix U or a)
+uncompressed' = formats (prism' id Just)
+                        (prism' (view compressed) (const Nothing))
 
 compress :: (Orient or, Unbox a) => Iso' (Matrix U or a) (Matrix C or a)
 compress = iso compressU decompressC
@@ -301,33 +311,34 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
                   then Cx minor starts' vals'
                   else error "sliceS: major index out of bounds"
 
-class FormatR (fmt :: FormatK) where
-    _eq :: (Eq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
-
-instance FormatR U where
-    _eq (MatU a) (MatU b) = untag a == untag b
-
-instance FormatR C where
-    _eq (MatC a) (MatC b) = untag a == untag b
-
-instance (Eq a, FormatR fmt, Unbox a) => Eq (Matrix fmt ord a) where
-    (==) = _eq
+instance (Eq a, Format fmt, Orient or, Unbox a) => Eq (Matrix fmt or a) where
+    (==) a b = fromJust $! eqU <|> eqC
+      where
+        eqU = do
+            (MatU aux) <- a ^? uncompressed'
+            (MatU bux) <- b ^? uncompressed'
+            return $! untag aux == untag bux
+        eqC = do
+            (MatC acx) <- a ^? compressed'
+            (MatC bcx) <- b ^? compressed'
+            return $! untag acx == untag bcx
+ 
 
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
 
-empty :: (Format fmt, FormatR fmt, Orient or, Unbox a) => Matrix fmt or a
+empty :: (Format fmt, Orient or, Unbox a) => Matrix fmt or a
 empty = view (from uncompressed) $ pack 1 1 $ U.empty
 
 -- | Fold over the slices in a matrix using 'sliceG'.
-slicesF :: (Format fmt, FormatR fmt, Orient or, Unbox a)
+slicesF :: (Format fmt, Orient or, Unbox a)
         => Fold (Matrix fmt or a) (Slice a)
 slicesF = folding $ \mat -> generate (mat ^. dimF . _1) $ \i -> mat ^. slice i
 
-rowsF :: (Format fmt, FormatR fmt, Unbox a) => Fold (Matrix fmt Row a) (Slice a)
+rowsF :: (Format fmt, Unbox a) => Fold (Matrix fmt Row a) (Slice a)
 rowsF = slicesF
 
-colsF :: (Format fmt, FormatR fmt, Unbox a) => Fold (Matrix fmt Col a) (Slice a)
+colsF :: (Format fmt, Unbox a) => Fold (Matrix fmt Col a) (Slice a)
 colsF = slicesF
 
 sortUx :: (Orient or, Unbox a) => Proxy or -> Ux a -> Ux a
@@ -342,7 +353,7 @@ sortUx witness (Ux nr nc triples) =
   where
     comparator a b = comparing (view _1) a b <> comparing (view _2) a b
 
-pack :: (Format fmt, FormatR fmt, Orient or, Unbox a)
+pack :: (Format fmt, Orient or, Unbox a)
      => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt or a
 pack r c v
     | not (r > 0) = error "pack: row dimension must be positive!"
@@ -352,13 +363,13 @@ pack r c v
   where
     outOfBounds (i, j, _) = i >= r || i < 0 || j >= c || j < 0
 
-diag :: (Format fmt, FormatR fmt, Orient or, Unbox a) => Vector a -> Matrix fmt or a
+diag :: (Format fmt, Orient or, Unbox a) => Vector a -> Matrix fmt or a
 diag v =
     let len = U.length v
         ixs = U.enumFromN 0 len
     in pack len len $ U.zip3 ixs ixs v
 
-ident :: (Format fmt, FormatR fmt, Num a, Orient or, Unbox a) => Int -> Matrix fmt or a
+ident :: (Format fmt, Num a, Orient or, Unbox a) => Int -> Matrix fmt or a
 ident i = diag $ U.replicate i 1
 
 mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
@@ -479,7 +490,7 @@ instance (Format fmt, Unbox a, Unbox b) =>
             let Cx mnr ixs vals = untag cx
             in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
 
-adjoint :: (Format fmt, FormatR fmt, RealFloat a, Unbox a)
+adjoint :: (Format fmt, RealFloat a, Unbox a)
         => Iso' (Matrix fmt Row (Complex a)) (Matrix fmt Col (Complex a))
 adjoint = conjugate' . transpose
   where

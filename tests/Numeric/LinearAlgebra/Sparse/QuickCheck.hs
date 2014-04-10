@@ -19,7 +19,7 @@ import Test.QuickCheck
 
 import Numeric.LinearAlgebra.Sparse
 
-instance (Arbitrary a, Format fmt, FormatR fmt, Orient or, Show a, Unbox a) => Arbitrary (Matrix fmt or a) where
+instance (Arbitrary a, Format fmt, Orient or, Show a, Unbox a) => Arbitrary (Matrix fmt or a) where
     arbitrary = do
         r <- abs <$> arbitrarySizedIntegral `suchThat` (> 0)
         c <- abs <$> arbitrarySizedIntegral `suchThat` (> 0)
@@ -49,23 +49,23 @@ instance (Arbitrary a, Unbox a) => Arbitrary (Vector a) where
         | U.length v > 1 = [U.take (U.length v - 1) v]
         | otherwise = []
 
-matchDims2 :: (Format fmt, FormatR fmt, Orient or, Orient or', Unbox a) => (Matrix fmt or a, Matrix fmt or' a) -> (Matrix fmt or a, Matrix fmt or' a)
+matchDims2 :: (Format fmt, Orient or, Orient or', Unbox a) => (Matrix fmt or a, Matrix fmt or' a) -> (Matrix fmt or a, Matrix fmt or' a)
 matchDims2 (a, b) =
     let dima = a ^. dim
         dimb = b ^. dim
     in (a & dim .~ min dima dimb, b & dim .~ min dima dimb)
 
-matchDims3 :: (Format fmt, FormatR fmt, Orient or, Orient or', Orient or'', Unbox a) => (Matrix fmt or a, Matrix fmt or' a, Matrix fmt or'' a) -> (Matrix fmt or a, Matrix fmt or' a, Matrix fmt or'' a)
+matchDims3 :: (Format fmt, Orient or, Orient or', Orient or'', Unbox a) => (Matrix fmt or a, Matrix fmt or' a, Matrix fmt or'' a) -> (Matrix fmt or a, Matrix fmt or' a, Matrix fmt or'' a)
 matchDims3 (a, b, c) =
     let dim' = minimum [a ^. dim, b ^. dim, c ^. dim]
     in (a & dim .~ dim', b & dim .~ dim', c & dim .~ dim')
 
-matchDimsV :: (Format fmt, FormatR fmt, Orient or, Unbox a) => (Matrix fmt or a, Vector a) -> (Matrix fmt or a, Vector a)
+matchDimsV :: (Format fmt, Orient or, Unbox a) => (Matrix fmt or a, Vector a) -> (Matrix fmt or a, Vector a)
 matchDimsV (m, v) =
     let c = minimum [U.length v, m ^. dim . _2]
     in (m & dim . _2 .~ c, U.take c v)
 
-matchDimsV2 :: (Format fmt, FormatR fmt, Orient or, Orient or', Unbox a) => (Matrix fmt or a, Matrix fmt or' a, Vector a) -> (Matrix fmt or a, Matrix fmt or' a, Vector a)
+matchDimsV2 :: (Format fmt, Orient or, Orient or', Unbox a) => (Matrix fmt or a, Matrix fmt or' a, Vector a) -> (Matrix fmt or a, Matrix fmt or' a, Vector a)
 matchDimsV2 (m, n, v) =
     let (m', n') = matchDims2 (m, n)
         c = minimum [U.length v, m' ^. dim . _2, n' ^. dim . _2]
