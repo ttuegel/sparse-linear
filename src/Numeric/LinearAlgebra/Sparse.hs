@@ -102,9 +102,9 @@ class Format (fmt :: FormatK) where
     --   And in the darkness bind them
     --   In the land or Mordor, where the shadows lie.
     formats :: (Functor f, Profunctor p, Profunctor q)
-            => Optical p q f (Matrix U or a) (Matrix U or a) c d
-            -> Optical p q f (Matrix C or a) (Matrix C or a) c d
-            -> Optical p q f (Matrix fmt or a) (Matrix fmt or a) c d
+            => Optical p q f (Matrix U or a) (Matrix U or b) c d
+            -> Optical p q f (Matrix C or a) (Matrix C or b) c d
+            -> Optical p q f (Matrix fmt or a) (Matrix fmt or b) c d
 
 instance Format U where
     formats f _ = f
@@ -303,22 +303,12 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
 
 class FormatR (fmt :: FormatK) where
     _eq :: (Eq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
-    _each :: (Unbox a, Unbox b)
-          => Traversal (Matrix fmt or a) (Matrix fmt or b) a b
 
 instance FormatR U where
     _eq (MatU a) (MatU b) = untag a == untag b
 
-    _each f (MatU ux) =
-        let Ux r c vals = untag ux
-        in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
-
 instance FormatR C where
     _eq (MatC a) (MatC b) = untag a == untag b
-
-    _each f (MatC cx) =
-        let Cx mnr ixs vals = untag cx
-        in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
 
 instance (Eq a, FormatR fmt, Unbox a) => Eq (Matrix fmt ord a) where
     (==) = _eq
@@ -478,9 +468,16 @@ add a b =
       when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
       return len'
 
-instance (FormatR fmt, Unbox a, Unbox b) =>
+instance (Format fmt, Unbox a, Unbox b) =>
     Each (Matrix fmt ord a) (Matrix fmt ord b) a b where
-    each = _each
+    each = formats eachU eachC
+      where
+        eachU f (MatU ux) =
+            let Ux r c vals = untag ux
+            in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
+        eachC f (MatC cx) =
+            let Cx mnr ixs vals = untag cx
+            in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
 
 adjoint :: (Format fmt, FormatR fmt, RealFloat a, Unbox a)
         => Iso' (Matrix fmt Row (Complex a)) (Matrix fmt Col (Complex a))
