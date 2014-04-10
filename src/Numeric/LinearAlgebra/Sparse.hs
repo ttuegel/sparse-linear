@@ -4,6 +4,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Numeric.LinearAlgebra.Sparse
     ( Matrix
@@ -12,6 +13,7 @@ module Numeric.LinearAlgebra.Sparse
     , Format(..), FormatK(..)
     , dim, dimF, nonzero, reorder, transpose
     , compress, compressed, uncompressed
+    , compressed', uncompressed'
     , slicesF, rowsF, colsF
     , pack, adjoint, unpack
     , empty, diag, ident
@@ -26,7 +28,7 @@ import Control.Monad.Primitive (PrimMonad(..))
 import Control.Monad.ST (runST)
 import Data.Complex
 import Data.List (foldl')
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.Ord (comparing)
 import qualified Data.Vector.Generic as V
@@ -312,17 +314,10 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
                   else error "sliceS: major index out of bounds"
 
 instance (Eq a, Format fmt, Orient or, Unbox a) => Eq (Matrix fmt or a) where
-    (==) a b = fromJust $! eqU <|> eqC
+    (==) = view $ formats (to goU) (to goC)
       where
-        eqU = do
-            (MatU aux) <- a ^? uncompressed'
-            (MatU bux) <- b ^? uncompressed'
-            return $! untag aux == untag bux
-        eqC = do
-            (MatC acx) <- a ^? compressed'
-            (MatC bcx) <- b ^? compressed'
-            return $! untag acx == untag bcx
- 
+        goU (MatU a) (view uncompressed -> MatU b) = untag a == untag b
+        goC (MatC a) (view compressed -> MatC b) = untag a == untag b
 
 generate :: Int -> (Int -> a) -> [a]
 generate len f = map f $ take len $ [0..]
