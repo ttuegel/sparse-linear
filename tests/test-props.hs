@@ -168,28 +168,28 @@ main = defaultMain $ testGroup "Properties"
     , testGroup "Involutive"
         [ QC.testProperty
             "transpose (transpose a) == a :: Matrix C Row Double"
-            (prop_trans_trans :: Prop2 C Row Double)
+            (prop_trans_from_trans :: Prop2 C Row Double)
         , QC.testProperty
             "transpose (transpose a) == a :: Matrix C Col Double"
-            (prop_trans_trans :: Prop2 C Col Double)
+            (prop_from_trans_trans :: Prop2 C Col Double)
         , QC.testProperty
             "transpose (transpose a) == a :: Matrix U Row Double"
-            (prop_trans_trans :: Prop2 U Row Double)
+            (prop_trans_from_trans :: Prop2 U Row Double)
         , QC.testProperty
             "transpose (transpose a) == a :: Matrix U Col Double"
-            (prop_trans_trans :: Prop2 U Col Double)
+            (prop_from_trans_trans :: Prop2 U Col Double)
         , QC.testProperty
             "transpose (transpose a) == a :: Matrix C Row (Complex Double)"
-            (prop_adj_adj :: Prop2 C Row (Complex Double))
+            (prop_adj_from_adj :: Prop2 C Row (Complex Double))
         , QC.testProperty
             "transpose (transpose a) == a :: Matrix C Col (Complex Double)"
-            (prop_adj_adj :: Prop2 C Col (Complex Double))
+            (prop_from_adj_adj :: Prop2 C Col (Complex Double))
         , QC.testProperty
             "transpose (transpose a) == a :: Matrix U Row (Complex Double)"
-            (prop_adj_adj :: Prop2 U Row (Complex Double))
+            (prop_adj_from_adj :: Prop2 U Row (Complex Double))
         , QC.testProperty
             "transpose (transpose a) == a :: Matrix U Col (Complex Double)"
-            (prop_adj_adj :: Prop2 U Col (Complex Double))
+            (prop_from_adj_adj :: Prop2 U Col (Complex Double))
         ]
     , testGroup "Multiplicative"
         [ QC.testProperty
@@ -252,7 +252,7 @@ prop_eq_trans :: (Eq a, FormatR fmt, Show (Matrix fmt ord a), Unbox a)
               => PropEq fmt ord a
 prop_eq_trans (a, _) = a === a
 
-prop_morallyneq_implies_neq :: ( Eq a, FormatR fmt, MorallyEq a, Orient or
+prop_morallyneq_implies_neq :: ( Format fmt, Eq a, FormatR fmt, MorallyEq a, Orient or
                                , Show a, Show (Matrix fmt or a), Unbox a )
                             => PropEq fmt or a
 prop_morallyneq_implies_neq (a, b) =
@@ -296,15 +296,25 @@ prop_add_linear factor (matchDims2 -> (a, b)) =
     (scale (add a b)) ~== (add (scale a) (scale b))
   where scale = over each (* factor)
 
-prop_trans_trans  :: ( FormatR fmt, Orient ord, RealFloat a
-                     , Show (Matrix fmt ord a), Unbox a )
-                  => Prop2 fmt ord a
-prop_trans_trans (a, _) = transpose (transpose a) === a
+prop_trans_from_trans  :: ( Format fmt, FormatR fmt, RealFloat a
+                          , Show (Matrix fmt Row a), Unbox a )
+                       => Prop2 fmt Row a
+prop_trans_from_trans (a, _) = view (transpose . from transpose) a === a
 
-prop_adj_adj  :: ( FormatR fmt, Orient ord, RealFloat a
-                 , Show (Matrix fmt ord (Complex a)), Unbox a )
-              => Prop2 fmt ord (Complex a)
-prop_adj_adj (a, _) = adjoint (adjoint a) === a
+prop_from_trans_trans :: ( Format fmt, FormatR fmt, RealFloat a
+                         , Show (Matrix fmt Col a), Unbox a )
+                      => Prop2 fmt Col a
+prop_from_trans_trans (a, _) = view (from transpose . transpose) a === a
+
+prop_adj_from_adj  :: ( Format fmt, FormatR fmt, RealFloat a
+                      , Show (Matrix fmt Row (Complex a)), Unbox a )
+                   => Prop2 fmt Row (Complex a)
+prop_adj_from_adj (a, _) = view (adjoint . from adjoint) a === a
+
+prop_from_adj_adj :: ( Format fmt, FormatR fmt, RealFloat a
+                  , Show (Matrix fmt Col (Complex a)), Unbox a )
+                  => Prop2 fmt Col (Complex a)
+prop_from_adj_adj (a, _) = view (from adjoint . adjoint) a === a
 
 prop_mul_ident_r :: (Eq a, Num a, Show a, Unbox a) => Prop2 C Col a
 prop_mul_ident_r (a, _) = a `mul` (ident $ view (dim . _2) a) === a
@@ -316,21 +326,23 @@ type Prop3' a = (Matrix C Col a, Matrix C Row a, Matrix C Row a) -> Property
 
 prop_mul_assoc :: (MorallyEq (Matrix C Col a), Num a, Show a, Unbox a)
                => Prop3' a
-prop_mul_assoc (matchDims3 -> (a, transpose -> b, c)) = ab_c ~== a_bc
+prop_mul_assoc (matchDims3 -> (a, view transpose -> b, c)) = ab_c ~== a_bc
   where
-    ab_c = (a `mul` b) `mul` c `asTypeOf` a
-    a_bc = a `mul` (reorder b `mul` c)
+    ab_c = (a `mul` view reorder b) `mul` c `asTypeOf` a
+    a_bc = a `mul` (b `mul` c)
 
 prop_mul_trans :: (MorallyEq (Matrix C Col a), Num a, Show a, Unbox a)
                => Prop2 C Col a
-prop_mul_trans (matchDims2 -> (a, b)) = c ~== (transpose b `mul` reorder a)
+prop_mul_trans (matchDims2 -> (a, review transpose -> b)) =
+    c ~== (a `mul` b)
   where
-    c = transpose (transpose a `mul` reorder b) `asTypeOf` a
+    c = view transpose (view transpose b `mul` review transpose a) `asTypeOf` a
 
 prop_mul_adj :: Prop2 C Col (Complex Double)
-prop_mul_adj (matchDims2 -> (a, b)) = c ~== (adjoint b `mul` reorder a)
+prop_mul_adj (matchDims2 -> (a, review transpose -> b)) =
+    c ~== (a `mul` b)
   where
-    c = adjoint (adjoint a `mul` reorder b) `asTypeOf` a
+    c = view adjoint (view adjoint b `mul` review adjoint a) `asTypeOf` a
 
 type Prop3V ord ord' a = (Matrix C ord a, Matrix C ord' a, Vector a) -> Property
 type Prop2V ord a = (Matrix C ord a, Vector a) -> Property
@@ -342,8 +354,8 @@ prop_mod_distrib (matchDimsV2 -> (m1, m2, v)) =
 
 prop_mod_assoc :: (Fractional a, MorallyEq a, Num a, Show a, Unbox a)
                => Prop3V Col Row a
-prop_mod_assoc (matchDimsV2 -> (transpose -> a, b, v)) =
-    ((a `mul` b) `mulV` v) ~== (reorder a `mulV` (b `mulV` v))
+prop_mod_assoc (matchDimsV2 -> (review transpose -> a, b, v)) =
+    ((review reorder a `mul` b) `mulV` v) ~== (a `mulV` (b `mulV` v))
 
 prop_mod_ident :: (Fractional a, MorallyEq a, Num a, Show a, Unbox a)
                => Prop2V Row a
@@ -376,9 +388,9 @@ instance MorallyEq (Complex Double) where
         approxEq =
             (< 1.0E-10) $ 2 * magnitude (x - y) / (magnitude x + magnitude y)
 
-instance (FormatR fmt, MorallyEq a, Orient or, Show a, Unbox a) =>
+instance (Format fmt, FormatR fmt, MorallyEq a, Orient or, Show a, Unbox a) =>
          MorallyEq (Matrix fmt or a) where
-    morallyEq ((^. from compress) -> a) ((^. from compress) -> b) =
+    morallyEq ((^. uncompressed) -> a) ((^. uncompressed) -> b) =
         U.and $ U.zipWith ok (unpack a) (unpack b)
       where
         ok (i, j, x) (m, n, y) = i == m && j == n && morallyEq x y
