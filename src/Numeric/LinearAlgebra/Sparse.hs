@@ -246,48 +246,67 @@ transpose = formats (iso transposeU transposeU . from uncompressed) (iso transpo
     transposeC :: Matrix C or a -> Matrix C or' a
     transposeC (MatC cx) = MatC $ tag Proxy $ untag cx
 
-class FormatR (fmt :: FormatK) where
-    slice :: (Functor f, Orient or, Unbox a)
-          => Int
-          -> LensLike f (Matrix fmt or a) (Matrix fmt or a) (Slice a) (Slice a)
+slice :: (Format fmt, Functor f, Orient or, Unbox a)
+      => Int -> LensLike' f (Matrix fmt or a) (Slice a)
+slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
+  where
+    sliceGU mat@(MatU ux)
+        | i < view (dimF . _1) mat =
+            untag $ unproxy $ \witness ->
+                let Ux _ _ vals = proxy ux witness
+                    (start, end) = getSliceExtentsU mat
+                    (_, minors, coeffs) =
+                        reorient witness
+                        $ U.unzip3
+                        $ U.slice start (end - start) vals
+                in U.zip minors coeffs
+        | otherwise = error "sliceG: index out of bounds!"
+    sliceSU mat@(MatU ux) sl =
+        MatU $ unproxy $ \witness ->
+            let Ux r c vals = proxy ux witness
+                (start, end) = getSliceExtentsU mat
+                (minors, coeffs) = U.unzip sl
+                majors = U.replicate (U.length sl) i
+                (rows, cols) = reorient witness (majors, minors)
+                (prefix, _) = U.splitAt start vals
+                (_, suffix) = U.splitAt end vals
+            in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
+    getSliceExtentsU (MatU ux) =
+        untag $ unproxy $ \witness ->
+            let Ux _ _ vals = proxy ux witness
+                (majors, _, _) = reorient witness $ U.unzip3 vals
+            in runST $ do
+                majors_ <- U.thaw majors
+                (,) <$> binarySearchL majors_ i
+                    <*> binarySearchL majors_ (succ i)
+    sliceGC (MatC cx)
+        | i < U.length starts = U.slice start (end - start) vals
+        | otherwise = error "sliceG: major index out of bounds"
+      where
+        Cx _ starts vals = untag cx
+        start = starts U.! i
+        end = fromMaybe (U.length vals) $ starts U.!? succ i
+    sliceSC (MatC cx) sl =
+        MatC $ unproxy $ \witness ->
+            let Cx minor starts vals = proxy cx witness
+                start = starts U.! i
+                end = fromMaybe (U.length vals) $ starts U.!? i
+                dLen = U.length sl - (end - start)
+                starts' = flip U.imap starts $ \j x ->
+                    if j > i then (x + dLen) else x
+                prefix = U.take start vals
+                suffix = U.drop end vals
+                vals' = prefix U.++ sl U.++ suffix
+            in if i < U.length starts
+                  then Cx minor starts' vals'
+                  else error "sliceS: major index out of bounds"
 
+class FormatR (fmt :: FormatK) where
     _eq :: (Eq a, Unbox a) => Matrix fmt or a -> Matrix fmt or a -> Bool
     _each :: (Unbox a, Unbox b)
           => Traversal (Matrix fmt or a) (Matrix fmt or b) a b
 
 instance FormatR U where
-    slice i = lens sliceG sliceS
-      where
-        sliceG mat@(MatU ux)
-            | i < view (dimF . _1) mat =
-                untag $ unproxy $ \witness ->
-                    let Ux _ _ vals = proxy ux witness
-                        (start, end) = getSliceExtentsU mat
-                        (_, minors, coeffs) =
-                            reorient witness
-                            $ U.unzip3
-                            $ U.slice start (end - start) vals
-                    in U.zip minors coeffs
-            | otherwise = error "sliceG: index out of bounds!"
-        sliceS mat@(MatU ux) sl =
-            MatU $ unproxy $ \witness ->
-                let Ux r c vals = proxy ux witness
-                    (start, end) = getSliceExtentsU mat
-                    (minors, coeffs) = U.unzip sl
-                    majors = U.replicate (U.length sl) i
-                    (rows, cols) = reorient witness (majors, minors)
-                    (prefix, _) = U.splitAt start vals
-                    (_, suffix) = U.splitAt end vals
-                in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
-        getSliceExtentsU (MatU ux) =
-            untag $ unproxy $ \witness ->
-                let Ux _ _ vals = proxy ux witness
-                    (majors, _, _) = reorient witness $ U.unzip3 vals
-                in runST $ do
-                    majors_ <- U.thaw majors
-                    (,) <$> binarySearchL majors_ i
-                        <*> binarySearchL majors_ (succ i)
-
     _eq (MatU a) (MatU b) = untag a == untag b
 
     _each f (MatU ux) =
@@ -295,31 +314,6 @@ instance FormatR U where
         in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
 
 instance FormatR C where
-    slice i = lens sliceG sliceS
-      where
-        sliceG (MatC cx)
-            | i < U.length starts = U.slice start (end - start) vals
-            | otherwise = error "sliceG: major index out of bounds"
-          where
-            Cx _ starts vals = untag cx
-            start = starts U.! i
-            end = fromMaybe (U.length vals) $ starts U.!? succ i
-
-        sliceS (MatC cx) sl =
-            MatC $ unproxy $ \witness ->
-                let Cx minor starts vals = proxy cx witness
-                    start = starts U.! i
-                    end = fromMaybe (U.length vals) $ starts U.!? i
-                    dLen = U.length sl - (end - start)
-                    starts' = flip U.imap starts $ \j x ->
-                        if j > i then (x + dLen) else x
-                    prefix = U.take start vals
-                    suffix = U.drop end vals
-                    vals' = prefix U.++ sl U.++ suffix
-                in if i < U.length starts
-                      then Cx minor starts' vals'
-                      else error "sliceS: major index out of bounds"
-
     _eq (MatC a) (MatC b) = untag a == untag b
 
     _each f (MatC cx) =
