@@ -14,7 +14,7 @@ module Numeric.LinearAlgebra.Sparse
     , dim, dimF, nonzero, reorder, transpose
     , compress, compressed, uncompressed
     , compressed', uncompressed'
-    , slicesF, rowsF, colsF
+    , slices, rows, cols
     , pack, adjoint, unpack
     , empty, diag, ident
     , mulV, mulVM, mul, add
@@ -324,16 +324,30 @@ generate len f = map f $ take len $ [0..]
 empty :: (Format fmt, Orient or, Unbox a) => Matrix fmt or a
 empty = view (from uncompressed) $ pack 1 1 $ U.empty
 
--- | Fold over the slices in a matrix using 'sliceG'.
-slicesF :: (Format fmt, Orient or, Unbox a)
-        => Fold (Matrix fmt or a) (Slice a)
-slicesF = folding $ \mat -> generate (mat ^. dimF . _1) $ \i -> mat ^. slice i
+rows :: (Format fmt, Unbox a, Unbox b)
+     => Traversal (Matrix fmt Row a) (Matrix fmt Row b) (Slice a) (Slice b)
+rows = slices
 
-rowsF :: (Format fmt, Unbox a) => Fold (Matrix fmt Row a) (Slice a)
-rowsF = slicesF
+cols :: (Format fmt, Unbox a, Unbox b)
+     => Traversal (Matrix fmt Col a) (Matrix fmt Col b) (Slice a) (Slice b)
+cols = slices
 
-colsF :: (Format fmt, Unbox a) => Fold (Matrix fmt Col a) (Slice a)
-colsF = slicesF
+insertSlice :: (Format fmt, Orient or, Unbox a)
+            => Int -> Matrix fmt or a -> Slice a -> Matrix fmt or a
+insertSlice i mat sl = mat & dimF . _1 %~ (max i)
+                           & dimF . _2 %~ (max j)
+                           & slice i .~ sl
+  where
+    j = U.maximum $ fst $ U.unzip sl
+
+loop :: Int -> b -> (b -> Int -> b) -> b
+loop n acc f = foldl' f acc [0..(n - 1)]
+
+slices :: (Format fmt, Orient or, Unbox a, Unbox b)
+       => Traversal (Matrix fmt or a) (Matrix fmt or b) (Slice a) (Slice b)
+slices f mat =
+    loop (mat ^. dim . _1) (pure empty) $ \acc i ->
+        insertSlice i <$> acc <*> f (mat ^. slice i)
 
 sortUx :: (Orient or, Unbox a) => Proxy or -> Ux a -> Ux a
 sortUx witness (Ux nr nc triples) =
@@ -371,7 +385,7 @@ mulV mat xs_
     | c == U.length xs =
         V.convert $ U.create $ do
             ys <- MU.new r
-            iforMOf_ (indexing rowsF) mat $ \ixR row -> do
+            iforMOf_ (indexing rows) mat $ \ixR row -> do
               let (cols, coeffs) = U.unzip row
               MU.write ys ixR
                 $ U.sum $ U.zipWith (*) coeffs
@@ -390,7 +404,7 @@ mulVM mat src dst
     | r /= MV.length dst =
         error "mulVM: output vector dimension does not match matrix height"
     | otherwise =
-        iforMOf_ (indexing rowsF) mat $ \i row -> do
+        iforMOf_ (indexing rows) mat $ \i row -> do
             let (cols, coeffs) = U.unzip row
             x <- U.mapM (MV.read src) cols
             MV.write dst i $ U.sum $ U.zipWith (*) coeffs x
