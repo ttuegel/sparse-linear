@@ -21,7 +21,6 @@ module Numeric.LinearAlgebra.Sparse
     ) where
 
 import Control.Applicative hiding (empty)
-import Control.Exception (assert)
 import Control.Lens
 import Control.Monad (liftM2, when)
 import Control.Monad.Primitive (PrimMonad(..))
@@ -29,7 +28,7 @@ import Control.Monad.ST (runST)
 import Data.Complex
 import Data.List (foldl')
 import Data.Maybe (fromMaybe)
-import Data.Monoid ((<>))
+import Data.Monoid
 import Data.Ord (comparing)
 import qualified Data.Vector.Generic as V
 import qualified Data.Vector.Generic.Mutable as MV
@@ -412,27 +411,31 @@ mul a b
            => Vector (Int, a) -> Vector (Int, a) -> Matrix C or a
     expand ls rs = pack left right $ U.concatMap (\(r, x) -> U.map (\(c, y) -> (r, c, x * y)) rs) ls
 
-add :: (Num a, Orient or, Unbox a)
-    => Matrix C or a -> Matrix C or a -> Matrix C or a
-add a b =
-    let (majorA, minorA) = view dimF a
-        (valsC, ixsC) = runST $ do
-          vals <- MU.new $ a ^. nonzero + b ^. nonzero
-          ixs <- MU.new majorA
-          let go i start
-                | i < majorA = do
-                  MU.unsafeWrite ixs i start
-                  let sliceA = a ^. slice i
-                      sliceB = b ^. slice i
-                  len <- addSlicesInto
-                    (MU.slice start (U.length sliceA + U.length sliceB) vals)
-                    sliceA sliceB
-                  go (succ i) (start + len)
-                | otherwise = return start
-          len <- go 0 0
-          (,) <$> U.unsafeFreeze (MU.unsafeSlice 0 len vals) <*> U.unsafeFreeze ixs
-    in assert (view dimF a == view dimF b)
-        $ MatC $ tag Proxy $ Cx minorA ixsC valsC
+add :: (Format fmt, Num a, Orient or, Unbox a)
+    => Matrix fmt or a -> Matrix fmt or a -> Matrix fmt or a
+add a b
+    | view dimF a /= view dimF b = error "add: Matrix dimensions do not agree!"
+    | otherwise =
+        let (majorA, minorA) = view dimF a
+            (valsC, ixsC) = runST $ do
+              vals <- MU.new $ a ^. nonzero + b ^. nonzero
+              ixs <- MU.new majorA
+              let go i start
+                    | i < majorA = do
+                      MU.unsafeWrite ixs i start
+                      let sliceA = a ^. slice i
+                          sliceB = b ^. slice i
+                          lenA = U.length sliceA
+                          lenB = U.length sliceB
+                      len <- addSlicesInto
+                          (MU.slice start (lenA + lenB) vals)
+                          sliceA sliceB
+                      go (succ i) (start + len)
+                    | otherwise = return start
+              len <- go 0 0
+              (,) <$> U.unsafeFreeze (MU.unsafeSlice 0 len vals)
+                  <*> U.unsafeFreeze ixs
+        in view (from compressed) $ MatC $ tag Proxy $ Cx minorA ixsC valsC
   where
     addSlicesInto :: (Monad m, Num a, PrimMonad m, Unbox a)
                   => MVector (PrimState m) (Int, a)
@@ -495,3 +498,16 @@ adjoint = conjugate' . transpose
 
 unpack :: Matrix U or a -> Vector (Int, Int, a)
 unpack (MatU ux) = let Ux _ _ triples = untag ux in triples
+
+-- | 'mempty' is just 'empty' and 'mappend' is a variation on addition that
+-- ensures the matrices have the same dimension by taking the larger
+-- dimension of each matrix in each direction.
+instance (Format fmt, Orient or, Num a, Unbox a) =>
+    Monoid (Matrix fmt or a) where
+
+    mempty = empty
+    mappend a b = add (a & dim .~ dim') (b & dim .~ dim')
+      where
+        (ra, ca) = view dim a
+        (rb, cb) = view dim b
+        dim' = (max ra rb, max ca cb)
