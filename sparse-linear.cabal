@@ -42,3 +42,17 @@ test-suite test-props
                   tasty ==0.8.*,
                   tasty-quickcheck ==0.8.*,
                   vector
+
+test-suite test-dedup
+  type: exitcode-stdio-1.0
+  main-is: test-dedup.hs
+  other-modules:  Numeric.LinearAlgebra.Sparse.QuickCheck
+  hs-source-dirs: tests
+  default-language: Haskell2010
+  build-depends:  base,
+                  lens ==4.1.*,
+                  sparse-linear,
+                  QuickCheck ==2.7.*,
+                  tasty ==0.8.*,
+                  tasty-quickcheck ==0.8.*,
+                  vector
