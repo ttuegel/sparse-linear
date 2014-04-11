@@ -19,7 +19,7 @@ import Test.QuickCheck
 
 import Numeric.LinearAlgebra.Sparse
 
-instance (Arbitrary a, Format fmt, Orient or, Show a, Unbox a) => Arbitrary (Matrix fmt or a) where
+instance (Arbitrary a, Format fmt, Num a, Orient or, Show a, Unbox a) => Arbitrary (Matrix fmt or a) where
     arbitrary = do
         r <- abs <$> arbitrarySizedIntegral `suchThat` (> 0)
         c <- abs <$> arbitrarySizedIntegral `suchThat` (> 0)
@@ -28,7 +28,7 @@ instance (Arbitrary a, Format fmt, Orient or, Show a, Unbox a) => Arbitrary (Mat
         cols <- vectorOf nnz $ arbitrary `suchThat` (\i -> i < c && i >= 0)
         coeffs <- vector nnz
         let indices (i, j, _) (k, l, _) = i == k && j == l
-        return $ pack r c $ U.fromList $ nubBy indices $ zip3 rows cols coeffs
+        return $ deduplicate $ pack r c $ U.fromList $ zip3 rows cols coeffs
 
     shrink mat =
         let (r, c) = mat ^. dim
