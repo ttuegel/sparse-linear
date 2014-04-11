@@ -11,11 +11,12 @@ module Numeric.LinearAlgebra.Sparse
     , Unbox
     , OrientK(..), Orient(..)
     , Format(..), FormatK(..)
-    , dim, dimF, nonzero, reorder, transpose
+    , dim, dimF, nonzero
+    , reorder, transpose, adjoint
+    , pack, unpack, deduplicate
     , compress, compressed, uncompressed
     , compressed', uncompressed'
-    , slices, rows, cols
-    , pack, adjoint, unpack
+    , slices, rows, cols, slice
     , empty, diag, ident
     , mulV, mulVM, mul, add
     ) where
@@ -467,11 +468,21 @@ add a b
           len2 = U.length src2
       MU.move (MU.slice 0 len1 dst) =<< U.thaw src1
       MU.move (MU.slice len1 len2 dst) =<< U.thaw src2
-      deduplicateSlice dst
+      deduplicateSliceM dst
 
-deduplicateSlice :: (Monad m, Num a, PrimMonad m, Unbox a)
-                 => MVector (PrimState m) (Int, a) -> m Int
-deduplicateSlice dst = do
+deduplicate :: (Format fmt, Num a, Orient or, Unbox a)
+            => Matrix fmt or a -> Matrix fmt or a
+deduplicate = over slices deduplicateSlice
+
+deduplicateSlice :: (Num a, Unbox a) => Vector (Int, a) -> Vector (Int, a)
+deduplicateSlice v_ = runST $ do
+    v <- U.thaw v_
+    len <- deduplicateSliceM v
+    U.freeze $ MU.slice 0 len v
+
+deduplicateSliceM :: (Monad m, Num a, PrimMonad m, Unbox a)
+                  => MVector (PrimState m) (Int, a) -> m Int
+deduplicateSliceM dst = do
     let (ns, xs) = MU.unzip dst
         len = MU.length dst
         accumulate update check =
