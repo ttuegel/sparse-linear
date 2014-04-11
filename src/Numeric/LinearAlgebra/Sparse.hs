@@ -257,6 +257,10 @@ transpose = formats (iso transposeU transposeU . from uncompressed) (iso transpo
     transposeC :: Matrix C or a -> Matrix C or' a
     transposeC (MatC cx) = MatC $ tag Proxy $ untag cx
 
+outOfBounds :: String -> Int -> (Int, Int) -> String
+outOfBounds prefix i bnds =
+    prefix ++ " " ++ show i ++ " out of bounds " ++ show bnds
+
 slice :: (Format fmt, Functor f, Orient or, Unbox a)
       => Int -> LensLike' f (Matrix fmt or a) (Slice a)
 slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
@@ -271,17 +275,19 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
                         $ U.unzip3
                         $ U.slice start (end - start) vals
                 in U.zip minors coeffs
-        | otherwise = error "sliceG: index out of bounds!"
-    sliceSU mat@(MatU ux) sl =
-        MatU $ unproxy $ \witness ->
-            let Ux r c vals = proxy ux witness
-                (start, end) = getSliceExtentsU mat
-                (minors, coeffs) = U.unzip sl
-                majors = U.replicate (U.length sl) i
-                (rows, cols) = reorient witness (majors, minors)
-                (prefix, _) = U.splitAt start vals
-                (_, suffix) = U.splitAt end vals
-            in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
+        | otherwise = error $ outOfBounds "sliceGU:" i (mat ^. dimF)
+    sliceSU mat@(MatU ux) sl
+        | i < view (dimF . _1) mat =
+            MatU $ unproxy $ \witness ->
+                let Ux r c vals = proxy ux witness
+                    (start, end) = getSliceExtentsU mat
+                    (minors, coeffs) = U.unzip sl
+                    majors = U.replicate (U.length sl) i
+                    (rows, cols) = reorient witness (majors, minors)
+                    (prefix, _) = U.splitAt start vals
+                    (_, suffix) = U.splitAt end vals
+                in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
+        | otherwise = error $ outOfBounds "sliceSU:" i (mat ^. dimF)
     getSliceExtentsU (MatU ux) =
         untag $ unproxy $ \witness ->
             let Ux _ _ vals = proxy ux witness
@@ -290,27 +296,27 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
                 majors_ <- U.thaw majors
                 (,) <$> binarySearchL majors_ i
                     <*> binarySearchL majors_ (succ i)
-    sliceGC (MatC cx)
+    sliceGC mat@(MatC cx)
         | i < U.length starts = U.slice start (end - start) vals
-        | otherwise = error "sliceG: major index out of bounds"
+        | otherwise = error $ outOfBounds "sliceGC:" i (mat ^. dimF)
       where
         Cx _ starts vals = untag cx
         start = starts U.! i
         end = fromMaybe (U.length vals) $ starts U.!? succ i
-    sliceSC (MatC cx) sl =
-        MatC $ unproxy $ \witness ->
-            let Cx minor starts vals = proxy cx witness
-                start = starts U.! i
-                end = fromMaybe (U.length vals) $ starts U.!? i
-                dLen = U.length sl - (end - start)
-                starts' = flip U.imap starts $ \j x ->
-                    if j > i then (x + dLen) else x
-                prefix = U.take start vals
-                suffix = U.drop end vals
-                vals' = prefix U.++ sl U.++ suffix
-            in if i < U.length starts
-                  then Cx minor starts' vals'
-                  else error "sliceS: major index out of bounds"
+    sliceSC mat@(MatC cx) sl
+        | i < (mat ^. dimF . _1) =
+            MatC $ unproxy $ \witness ->
+                let Cx minor starts vals = proxy cx witness
+                    start = starts U.! i
+                    end = fromMaybe (U.length vals) $ starts U.!? succ i
+                    dLen = U.length sl - (end - start)
+                    starts' = flip U.imap starts $ \j x ->
+                        if j > i then (x + dLen) else x
+                    prefix = U.take start vals
+                    suffix = U.drop end vals
+                    vals' = prefix U.++ sl U.++ suffix
+                in Cx minor starts' vals'
+        | otherwise = error $ outOfBounds "sliceSC:" i (mat ^. dimF)
 
 instance (Eq a, Format fmt, Orient or, Unbox a) => Eq (Matrix fmt or a) where
     (==) = view $ formats (to goU) (to goC)
@@ -334,11 +340,11 @@ cols = slices
 
 insertSlice :: (Format fmt, Orient or, Unbox a)
             => Int -> Matrix fmt or a -> Slice a -> Matrix fmt or a
-insertSlice i mat sl = mat & dimF . _1 %~ (max i)
-                           & dimF . _2 %~ (max j)
+insertSlice i mat sl = mat & dimF . _1 %~ (max (succ i))
+                           & dimF . _2 %~ (max (succ j))
                            & slice i .~ sl
   where
-    j = U.maximum $ fst $ U.unzip sl
+    j = U.foldl' max 0 $ fst $ U.unzip sl
 
 loop :: Int -> b -> (b -> Int -> b) -> b
 loop n acc f = foldl' f acc [0..(n - 1)]
@@ -346,7 +352,7 @@ loop n acc f = foldl' f acc [0..(n - 1)]
 slices :: (Format fmt, Orient or, Unbox a, Unbox b)
        => Traversal (Matrix fmt or a) (Matrix fmt or b) (Slice a) (Slice b)
 slices f mat =
-    loop (mat ^. dim . _1) (pure empty) $ \acc i ->
+    loop (mat ^. dimF . _1) (pure empty) $ \acc i ->
         insertSlice i <$> acc <*> f (mat ^. slice i)
 
 sortUx :: (Orient or, Unbox a) => Proxy or -> Ux a -> Ux a
@@ -490,7 +496,7 @@ deduplicateSlice dst = do
     start <- binarySearchL (fst $ MU.unzip dst) 0
     let len' = len - start
     when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
-    return len'
+    return $ min len len'
 
 instance (Format fmt, Unbox a, Unbox b) =>
     Each (Matrix fmt ord a) (Matrix fmt ord b) a b where
