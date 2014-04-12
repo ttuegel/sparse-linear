@@ -16,7 +16,7 @@ module Numeric.LinearAlgebra.Sparse
     , pack, unpack, deduplicate
     , compress, compressed, uncompressed
     , compressed', uncompressed'
-    , slices, rows, cols, slice
+    , _slices, _rows, _cols, slice
     , empty, diag, ident
     , mulV, mulVM, mul, add
     ) where
@@ -331,13 +331,13 @@ generate len f = map f $ take len $ [0..]
 empty :: (Format fmt, Orient or, Unbox a) => Matrix fmt or a
 empty = view (from uncompressed) $ pack 1 1 $ U.empty
 
-rows :: (Format fmt, Unbox a, Unbox b)
-     => Traversal (Matrix fmt Row a) (Matrix fmt Row b) (Slice a) (Slice b)
-rows = slices
+_rows :: (Format fmt, Unbox a, Unbox b)
+      => Traversal (Matrix fmt Row a) (Matrix fmt Row b) (Slice a) (Slice b)
+_rows = _slices
 
-cols :: (Format fmt, Unbox a, Unbox b)
-     => Traversal (Matrix fmt Col a) (Matrix fmt Col b) (Slice a) (Slice b)
-cols = slices
+_cols :: (Format fmt, Unbox a, Unbox b)
+      => Traversal (Matrix fmt Col a) (Matrix fmt Col b) (Slice a) (Slice b)
+_cols = _slices
 
 insertSlice :: (Format fmt, Orient or, Unbox a)
             => Int -> Matrix fmt or a -> Slice a -> Matrix fmt or a
@@ -350,11 +350,11 @@ insertSlice i mat sl = mat & dimF . _1 %~ (max (succ i))
 loop :: Int -> b -> (b -> Int -> b) -> b
 loop n acc f = foldl' f acc [0..(n - 1)]
 
-slices :: (Format fmt, Orient or, Unbox a, Unbox b)
-       => Traversal (Matrix fmt or a) (Matrix fmt or b) (Slice a) (Slice b)
-slices f mat =
-    loop (mat ^. dimF . _1) (pure empty) $ \acc i ->
-        insertSlice i <$> acc <*> f (mat ^. slice i)
+_slices :: (Format fmt, Orient or, Unbox a, Unbox b)
+        => Traversal (Matrix fmt or a) (Matrix fmt or b) (Slice a) (Slice b)
+_slices f mat =
+    loop (mat ^. dimF . _1) (pure $ empty & dim .~ (mat ^. dim))
+    $ \acc i -> insertSlice i <$> acc <*> f (mat ^. slice i)
 
 sortUx :: (Orient or, Unbox a) => Proxy or -> Ux a -> Ux a
 sortUx witness (Ux nr nc triples) =
@@ -430,49 +430,21 @@ mul a b
     empty_ = set dim (left, right) empty
     expand :: (Num a, Orient or, Unbox a)
            => Vector (Int, a) -> Vector (Int, a) -> Matrix C or a
-    expand ls rs = pack left right $ U.concatMap (\(r, x) -> U.map (\(c, y) -> (r, c, x * y)) rs) ls
+    expand ls rs =
+        pack left right
+        $ U.concatMap (\(r, x) -> U.map (\(c, y) -> (r, c, x * y)) rs) ls
 
 add :: (Format fmt, Num a, Orient or, Unbox a)
     => Matrix fmt or a -> Matrix fmt or a -> Matrix fmt or a
 add a b
-    | view dimF a /= view dimF b = error "add: Matrix dimensions do not agree!"
-    | otherwise =
-        let (majorA, minorA) = view dimF a
-            (valsC, ixsC) = runST $ do
-              vals <- MU.new $ a ^. nonzero + b ^. nonzero
-              ixs <- MU.new majorA
-              let go i start
-                    | i < majorA = do
-                      MU.unsafeWrite ixs i start
-                      let sliceA = a ^. slice i
-                          sliceB = b ^. slice i
-                          lenA = U.length sliceA
-                          lenB = U.length sliceB
-                      len <- addSlicesInto
-                          (MU.slice start (lenA + lenB) vals)
-                          sliceA sliceB
-                      go (succ i) (start + len)
-                    | otherwise = return start
-              len <- go 0 0
-              (,) <$> U.unsafeFreeze (MU.unsafeSlice 0 len vals)
-                  <*> U.unsafeFreeze ixs
-        in view (from compressed) $ MatC $ tag Proxy $ Cx minorA ixsC valsC
-  where
-    addSlicesInto :: (Monad m, Num a, PrimMonad m, Unbox a)
-                  => MVector (PrimState m) (Int, a)
-                  -> Vector (Int, a)
-                  -> Vector (Int, a)
-                  -> m Int
-    addSlicesInto dst src1 src2 = do
-      let len1 = U.length src1
-          len2 = U.length src2
-      MU.move (MU.slice 0 len1 dst) =<< U.thaw src1
-      MU.move (MU.slice len1 len2 dst) =<< U.thaw src2
-      deduplicateSliceM dst
+    | a ^. dim == b ^. dim = deduplicate $ mappend a b
+    | otherwise = error $ "add: matrix dimension " ++ show (a ^. dim)
+                        ++ " does not match " ++ show (b ^. dim)
 
+-- This is spitting out a matrix whose dimensions don't match the input
 deduplicate :: (Format fmt, Num a, Orient or, Unbox a)
             => Matrix fmt or a -> Matrix fmt or a
-deduplicate = over slices deduplicateSlice
+deduplicate = over _slices deduplicateSlice
 
 deduplicateSlice :: (Num a, Unbox a) => Vector (Int, a) -> Vector (Int, a)
 deduplicateSlice v_ = runST $ do
