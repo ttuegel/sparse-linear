@@ -530,15 +530,43 @@ adjoint = conjugate' . transpose
 unpack :: Matrix U or a -> Vector (Int, Int, a)
 unpack (MatU ux) = let Ux _ _ triples = untag ux in triples
 
--- | 'mempty' is just 'empty' and 'mappend' is a variation on addition that
--- ensures the matrices have the same dimension by taking the larger
--- dimension of each matrix in each direction.
-instance (Format fmt, Orient or, Num a, Unbox a) =>
-    Monoid (Matrix fmt or a) where
+-- | 'mempty' is just 'empty' and 'mappend' is enlarging, duplicating addition
+instance (Format fmt, Orient or, Unbox a) => Monoid (Matrix fmt or a) where
 
     mempty = empty
-    mappend a b = add (a & dim .~ dim') (b & dim .~ dim')
+
+    mappend ma mb = runST $ do
+        -- Initialize work space
+        valsC <- MU.new nnzC
+        startsC <- MU.new mjrC
+        MU.set startsC nnzC
+
+        -- Copy the values into place
+        let copySlicesFrom i startC
+                | i < mjrC = do
+                    let sliceA | i < mjrA = ma ^. slice i
+                               | otherwise = U.empty
+                        lenA = U.length sliceA
+                        sliceB | i < mjrB = mb ^. slice i
+                               | otherwise = U.empty
+                        lenB = U.length sliceB
+                        sliceCA = MU.slice startC lenA valsC
+                        sliceCB = MU.slice (startC + lenA) lenB valsC
+                    U.copy sliceCA sliceA
+                    U.copy sliceCB sliceB
+                    MU.write startsC i startC
+                    copySlicesFrom (succ i) (startC + lenA + lenB)
+                | otherwise = return ()
+        copySlicesFrom 0 0
+
+        -- Freeze work space into new matrix
+        starts <- U.unsafeFreeze startsC
+        vals <- U.unsafeFreeze valsC
+        return $! view (from compressed)
+                $ MatC $ tag Proxy $ Cx mnrC starts vals
       where
-        (ra, ca) = view dim a
-        (rb, cb) = view dim b
-        dim' = (max ra rb, max ca cb)
+        (mjrA, mnrA) = ma ^. dimF
+        (mjrB, mnrB) = mb ^. dimF
+        mjrC = max mjrA mjrB
+        mnrC = max mnrA mnrB
+        nnzC = ma ^. nonzero + mb ^. nonzero
