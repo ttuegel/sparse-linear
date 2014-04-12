@@ -388,13 +388,15 @@ mulV mat xs_
     | c == U.length xs =
         V.convert $ U.create $ do
             ys <- MU.new r
-            iforMOf_ (indexing rows) mat $ \ixR row -> do
+            iforMOf_ (indexing _rows) mat $ \ixR row -> do
               let (cols, coeffs) = U.unzip row
               MU.write ys ixR
                 $ U.sum $ U.zipWith (*) coeffs
                 $ U.backpermute xs cols
             return ys
-    | otherwise = error "mulV: matrix width does not match vector length!"
+    | otherwise = error $ "mulV: matrix width " ++ show c
+                        ++ " does not match vector length "
+                        ++ show (U.length xs)
   where
     xs = V.convert xs_
     (r, c) = view dim mat
