@@ -456,7 +456,28 @@ add a b
 -- This is spitting out a matrix whose dimensions don't match the input
 deduplicate :: (Format fmt, Num a, Orient or, Unbox a)
             => Matrix fmt or a -> Matrix fmt or a
-deduplicate = over _slices deduplicateSlice
+deduplicate = view $ formats (to deduplicateU . from uncompressed) (to deduplicateC)
+  where
+    deduplicateC = view (uncompressed . to deduplicateU . from uncompressed)
+    deduplicateU (MatU ux) =
+        MatU $ unproxy $ \witness ->
+            let Ux nr nc triples = sortUx witness $ proxy ux witness
+            in Ux nr nc $ runST $ do
+                vals <- U.thaw triples
+                let nnz = MU.length vals
+                    accum update check
+                        | check < nnz = do
+                            (r, c, x) <- MU.read vals update
+                            (r', c', y) <- MU.read vals check
+                            if r == r' && c == c'
+                              then do
+                                  MU.write vals update (r, c, x + y)
+                                  MU.write vals check (-1, -1, 0)
+                                  accum update (succ check)
+                              else accum check (succ check)
+                        | otherwise = return ()
+                accum 0 1
+                U.filter ((>= 0) . view _1) <$> U.unsafeFreeze vals
 
 deduplicateSlice :: (Num a, Unbox a) => Vector (Int, a) -> Vector (Int, a)
 deduplicateSlice v_ = runST $ do
