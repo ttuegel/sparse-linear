@@ -427,9 +427,9 @@ mul :: (Num a, Orient or, Show a, Unbox a)
 mul a b
     | inner == inner' =
         deduplicate
-            $ foldl' mappend empty_
-            $ generate inner
-            $ \i -> expand (a ^. slice i) (b ^. slice i)
+        $ foldl' mappend empty_
+        $ generate inner
+        $ \i -> expand (a ^. slice i) (b ^. slice i)
     | otherwise = error "mul: matrix inner dimensions do not match!"
   where
     (inner, left) = view dimF a
@@ -439,13 +439,12 @@ mul a b
            => Vector (Int, a) -> Vector (Int, a) -> Matrix C or a
     expand ls rs =
         view (from uncompressed) $ MatU $ unproxy $ \witness ->
-            let (ms, ns) = reorient witness (ls, rs) in
             -- TODO: Expand directly into compressed matrix
-            Ux left right
-            $ U.map (reorient witness)
-            $ flip U.concatMap ms
-            $ \(m, x) -> flip U.map ns
-            $ \(n, y) -> (m, n, x * y)
+            sortUx witness
+            $ Ux left right
+            $ flip U.concatMap ls
+            $ \(r, x) -> flip U.map rs
+            $ \(c, y) -> (r, c, x * y)
 
 add :: (Format fmt, Num a, Orient or, Unbox a)
     => Matrix fmt or a -> Matrix fmt or a -> Matrix fmt or a
