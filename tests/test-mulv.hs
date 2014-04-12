@@ -7,6 +7,7 @@
 module Main where
 
 import Control.Lens
+import Data.Complex
 import Data.MorallyEq
 import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as U
@@ -29,6 +30,16 @@ main = defaultMain $ testGroup "Vector Properties"
             (prop_mulv_ident :: Prop_mulv_ident Double)
         , QC.testProperty "mulV m v == mulVM m v"
             (prop_mulv_mut :: Prop_mulv_mut Double)
+        ]
+    , testGroup "Matrix C Row (Complex Double)"
+        [ QC.testProperty "(m1 + m2) .* v == (m1 .* v) + (m2 .* v)"
+            (prop_mulv_distrib :: Prop_mulv_distrib (Complex Double))
+        , QC.testProperty "(m1 * m2) .* v == m1 .* m2 .* v"
+            (prop_mulv_assoc :: Prop_mulv_assoc (Complex Double))
+        , QC.testProperty "1 * v == v"
+            (prop_mulv_ident :: Prop_mulv_ident (Complex Double))
+        , QC.testProperty "mulV m v == mulVM m v"
+            (prop_mulv_mut :: Prop_mulv_mut (Complex Double))
         ]
     ]
 
