@@ -26,7 +26,6 @@ instance (Show (Matrix fmt or a), Arbitrary a, Format fmt, Num a, Orient or, Sho
         rows <- vectorOf nnz $ arbitrary `suchThat` (\i -> i < r && i >= 0)
         cols <- vectorOf nnz $ arbitrary `suchThat` (\i -> i < c && i >= 0)
         coeffs <- vector nnz
-        let indices (i, j, _) (k, l, _) = i == k && j == l
         return $ deduplicate $ pack r c $ U.fromList $ zip3 rows cols coeffs
 
     shrink mat =
