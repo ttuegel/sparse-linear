@@ -438,8 +438,14 @@ mul a b
     expand :: (Num a, Orient or, Unbox a)
            => Vector (Int, a) -> Vector (Int, a) -> Matrix C or a
     expand ls rs =
-        pack left right
-        $ U.concatMap (\(r, x) -> U.map (\(c, y) -> (r, c, x * y)) rs) ls
+        view (from uncompressed) $ MatU $ unproxy $ \witness ->
+            let (ms, ns) = reorient witness (ls, rs) in
+            -- TODO: Expand directly into compressed matrix
+            Ux left right
+            $ U.map (reorient witness)
+            $ flip U.concatMap ms
+            $ \(m, x) -> flip U.map ns
+            $ \(n, y) -> (m, n, x * y)
 
 add :: (Format fmt, Num a, Orient or, Unbox a)
     => Matrix fmt or a -> Matrix fmt or a -> Matrix fmt or a
