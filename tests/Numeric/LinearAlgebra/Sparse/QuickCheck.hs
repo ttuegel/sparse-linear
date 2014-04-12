@@ -3,23 +3,22 @@
 {-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Numeric.LinearAlgebra.Sparse.QuickCheck where
 
 import Control.Applicative
 import Control.Lens
-import Control.Monad (liftM)
-import Data.Function (on)
-import Data.List (find, nubBy)
-import Data.Maybe (catMaybes, isJust)
-import Data.Proxy.PolyKind
-import Data.Vector.Unboxed (Unbox, Vector)
+import Data.Maybe (catMaybes)
+import Data.MorallyEq
+import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as U
 import Test.QuickCheck
 
 import Numeric.LinearAlgebra.Sparse
 
-instance (Arbitrary a, Format fmt, Num a, Orient or, Show a, Unbox a) => Arbitrary (Matrix fmt or a) where
+instance (Show (Matrix fmt or a), Arbitrary a, Format fmt, Num a, Orient or, Show a, Unbox a) => Arbitrary (Matrix fmt or a) where
     arbitrary = do
         r <- abs <$> arbitrarySizedIntegral `suchThat` (> 0)
         c <- abs <$> arbitrarySizedIntegral `suchThat` (> 0)
@@ -70,3 +69,6 @@ matchDimsV2 (m, n, v) =
     let (m', n') = matchDims2 (m, n)
         c = minimum [U.length v, m' ^. dim . _2, n' ^. dim . _2]
     in (m' & dim . _2 .~ c, n' & dim . _2 .~ c, U.take c v)
+
+(~==) :: (MorallyEq a, Show a) => a -> a -> Property
+(~==) a b = counterexample (show a ++ " /= " ++ show b) $ a `morallyEq` b
