@@ -22,39 +22,7 @@ import Numeric.LinearAlgebra.Sparse.QuickCheck
 
 main :: IO ()
 main = defaultMain $ testGroup "Properties"
-    [ testGroup "Multiplicative"
-        [ QC.testProperty
-            "a * 1 == a :: Matrix C Col Double"
-            (prop_mul_ident_r :: Prop2 C Col Double)
-        , QC.testProperty
-            "a * 1 == a :: Matrix C Col (Complex Double)"
-            (prop_mul_ident_r :: Prop2 C Col (Complex Double))
-        , QC.testProperty
-            "1 * a == a :: Matrix C Row Double"
-            (prop_mul_ident_l :: Prop2 C Row Double)
-        , QC.testProperty
-            "1 * a == a :: Matrix C Row (Complex Double)"
-            (prop_mul_ident_l :: Prop2 C Row (Complex Double))
-        , QC.testProperty
-            "(a * b) * c == a * (b * c) :: Matrix C ord Double"
-            (prop_mul_assoc :: Prop3' Double)
-        , QC.testProperty
-            "(a * b) * c == a * (b * c) :: Matrix C ord (Complex Double)"
-            (prop_mul_assoc :: Prop3' (Complex Double))
-        , QC.testProperty
-            ("transpose (a * b) == transpose a * transpose b"
-                ++ " :: Matrix C Col Double")
-            (prop_mul_trans :: Prop2 C Col Double)
-        , QC.testProperty
-            ("transpose (a * b) == transpose a * transpose b"
-                ++ " :: Matrix C Col (Complex Double)")
-            (prop_mul_trans :: Prop2 C Col (Complex Double))
-        , QC.testProperty
-            ("adjoint (a * b) == adjoint a * adjoint b"
-                ++ " :: Matrix C Col (Complex Double)")
-            (prop_mul_adj :: Prop2 C Col (Complex Double))
-        ]
-    , testGroup "LeftModule"
+    [ testGroup "LeftModule"
         [ QC.testProperty
             "(m1 + m2) .* v == (m1 .* v) + (m2 .* v) :: Matrix C Row Double"
             (prop_mod_distrib :: Prop3V Row Row Double)
@@ -82,33 +50,7 @@ type Prop3 fmt ord a =
 
 type Prop2 fmt ord a = (Matrix fmt ord a, Matrix fmt ord a) -> Property
 
-prop_mul_ident_r :: (Eq a, Num a, Show a, Unbox a) => Prop2 C Col a
-prop_mul_ident_r (a, _) = a `mul` (ident $ view (dim . _2) a) === a
-
-prop_mul_ident_l :: (Eq a, Num a, Show a, Unbox a) => Prop2 C Row a
-prop_mul_ident_l (a, _) = (ident $ view (dim . _1) a) `mul` a === a
-
 type Prop3' a = (Matrix C Col a, Matrix C Row a, Matrix C Row a) -> Property
-
-prop_mul_assoc :: (MorallyEq (Matrix C Col a), Num a, Show a, Unbox a)
-               => Prop3' a
-prop_mul_assoc (matchDims3 -> (a, view transpose -> b, c)) = ab_c ~== a_bc
-  where
-    ab_c = (a `mul` view reorder b) `mul` c `asTypeOf` a
-    a_bc = a `mul` (b `mul` c)
-
-prop_mul_trans :: (MorallyEq (Matrix C Col a), Num a, Show a, Unbox a)
-               => Prop2 C Col a
-prop_mul_trans (matchDims2 -> (a, review transpose -> b)) =
-    c ~== (a `mul` b)
-  where
-    c = view transpose (view transpose b `mul` review transpose a) `asTypeOf` a
-
-prop_mul_adj :: Prop2 C Col (Complex Double)
-prop_mul_adj (matchDims2 -> (a, review transpose -> b)) =
-    c ~== (a `mul` b)
-  where
-    c = view adjoint (view adjoint b `mul` review adjoint a) `asTypeOf` a
 
 type Prop3V ord ord' a = (Matrix C ord a, Matrix C ord' a, Vector a) -> Property
 type Prop2V ord a = (Matrix C ord a, Vector a) -> Property

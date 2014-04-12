@@ -49,14 +49,16 @@ instance (Arbitrary a, Unbox a) => Arbitrary (Vector a) where
 
 matchDims2 :: (Format fmt, Orient or, Orient or', Unbox a) => (Matrix fmt or a, Matrix fmt or' a) -> (Matrix fmt or a, Matrix fmt or' a)
 matchDims2 (a, b) =
-    let dima = a ^. dim
-        dimb = b ^. dim
-    in (a & dim .~ min dima dimb, b & dim .~ min dima dimb)
+    let m = max (a ^. dimF . _1) (b ^. dimF . _1)
+        n = max (a ^. dimF . _2) (b ^. dimF . _2)
+    in (a & dimF .~ (m, n), b & dimF .~ (m, n))
 
 matchDims3 :: (Format fmt, Orient or, Orient or', Orient or'', Unbox a) => (Matrix fmt or a, Matrix fmt or' a, Matrix fmt or'' a) -> (Matrix fmt or a, Matrix fmt or' a, Matrix fmt or'' a)
 matchDims3 (a, b, c) =
-    let dim' = minimum [a ^. dim, b ^. dim, c ^. dim]
-    in (a & dim .~ dim', b & dim .~ dim', c & dim .~ dim')
+    let m = max (a ^. dimF . _1) $ max (b ^. dimF . _1) (c ^. dimF . _1)
+        n = max (a ^. dimF . _2) $ max (b ^. dimF . _2) (c ^. dimF . _2)
+        dimF' = (m, n)
+    in (a & dimF .~ dimF', b & dimF .~ dimF', c & dimF .~ dimF')
 
 matchDimsV :: (Format fmt, Orient or, Unbox a) => (Matrix fmt or a, Vector a) -> (Matrix fmt or a, Vector a)
 matchDimsV (m, v) =
