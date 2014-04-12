@@ -111,9 +111,11 @@ class Format (fmt :: FormatK) where
 
 instance Format U where
     formats f _ = f
+    {-# INLINE formats #-}
 
 instance Format C where
     formats _ f = f
+    {-# INLINE formats #-}
 
 -- | Convert between uncompressed and compressed matrix formats.  The most
 -- useful thing about this 'Iso' is that it's forgetful in reverse: if you
@@ -370,15 +372,17 @@ pack r c v
     | not (r > 0) = error "pack: row dimension must be positive!"
     | not (c > 0) = error "pack: column dimension must be positive!"
     | U.any outOfBounds v = error "pack: Index out of bounds!"
-    | otherwise = view (from uncompressed) $ MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
+    | otherwise =
+        view (from uncompressed)
+        $ MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
   where
     outOfBounds (i, j, _) = i >= r || i < 0 || j >= c || j < 0
 
 diag :: (Format fmt, Orient or, Unbox a) => Vector a -> Matrix fmt or a
-diag v =
-    let len = U.length v
-        ixs = U.enumFromN 0 len
-    in pack len len $ U.zip3 ixs ixs v
+diag v = pack len len $ U.zip3 ixs ixs v
+  where
+    len = U.length v
+    ixs = U.enumFromN 0 len
 
 ident :: (Format fmt, Num a, Orient or, Unbox a) => Int -> Matrix fmt or a
 ident i = diag $ U.replicate i 1
@@ -405,22 +409,27 @@ mulVM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
       => Matrix C Row a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 mulVM mat src dst
     | c /= MV.length src =
-        error "mulVM: input vector dimension does not match matrix width"
+        error $ "mulVM: input vector length " ++ show (MV.length src)
+              ++ " does not match matrix width " ++ show c
     | r /= MV.length dst =
-        error "mulVM: output vector dimension does not match matrix height"
+        error $ "mulVM: output vector length " ++ show (MV.length dst)
+              ++ " does not match matrix height " ++ show r
     | otherwise =
-        iforMOf_ (indexing rows) mat $ \i row -> do
+        iforMOf_ (indexing _rows) mat $ \i row -> do
             let (cols, coeffs) = U.unzip row
             x <- U.mapM (MV.read src) cols
             MV.write dst i $ U.sum $ U.zipWith (*) coeffs x
   where
     (r, c) = view dim mat
 
-mul :: (Num a, Orient or, Unbox a)
+mul :: (Num a, Orient or, Show a, Unbox a)
     => Matrix C Col a -> Matrix C Row a -> Matrix C or a
 mul a b
     | inner == inner' =
-        foldl' add empty_ $ generate inner $ \i -> expand (a ^. slice i) (b ^. slice i)
+        deduplicate
+            $ foldl' mappend empty_
+            $ generate inner
+            $ \i -> expand (a ^. slice i) (b ^. slice i)
     | otherwise = error "mul: matrix inner dimensions do not match!"
   where
     (inner, left) = view dimF a
@@ -532,8 +541,7 @@ instance (Format fmt, Orient or, Unbox a) => Monoid (Matrix fmt or a) where
         -- Freeze work space into new matrix
         starts <- U.unsafeFreeze startsC
         vals <- U.unsafeFreeze valsC
-        return $! view (from compressed)
-                $ MatC $ tag Proxy $ Cx mnrC starts vals
+        return $! view (from compressed) $ MatC $ tag Proxy $ Cx mnrC starts vals
       where
         (mjrA, mnrA) = ma ^. dimF
         (mjrB, mnrB) = mb ^. dimF
