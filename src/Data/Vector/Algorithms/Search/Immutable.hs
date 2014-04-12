@@ -3,7 +3,7 @@ module Data.Vector.Algorithms.Search.Immutable where
 
 import Data.Bits
 import Control.Monad.ST
-import Data.Vector.Generic
+import Data.Vector.Generic hiding (cmp)
 import Prelude hiding (length)
 
 type Comparison e = e -> e -> Ordering
