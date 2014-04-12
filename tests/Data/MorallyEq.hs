@@ -14,13 +14,13 @@ class MorallyEq a where
 
 instance MorallyEq Double where
     morallyEq x y = x == y || approxEq
-      where approxEq = (< 1.0E-10) $ 2 * abs (x - y) / (abs x + abs y)
+      where approxEq = (< 1.0E-8) $ 2 * abs (x - y) / (abs x + abs y)
 
 instance MorallyEq (Complex Double) where
     morallyEq x y = x == y || approxEq
       where
         approxEq =
-            (< 1.0E-10) $ 2 * magnitude (x - y) / (magnitude x + magnitude y)
+            (< 1.0E-8) $ 2 * magnitude (x - y) / (magnitude x + magnitude y)
 
 instance (Format fmt, MorallyEq a, Orient or, Show a, Unbox a) =>
          MorallyEq (Matrix fmt or a) where
