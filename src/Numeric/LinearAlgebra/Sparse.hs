@@ -38,7 +38,8 @@ import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Algorithms.Intro (sortBy)
-import Data.Vector.Algorithms.Search (binarySearchL)
+import qualified Data.Vector.Algorithms.Search as MA
+import Data.Vector.Algorithms.Search.Immutable (binarySearchL)
 
 import Data.Proxy.PolyKind
 
@@ -146,9 +147,7 @@ compress = iso compressU decompressC
       let (Ux _ _ vals) = proxy ux witness
           (m, n) = mat ^. dimF
           (majors, minors, coeffs) = reorient witness $ U.unzip3 vals
-          ixs = runST $ do
-            majors_ <- U.thaw majors
-            U.generateM m $ binarySearchL majors_
+          ixs = U.generate m $ binarySearchL majors
       in Cx n ixs $ U.zip minors coeffs
     decompressC mat@(MatC cx) = MatU $ unproxy $ \witness ->
       let (Cx _ ixs vals) = proxy cx witness
@@ -293,10 +292,7 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
         untag $ unproxy $ \witness ->
             let Ux _ _ vals = proxy ux witness
                 (majors, _, _) = reorient witness $ U.unzip3 vals
-            in runST $ do
-                majors_ <- U.thaw majors
-                (,) <$> binarySearchL majors_ i
-                    <*> binarySearchL majors_ (succ i)
+            in (binarySearchL majors i, binarySearchL majors (succ i))
     sliceGC mat@(MatC cx)
         | i < U.length starts = U.slice start (end - start) vals
         | otherwise = error $ outOfBounds "sliceGC:" i (mat ^. dimF)
@@ -476,7 +472,7 @@ deduplicateSliceM dst = do
     sortBy (comparing fst) dst
     accumulate 0 1
     sortBy (comparing fst) dst
-    start <- binarySearchL (fst $ MU.unzip dst) 0
+    start <- MA.binarySearchL (fst $ MU.unzip dst) 0
     let len' = len - start
     when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
     return $ min len len'
