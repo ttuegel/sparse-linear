@@ -62,14 +62,15 @@ matchDims3 (a, b, c) =
 
 matchDimsV :: (Format fmt, Orient or, Unbox a) => (Matrix fmt or a, Vector a) -> (Matrix fmt or a, Vector a)
 matchDimsV (m, v) =
-    let c = minimum [U.length v, m ^. dim . _2]
+    let c = min (U.length v) (m ^. dim . _2)
     in (m & dim . _2 .~ c, U.take c v)
 
 matchDimsV2 :: (Format fmt, Orient or, Orient or', Unbox a) => (Matrix fmt or a, Matrix fmt or' a, Vector a) -> (Matrix fmt or a, Matrix fmt or' a, Vector a)
 matchDimsV2 (m, n, v) =
-    let (m', n') = matchDims2 (m, n)
-        c = minimum [U.length v, m' ^. dim . _2, n' ^. dim . _2]
-    in (m' & dim . _2 .~ c, n' & dim . _2 .~ c, U.take c v)
+    let c = min (U.length v) (n ^. dim . _2)
+        n' = n & dim . _2 .~ c
+        m' = m & dimF .~ (n' ^. dimF)
+    in (m', n', U.take c v)
 
 (~==) :: (MorallyEq a, Show a) => a -> a -> Property
 (~==) a b = counterexample (show a ++ " /= " ++ show b) $ a `morallyEq` b
