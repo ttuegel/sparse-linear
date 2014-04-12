@@ -257,14 +257,14 @@ transpose = formats (iso transposeU transposeU . from uncompressed) (iso transpo
     transposeC :: Matrix C or a -> Matrix C or' a
     transposeC (MatC cx) = MatC $ tag Proxy $ untag cx
 
-outOfBounds :: String -> Int -> (Int, Int) -> String
-outOfBounds prefix i bnds =
-    prefix ++ " " ++ show i ++ " out of bounds " ++ show bnds
-
 slice :: (Format fmt, Functor f, Orient or, Unbox a)
       => Int -> LensLike' f (Matrix fmt or a) (Slice a)
 slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
   where
+    outOfBounds :: String -> (Int, Int) -> String
+    outOfBounds prefix bnds =
+        prefix ++ " " ++ show i ++ " out of bounds " ++ show bnds
+
     sliceGU mat@(MatU ux)
         | i < view (dimF . _1) mat =
             untag $ unproxy $ \witness ->
@@ -275,7 +275,7 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
                         $ U.unzip3
                         $ U.slice start (end - start) vals
                 in U.zip minors coeffs
-        | otherwise = error $ outOfBounds "sliceGU:" i (mat ^. dimF)
+        | otherwise = error $ outOfBounds "sliceGU:" (mat ^. dimF)
     sliceSU mat@(MatU ux) sl
         | i < view (dimF . _1) mat =
             MatU $ unproxy $ \witness ->
@@ -287,7 +287,7 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
                     (prefix, _) = U.splitAt start vals
                     (_, suffix) = U.splitAt end vals
                 in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
-        | otherwise = error $ outOfBounds "sliceSU:" i (mat ^. dimF)
+        | otherwise = error $ outOfBounds "sliceSU:" (mat ^. dimF)
     getSliceExtentsU (MatU ux) =
         untag $ unproxy $ \witness ->
             let Ux _ _ vals = proxy ux witness
@@ -295,7 +295,7 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
             in (binarySearchL majors i, binarySearchL majors (succ i))
     sliceGC mat@(MatC cx)
         | i < U.length starts = U.slice start (end - start) vals
-        | otherwise = error $ outOfBounds "sliceGC:" i (mat ^. dimF)
+        | otherwise = error $ outOfBounds "sliceGC:" (mat ^. dimF)
       where
         Cx _ starts vals = untag cx
         start = starts U.! i
@@ -313,7 +313,7 @@ slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
                     suffix = U.drop end vals
                     vals' = prefix U.++ sl U.++ suffix
                 in Cx minor starts' vals'
-        | otherwise = error $ outOfBounds "sliceSC:" i (mat ^. dimF)
+        | otherwise = error $ outOfBounds "sliceSC:" (mat ^. dimF)
 
 instance (Eq a, Format fmt, Orient or, Unbox a) => Eq (Matrix fmt or a) where
     (==) = view $ formats (to goU) (to goC)
