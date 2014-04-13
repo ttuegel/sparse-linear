@@ -6,20 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Numeric.LinearAlgebra.Sparse
-    ( Matrix
-    , Unbox
-    , OrientK(..), Orient(..)
-    , Format(..), FormatK(..)
-    , dim, dimF, nonzero
-    , reorder, transpose, adjoint
-    , pack, unpack, deduplicate
-    , compress, compressed, uncompressed
-    , compressed', uncompressed'
-    , _slices, _rows, _cols, slice
-    , empty, diag, ident
-    , mulV, mulVM, mul, add
-    ) where
+module Numeric.LinearAlgebra.Sparse where
 
 import Control.Applicative hiding (empty)
 import Control.Lens
