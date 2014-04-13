@@ -12,7 +12,7 @@ import Control.Applicative
 import Control.Lens
 import Data.Maybe (catMaybes)
 import Data.MorallyEq
-import Data.Vector.Unboxed (Vector)
+import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U
 import Test.QuickCheck
 

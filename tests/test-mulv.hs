@@ -9,7 +9,7 @@ module Main where
 import Control.Lens
 import Data.Complex
 import Data.MorallyEq
-import Data.Vector.Unboxed (Vector)
+import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Unboxed.Mutable as MU
 import Test.Tasty

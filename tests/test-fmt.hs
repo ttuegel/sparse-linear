@@ -8,6 +8,7 @@ module Main where
 
 import Control.Lens
 import Data.Complex
+import Data.Vector.Unboxed (Unbox)
 import Test.Tasty
 import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck

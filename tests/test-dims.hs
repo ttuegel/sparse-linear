@@ -7,6 +7,7 @@ module Main where
 
 import Control.Lens
 import Data.Complex
+import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Unboxed.Mutable as MU
 import Test.Tasty

@@ -4,7 +4,7 @@ module Data.MorallyEq where
 
 import Control.Lens
 import Data.Complex
-import Data.Vector.Unboxed (Vector)
+import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U
 
 import Numeric.LinearAlgebra.Sparse

@@ -431,7 +431,7 @@ mul a b
             Ux left right
             $ U.map (reorient witness)
             $ flip U.concatMap (U.modify (sortBy $ comparing fst) ms)
-            $ \(m, x) -> flip U.map (U.modify (sortBy $ comparinf fst) ns)
+            $ \(m, x) -> flip U.map (U.modify (sortBy $ comparing fst) ns)
             $ \(n, y) -> (m, n, x * y)
 
 add :: (Format fmt, Num a, Orient or, Unbox a)
