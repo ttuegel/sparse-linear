@@ -461,7 +461,7 @@ deduplicate = view $ formats (to deduplicateU . from uncompressed) (to deduplica
     deduplicateC = view (uncompressed . to deduplicateU . from uncompressed)
     deduplicateU (MatU ux) =
         MatU $ unproxy $ \witness ->
-            let Ux nr nc triples = sortUx witness $ proxy ux witness
+            let Ux nr nc triples = proxy ux witness
             in Ux nr nc $ runST $ do
                 vals <- U.thaw triples
                 let nnz = MU.length vals
@@ -555,10 +555,8 @@ instance (Format fmt, Orient or, Unbox a) => Monoid (Matrix fmt or a) where
                         sliceB | i < mjrB = mb ^. slice i
                                | otherwise = U.empty
                         lenB = U.length sliceB
-                        sliceCA = MU.slice startC lenA valsC
-                        sliceCB = MU.slice (startC + lenA) lenB valsC
-                    U.copy sliceCA sliceA
-                    U.copy sliceCB sliceB
+                        sliceC = MU.slice startC (lenA + lenB) valsC
+                    sortInto sliceA sliceB sliceC
                     MU.write startsC i startC
                     copySlicesFrom (succ i) (startC + lenA + lenB)
                 | otherwise = return ()
@@ -574,3 +572,22 @@ instance (Format fmt, Orient or, Unbox a) => Monoid (Matrix fmt or a) where
         mjrC = max mjrA mjrB
         mnrC = max mnrA mnrB
         nnzC = ma ^. nonzero + mb ^. nonzero
+
+sortInto :: (Monad m, PrimMonad m, Unbox a) => Slice a -> Slice a -> MVector (PrimState m) (Int, a) -> m ()
+sortInto a b dst = go 0 0 0
+  where
+    lenA = U.length a
+    lenB = U.length b
+    go i j k
+        | i >= lenA =
+            let rest = lenB - j
+            in U.copy (MU.slice k rest dst) (U.slice j rest b)
+        | j >= lenB =
+            let rest = lenA - i
+            in U.copy (MU.slice k rest dst) (U.slice i rest a)
+        | otherwise = do
+            (m, x) <- U.unsafeIndexM a i
+            (n, y) <- U.unsafeIndexM b j
+            if n < m
+              then MU.write dst k (n, y) >> go i (succ j) (succ k)
+              else MU.write dst k (m, x) >> go (succ i) j (succ k)
