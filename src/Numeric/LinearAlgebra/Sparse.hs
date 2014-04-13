@@ -440,11 +440,12 @@ mul a b
     expand ls rs =
         view (from uncompressed) $ MatU $ unproxy $ \witness ->
             -- TODO: Expand directly into compressed matrix
-            sortUx witness
-            $ Ux left right
-            $ flip U.concatMap ls
-            $ \(r, x) -> flip U.map rs
-            $ \(c, y) -> (r, c, x * y)
+            let (ms, ns) = reorient witness (ls, rs) in
+            Ux left right
+            $ U.map (reorient witness)
+            $ flip U.concatMap (U.modify (sortBy $ comparing fst) ms)
+            $ \(m, x) -> flip U.map (U.modify (sortBy $ comparinf fst) ns)
+            $ \(n, y) -> (m, n, x * y)
 
 add :: (Format fmt, Num a, Orient or, Unbox a)
     => Matrix fmt or a -> Matrix fmt or a -> Matrix fmt or a
