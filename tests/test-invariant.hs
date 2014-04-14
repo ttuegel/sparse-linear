@@ -24,6 +24,8 @@ main = defaultMain $ testGroup "Data Invariants"
           (mappend_invariants :: Matrix C Row Double -> Property)
         , QC.testProperty "a + a"
           (add_invariants :: Matrix C Row Double -> Property)
+        , QC.testProperty "a + a"
+          (from_reorder_invariants :: Matrix C Row Double -> Property)
         ]
     , testGroup "Matrix C Col Double"
         [ QC.testProperty "Arbitrary"
@@ -34,6 +36,8 @@ main = defaultMain $ testGroup "Data Invariants"
           (add_invariants :: Matrix C Col Double -> Property)
         , QC.testProperty "a * a"
           (mul_invariants :: Matrix C Col Double -> Property)
+        , QC.testProperty "reorder a"
+          (reorder_invariants :: Matrix C Col Double -> Property)
         ]
     , testGroup "Matrix C Row (Complex Double)"
         [ QC.testProperty "Arbitrary"
@@ -42,6 +46,8 @@ main = defaultMain $ testGroup "Data Invariants"
           (mappend_invariants :: Matrix C Row (Complex Double) -> Property)
         , QC.testProperty "a + a"
           (add_invariants :: Matrix C Row (Complex Double) -> Property)
+        , QC.testProperty "a + a"
+          (from_reorder_invariants :: Matrix C Row (Complex Double) -> Property)
         ]
     , testGroup "Matrix C Col (Complex Double)"
         [ QC.testProperty "Arbitrary"
@@ -52,6 +58,8 @@ main = defaultMain $ testGroup "Data Invariants"
           (add_invariants :: Matrix C Col (Complex Double) -> Property)
         , QC.testProperty "a * a"
           (mul_invariants :: Matrix C Col (Complex Double) -> Property)
+        , QC.testProperty "reorder a"
+          (reorder_invariants :: Matrix C Col (Complex Double) -> Property)
         ]
     ]
 
@@ -67,6 +75,12 @@ mul_invariants :: (Num a, Show a, Unbox a) => Matrix C Col a -> Property
 mul_invariants a =
     (invariants :: Unbox a => Matrix C Col a -> Property)
     $ mul a (a ^. from transpose)
+
+reorder_invariants :: (Format fmt, Unbox a) => Matrix fmt Col a -> Property
+reorder_invariants = invariants . view reorder
+
+from_reorder_invariants :: (Format fmt, Unbox a) => Matrix fmt Row a -> Property
+from_reorder_invariants = invariants . view (from reorder)
 
 invariants :: (Format fmt, Orient or, Unbox a) => Matrix fmt or a -> Property
 invariants = view $ formats (to invariantsU) (to invariantsC)
