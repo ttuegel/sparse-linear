@@ -413,8 +413,8 @@ mul :: (Num a, Orient or, Show a, Unbox a)
     => Matrix C Col a -> Matrix C Row a -> Matrix C or a
 mul a b
     | inner == inner' =
-        deduplicate
-        $ foldl' mappend empty_
+        -- deduplicate
+         foldl' mappend empty_
         $ generate inner
         $ \i -> expand (a ^. slice i) (b ^. slice i)
     | otherwise = error "mul: matrix inner dimensions do not match!"
@@ -430,8 +430,8 @@ mul a b
             let (ms, ns) = reorient witness (ls, rs) in
             Ux left right
             $ U.map (reorient witness)
-            $ flip U.concatMap (U.modify (sortBy $ comparing fst) ms)
-            $ \(m, x) -> flip U.map (U.modify (sortBy $ comparing fst) ns)
+            $ flip U.concatMap ms -- (U.modify (sortBy $ comparing fst) ms)
+            $ \(m, x) -> flip U.map ns -- (U.modify (sortBy $ comparing fst) ns)
             $ \(n, y) -> (m, n, x * y)
 
 add :: (Format fmt, Num a, Orient or, Unbox a)

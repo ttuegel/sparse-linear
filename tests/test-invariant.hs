@@ -13,7 +13,7 @@ import qualified Test.Tasty.QuickCheck as QC
 import Test.QuickCheck
 
 import Numeric.LinearAlgebra.Sparse
-import Numeric.LinearAlgebra.Sparse.QuickCheck ()
+import Numeric.LinearAlgebra.Sparse.QuickCheck
 
 main :: IO ()
 main = defaultMain $ testGroup "Data Invariants"
@@ -24,7 +24,7 @@ main = defaultMain $ testGroup "Data Invariants"
           (mappend_invariants :: Matrix C Row Double -> Property)
         , QC.testProperty "a + a"
           (add_invariants :: Matrix C Row Double -> Property)
-        , QC.testProperty "a + a"
+        , QC.testProperty "from reorder a"
           (from_reorder_invariants :: Matrix C Row Double -> Property)
         ]
     , testGroup "Matrix C Col Double"
@@ -34,8 +34,10 @@ main = defaultMain $ testGroup "Data Invariants"
           (mappend_invariants :: Matrix C Col Double -> Property)
         , QC.testProperty "a + a"
           (add_invariants :: Matrix C Col Double -> Property)
-        , QC.testProperty "a * a"
-          (mul_invariants :: Matrix C Col Double -> Property)
+        , QC.testProperty "a * a :: Matrix C Col *"
+          (mul_col_invariants :: (Matrix C Col Double, Matrix C Row Double) -> Property)
+        , QC.testProperty "a * a :: Matrix C Row *"
+          (mul_row_invariants :: (Matrix C Col Double, Matrix C Row Double) -> Property)
         , QC.testProperty "reorder a"
           (reorder_invariants :: Matrix C Col Double -> Property)
         ]
@@ -46,7 +48,7 @@ main = defaultMain $ testGroup "Data Invariants"
           (mappend_invariants :: Matrix C Row (Complex Double) -> Property)
         , QC.testProperty "a + a"
           (add_invariants :: Matrix C Row (Complex Double) -> Property)
-        , QC.testProperty "a + a"
+        , QC.testProperty "from reorder a"
           (from_reorder_invariants :: Matrix C Row (Complex Double) -> Property)
         ]
     , testGroup "Matrix C Col (Complex Double)"
@@ -56,8 +58,10 @@ main = defaultMain $ testGroup "Data Invariants"
           (mappend_invariants :: Matrix C Col (Complex Double) -> Property)
         , QC.testProperty "a + a"
           (add_invariants :: Matrix C Col (Complex Double) -> Property)
-        , QC.testProperty "a * a"
-          (mul_invariants :: Matrix C Col (Complex Double) -> Property)
+        , QC.testProperty "a * a :: Matrix C Col *"
+          (mul_col_invariants :: (Matrix C Col (Complex Double), Matrix C Row (Complex Double)) -> Property)
+        , QC.testProperty "a * a :: Matrix C Row *"
+          (mul_row_invariants :: (Matrix C Col (Complex Double), Matrix C Row (Complex Double)) -> Property)
         , QC.testProperty "reorder a"
           (reorder_invariants :: Matrix C Col (Complex Double) -> Property)
         ]
@@ -71,10 +75,17 @@ add_invariants :: (Format fmt, Num a, Orient or, Show a, Unbox a)
                => Matrix fmt or a -> Property
 add_invariants a = invariants $ add a a
 
-mul_invariants :: (Num a, Show a, Unbox a) => Matrix C Col a -> Property
-mul_invariants a =
+mul_col_invariants :: (Num a, Show a, Unbox a)
+                   => (Matrix C Col a, Matrix C Row a) -> Property
+mul_col_invariants (matchDims2 -> (a, b)) =
     (invariants :: Unbox a => Matrix C Col a -> Property)
-    $ mul a (a ^. from transpose)
+    $ mul a b
+
+mul_row_invariants :: (Num a, Show a, Unbox a)
+                   => (Matrix C Col a, Matrix C Row a) -> Property
+mul_row_invariants (matchDims2 -> (a, b)) =
+    (invariants :: Unbox a => Matrix C Row a -> Property)
+    $ mul a b
 
 reorder_invariants :: (Format fmt, Unbox a) => Matrix fmt Col a -> Property
 reorder_invariants = invariants . view reorder
