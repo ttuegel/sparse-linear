@@ -15,7 +15,6 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:
-    Numeric.LinearAlgebra.Umfpack
     Numeric.LinearAlgebra.Umfpack.Internal
   -- other-modules:       
   build-depends:
