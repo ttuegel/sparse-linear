@@ -1,12 +1,16 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Numeric.LinearAlgebra.Matrix.Sparse where
 
+import Control.Loop.For
 import Control.Monad (void)
 import Data.Foldable
+import Data.STRef (modifySTRef', newSTRef, readSTRef)
 import Data.Vector.Unboxed (Unbox)
-import qualified Data.Vector.Unboxed as Unbox
+import qualified Data.Vector.Unboxed as U
 import Data.Vector.Storable (Vector)
+import qualified Data.Vector.Unboxed.Mutable as MU
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.Marshal.Utils (with)
@@ -26,8 +30,8 @@ mul a b = unsafePerformIO $
 
 compress
   :: (CxSparse a, Unbox a)
-  => Int -> Int -> Unbox.Vector (Int, Int, a) -> Matrix a
-compress nr nc (Unbox.unzip3 -> (rs, cs, xs)) = unsafePerformIO $
+  => Int -> Int -> U.Vector (Int, Int, a) -> Matrix a
+compress nr nc (U.unzip3 -> (rs, cs, xs)) = unsafePerformIO $
     unsafeWithTriples nr nc (V.convert rs) (V.convert cs) (V.convert xs)
       $ \cs -> cs_compress cs >>= peek >>= fromCs
 {-# INLINE compress #-}
@@ -100,26 +104,26 @@ vcat :: (CxSparse a, Storable a) => [Matrix a] -> Matrix a
 vcat = transpose . hcat . map transpose
 {-# INLINE vcat #-}
 
+colSlice :: Int -> Matrix a -> ForI Int
+colSlice c Matrix{..} = forI (colps V.! c) (colps V.! (c + 1))
+{-# INLINE colSlice #-}
+
 kronecker
   :: (CxSparse a, Num a, Storable a, Unbox a)
   => Matrix a -> Matrix a -> Matrix a
-kronecker a b = compress nr nc $ Unbox.fromList $ do
-    ca <- [0..(ncols a - 1)]
-    cb <- [0..(ncols b - 1)]
-    let cc = ca * cb
-        aStart = (colps a) V.! ca
-        aEnd = (colps a) V.! (ca + 1)
-    aix <- [aStart..(aEnd - 1)]
-    let bStart = (colps b) V.! cb
-        bEnd = (colps b) V.! (cb + 1)
-    bix <- [bStart..(bEnd - 1)]
-    let ra = (rowixs a) V.! aix
-        rb = (rowixs b) V.! bix
-        rc = ra * rb
-        xa = (vals a) V.! aix
-        xb = (vals b) V.! bix
-        xc = xa * xb
-    return (rc, cc, xc)
+kronecker a b = compress nr nc $ U.create $ do
+    triples <- MU.new $ V.length (vals a) * V.length (vals b)
+    pix <- newSTRef 0
+    forM_ (forI 0 $ ncols a) $ \ca -> forM_ (forI 0 $ ncols b) $ \cb ->
+      forM_ (colSlice ca a) $ \aix -> forM_ (colSlice cb b) $ \bix -> do
+        ra <- V.unsafeIndexM (rowixs a) aix
+        rb <- V.unsafeIndexM (rowixs b) bix
+        xa <- V.unsafeIndexM (vals a) aix
+        xb <- V.unsafeIndexM (vals b) aix
+        ix <- readSTRef pix
+        MU.unsafeWrite triples ix (ra * rb, ca * cb, xa * xb)
+        modifySTRef' pix (+ 1)
+    return triples
   where
     nc = ncols a * ncols b
     nr = nrows a * nrows b
