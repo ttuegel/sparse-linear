@@ -5,6 +5,7 @@ module Numeric.LinearAlgebra.Matrix.Sparse where
 
 import Control.Loop.For
 import Control.Monad (void)
+import Control.Monad.ST (runST)
 import Data.Foldable
 import Data.STRef (modifySTRef', newSTRef, readSTRef)
 import Data.Vector.Unboxed (Unbox)
@@ -111,20 +112,41 @@ colSlice c Matrix{..} = forI (colps V.! c) (colps V.! (c + 1))
 kronecker
   :: (CxSparse a, Num a, Storable a, Unbox a)
   => Matrix a -> Matrix a -> Matrix a
-kronecker a b = compress nr nc $ U.create $ do
-    triples <- MU.new $ V.length (vals a) * V.length (vals b)
+kronecker a b = runST $ do
+    let nc = ncols a * ncols b
+        nr = nrows a * nrows b
+        nz = V.length (vals a) * V.length (vals b)
+    colps_ <- MV.replicate 0 (nc + 1)
+    rowixs_ <- MV.new nz
+    vals_ <- MV.new nz
     pix <- newSTRef 0
-    forM_ (forI 0 $ ncols a) $ \ca -> forM_ (forI 0 $ ncols b) $ \cb ->
-      forM_ (colSlice ca a) $ \aix -> forM_ (colSlice cb b) $ \bix -> do
-        ra <- V.unsafeIndexM (rowixs a) aix
-        rb <- V.unsafeIndexM (rowixs b) bix
-        xa <- V.unsafeIndexM (vals a) aix
-        xb <- V.unsafeIndexM (vals b) aix
+    pcc <- newSTRef 0
+    let acols = forI 0 (ncols a)
+        bcols = forI 0 (ncols b)
+    forM_ acols $ \ca -> forM_ bcols $ \cb -> do
+        let aixs = colSlice ca a
+            bixs = colSlice cb b
+        forM_ aixs $ \aix -> forM_ bixs $ \bix -> do
+            ix <- readSTRef pix
+            ra <- V.unsafeIndexM (rowixs a) aix
+            rb <- V.unsafeIndexM (rowixs b) bix
+            MV.unsafeWrite rowixs_ ix $! ra * rb
+            xa <- V.unsafeIndexM (vals a) aix
+            xb <- V.unsafeIndexM (vals b) aix
+            MV.unsafeWrite vals_ ix $! xa * xb
+            modifySTRef' pix (+ 1)
+        modifySTRef' pcc (+ 1)
         ix <- readSTRef pix
-        MU.unsafeWrite triples ix (ra * rb, ca * cb, xa * xb)
-        modifySTRef' pix (+ 1)
-    return triples
-  where
-    nc = ncols a * ncols b
-    nr = nrows a * nrows b
+        cc <- readSTRef pcc
+        MV.unsafeWrite colps_ cc ix
+    colps__ <- V.unsafeFreeze colps_
+    rowixs__ <- V.unsafeFreeze rowixs_
+    vals__ <- V.unsafeFreeze vals_
+    return Matrix
+        { nrows = nr
+        , ncols = nc
+        , colps = colps__
+        , rowixs = rowixs__
+        , vals = vals__
+        }
 {-# INLINE kronecker #-}
