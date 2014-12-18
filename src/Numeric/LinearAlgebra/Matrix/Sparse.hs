@@ -65,3 +65,11 @@ mulV a x = unsafePerformIO $
         MV.unsafeWith y $ \py -> void $ cs_gaxpy csa px py
         V.unsafeFreeze y
 {-# INLINE mulV #-}
+
+cmap :: (Storable a, Storable b) => (a -> b) -> Matrix a -> Matrix b
+cmap = \f mat -> mat { vals = V.map f $ vals mat }
+{-# INLINE cmap #-}
+
+scale :: (Num a, Storable a) => a -> Matrix a -> Matrix a
+scale = \x -> cmap (* x)
+{-# INLINE scale #-}
