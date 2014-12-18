@@ -3,6 +3,7 @@
 module Numeric.LinearAlgebra.Matrix.Sparse where
 
 import Control.Monad (void)
+import Data.Foldable
 import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as Unbox
 import Data.Vector.Storable (Vector)
@@ -10,6 +11,8 @@ import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.Marshal.Utils (with)
 import Foreign.Storable
+import GHC.Stack
+import Prelude hiding (any)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Numeric.LinearAlgebra.Matrix.Sparse.Internal
@@ -73,3 +76,26 @@ cmap = \f mat -> mat { vals = V.map f $ vals mat }
 scale :: (Num a, Storable a) => a -> Matrix a -> Matrix a
 scale = \x -> cmap (* x)
 {-# INLINE scale #-}
+
+hcat :: Storable a => [Matrix a] -> Matrix a
+hcat mats
+  | null mats = errorWithStackTrace "no matrices"
+  | any ((/= nr) . nrows) mats =
+      errorWithStackTrace "matrices must have the same number of rows"
+  | otherwise = Matrix
+      { nrows = nr
+      , ncols = foldl' (+) 0 $ map ncols mats
+      , colps = V.concat $ do
+          let colpss = map colps mats
+          (cps, off) <- zip colpss $ 0 : map V.last colpss
+          return $ V.map (+ off) cps
+      , rowixs = V.concat $ map rowixs mats
+      , vals = V.concat $ map vals mats
+      }
+  where
+    nr = nrows $ head mats
+{-# INLINE hcat #-}
+
+vcat :: (CxSparse a, Storable a) => [Matrix a] -> Matrix a
+vcat = transpose . hcat . map transpose
+{-# INLINE vcat #-}
