@@ -11,8 +11,10 @@ import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.ForeignPtr.Safe (FinalizerPtr, newForeignPtr)
+import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
+import Foreign.Storable.Complex
 import GHC.Stack
 
 #include "cs.h"
@@ -59,7 +61,7 @@ data Matrix a = Matrix
     }
 
 withMatrix
-  :: (Storable a, Storable (Cs a)) => Matrix a -> (Cs a -> IO b) -> IO b
+  :: (Storable a, Storable (Cs a)) => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
 withMatrix Matrix{..} act = do
     let nzmax = V.length vals
         m = nrows
@@ -70,10 +72,12 @@ withMatrix Matrix{..} act = do
     vals_ <- V.thaw vals
     MV.unsafeWith colps_ $ \p ->
       MV.unsafeWith rowixs_ $ \i ->
-      MV.unsafeWith vals_ $ \x -> act Cs{..}
+      MV.unsafeWith vals_ $ \x ->
+      with Cs{..} act
+{-# INLINE withMatrix #-}
 
 unsafeWithMatrix
-  :: (Storable a, Storable (Cs a)) => Matrix a -> (Cs a -> IO b) -> IO b
+  :: (Storable a, Storable (Cs a)) => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
 unsafeWithMatrix Matrix{..} act = do
     let nzmax = V.length vals
         m = nrows
@@ -81,12 +85,14 @@ unsafeWithMatrix Matrix{..} act = do
         nz = -1
     V.unsafeWith colps $ \p ->
       V.unsafeWith rowixs $ \i ->
-      V.unsafeWith vals $ \x -> act Cs{..}
+      V.unsafeWith vals $ \x ->
+      with Cs{..} act
+{-# INLINE unsafeWithMatrix #-}
 
 withTriples
   :: (Storable a, Storable (Cs a))
   => Int -> Int -> Vector Int -> Vector Int -> Vector a
-  -> (Cs a -> IO b) -> IO b
+  -> (Ptr (Cs a) -> IO b) -> IO b
 withTriples m n colps_ rowixs_ vals_ act = do
     let nzmax = V.length vals_
         nz = V.length vals_
@@ -94,8 +100,23 @@ withTriples m n colps_ rowixs_ vals_ act = do
     i_ <- V.thaw rowixs_
     x_ <- V.thaw vals_
     MV.unsafeWith p_ $ \p ->
-     MV.unsafeWith i_ $ \i ->
-      MV.unsafeWith x_ $ \x -> act Cs{..}
+      MV.unsafeWith i_ $ \i ->
+      MV.unsafeWith x_ $ \x ->
+      with Cs{..} act
+{-# INLINE withTriples #-}
+
+unsafeWithTriples
+  :: (Storable a, Storable (Cs a))
+  => Int -> Int -> Vector Int -> Vector Int -> Vector a
+  -> (Ptr (Cs a) -> IO b) -> IO b
+unsafeWithTriples m n colps_ rowixs_ vals_ act = do
+    let nzmax = V.length vals_
+        nz = V.length vals_
+    V.unsafeWith colps_ $ \p ->
+      V.unsafeWith rowixs_ $ \i ->
+      V.unsafeWith vals_ $ \x ->
+      with Cs{..} act
+{-# INLINE unsafeWithTriples #-}
 
 foreign import ccall "cs.h &cs_free" cs_free :: FinalizerPtr a
 
@@ -111,6 +132,7 @@ fromCs Cs{..} = do
         rowixs = V.unsafeFromForeignPtr0 rowixs_ nzmax
         vals = V.unsafeFromForeignPtr0 vals_ nzmax
     return Matrix{..}
+{-# INLINE fromCs #-}
 
 type Cs_gaxpy a = Ptr (Cs a) -> Ptr a -> Ptr a -> IO Int
 type Cs_compress a = Ptr (Cs a) -> IO (Ptr (Cs a))
@@ -118,7 +140,7 @@ type Cs_transpose a = Ptr (Cs a) -> Int -> IO (Ptr (Cs a))
 type Cs_multiply a = Ptr (Cs a) -> Ptr (Cs a) -> IO (Ptr (Cs a))
 type Cs_add a = Ptr (Cs a) -> Ptr (Cs a) -> Ptr a -> Ptr a -> IO (Ptr (Cs a))
 
-class CxSparse a where
+class (Storable a, Storable (Cs a)) => CxSparse a where
     cs_gaxpy :: Cs_gaxpy a
     cs_compress :: Cs_compress a
     cs_transpose :: Cs_transpose a
@@ -129,11 +151,16 @@ foreign import ccall "cs.h cs_ci_gaxpy" cs_ci_gaxpy :: Cs_gaxpy (Complex Double)
 foreign import ccall "cs.h cs_ci_compress" cs_ci_compress :: Cs_compress (Complex Double)
 foreign import ccall "cs.h cs_ci_transpose" cs_ci_transpose :: Cs_transpose (Complex Double)
 foreign import ccall "cs.h cs_ci_multiply" cs_ci_multiply :: Cs_multiply (Complex Double)
-foreign import ccall "cs.h cs_ci_add" cs_ci_add :: Cs_add (Complex Double)
+foreign import ccall "cs_ci_add_ptrs" cs_ci_add :: Cs_add (Complex Double)
 
 instance CxSparse (Complex Double) where
     cs_gaxpy = cs_ci_gaxpy
+    {-# INLINE cs_gaxpy #-}
     cs_compress = cs_ci_compress
+    {-# INLINE cs_compress #-}
     cs_transpose = cs_ci_transpose
+    {-# INLINE cs_transpose #-}
     cs_multiply = cs_ci_multiply
+    {-# INLINE cs_multiply #-}
     cs_add = cs_ci_add
+    {-# INLINE cs_add #-}
