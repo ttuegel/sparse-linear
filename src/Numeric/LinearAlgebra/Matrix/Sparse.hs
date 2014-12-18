@@ -99,3 +99,28 @@ hcat mats
 vcat :: (CxSparse a, Storable a) => [Matrix a] -> Matrix a
 vcat = transpose . hcat . map transpose
 {-# INLINE vcat #-}
+
+kronecker
+  :: (CxSparse a, Num a, Storable a, Unbox a)
+  => Matrix a -> Matrix a -> Matrix a
+kronecker a b = compress nr nc $ Unbox.fromList $ do
+    ca <- [0..(ncols a - 1)]
+    cb <- [0..(ncols b - 1)]
+    let cc = ca * cb
+        aStart = (colps a) V.! ca
+        aEnd = (colps a) V.! (ca + 1)
+    aix <- [aStart..(aEnd - 1)]
+    let bStart = (colps b) V.! cb
+        bEnd = (colps b) V.! (cb + 1)
+    bix <- [bStart..(bEnd - 1)]
+    let ra = (rowixs a) V.! aix
+        rb = (rowixs b) V.! bix
+        rc = ra * rb
+        xa = (vals a) V.! aix
+        xb = (vals b) V.! bix
+        xc = xa * xb
+    return (rc, cc, xc)
+  where
+    nc = ncols a * ncols b
+    nr = nrows a * nrows b
+{-# INLINE kronecker #-}
