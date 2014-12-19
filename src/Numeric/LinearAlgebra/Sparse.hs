@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -5,6 +6,7 @@ module Numeric.LinearAlgebra.Sparse where
 
 import Control.Loop.For
 import Control.Monad (void)
+import Data.Complex
 import Data.Foldable
 import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
@@ -42,6 +44,12 @@ transpose a = unsafePerformIO $
     unsafeWithMatrix a $ \cs ->
         cs_transpose cs (V.length $ vals a) >>= peek >>= fromCs
 {-# INLINE transpose #-}
+
+ctrans
+  :: (CxSparse (Complex a), RealFloat a)
+  => Matrix (Complex a) -> Matrix (Complex a)
+ctrans = cmap conjugate . transpose
+{-# INLINE ctrans #-}
 
 lin :: CxSparse a => a -> Matrix a -> a -> Matrix a -> Matrix a
 lin alpha a beta b = unsafePerformIO $
@@ -122,11 +130,24 @@ kronecker a b = unsafePerformIO $
         cs_kron csa csb >>= peek >>= fromCs
 {-# INLINE kronecker #-}
 
-diag :: CxSparse a => Matrix a -> Vector a
-diag a@Matrix{..} = unsafePerformIO $
+takeDiag :: CxSparse a => Matrix a -> Vector a
+takeDiag a@Matrix{..} = unsafePerformIO $
     unsafeWithMatrix a $ \csa -> do
         d <- cs_diag csa >>= newForeignPtr cs_free
         return $ V.unsafeFromForeignPtr0 d nd
   where
     nd = min nrows ncols
+{-# INLINE takeDiag #-}
+
+diag :: Storable a => Vector a -> Matrix a
+diag vals = Matrix{..}
+  where
+    ncols = V.length vals
+    nrows = ncols
+    colps = V.iterateN 0 (+1) (nrows + 1)
+    rowixs = V.iterateN 0 (+1) ncols
 {-# INLINE diag #-}
+
+ident :: (Num a, Storable a) => Int -> Matrix a
+ident n = diag $ V.replicate n 1
+{-# INLINE ident #-}

@@ -6,6 +6,7 @@ module Numeric.LinearAlgebra.Sparse.Internal where
 import Data.Complex
 import Foreign.Ptr
 import Foreign.Storable
+import Foreign.Storable.Complex ()
 
 import Numeric.LinearAlgebra.Matrix.Sparse.Internal
 
