@@ -13,10 +13,10 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:
-    Control.Loop.For
     Numeric.LinearAlgebra.Sparse
     Numeric.LinearAlgebra.Sparse.Internal
     Numeric.LinearAlgebra.Matrix.Sparse.Internal
+    Numeric.LinearAlgebra.Umfpack
     Numeric.LinearAlgebra.Umfpack.Internal
   build-depends:
       base >=4.7 && <4.8
@@ -30,4 +30,5 @@ library
     cbits/cs_add_ptrs.c
     cbits/cs_kron.c
     cbits/cs_diag.c
+    cbits/umfpack_cs.c
   cc-options: -O3

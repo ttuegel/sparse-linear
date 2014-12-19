@@ -1,103 +1,84 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Numeric.LinearAlgebra.Umfpack.Internal where
+module Numeric.LinearAlgebra.Umfpack.Internal
+    ( Control, Info, Numeric, Symbolic
+    , Umfpack(..)
+    , wrap_umfpack
+    ) where
 
 import Data.Complex (Complex)
 import Foreign.Ptr (Ptr)
+import Foreign.Storable
 import GHC.Stack (currentCallStack, errorWithStackTrace)
 
-type Symbolic a = Ptr ()
+import Numeric.LinearAlgebra.Matrix.Sparse.Internal
+
 type Control = Ptr Double
 type Info = Ptr Double
-foreign import ccall "umfpack.h umfpack_di_symbolic" c_symbolic_real
-    :: Int  -- ^ matrix rows
-    -> Int  -- ^ matrix columns
-    -> Ptr Int  -- ^ index of initial entry in each column
-    -> Ptr Int  -- ^ row indices of matrix entries
-    -> Ptr Double  -- ^ matrix entries
-    -> Ptr (Symbolic Double)
+newtype Numeric a = Numeric { derefNum :: Ptr () } deriving (Storable)
+newtype Symbolic a = Symbolic { derefSym :: Ptr () } deriving (Storable)
+
+type Umfpack_symbolic a
+    =  Ptr (Cs a)  -- ^ matrix
+    -> Ptr (Symbolic a)
     -> Control
     -> Info
     -> IO Int  -- ^ status code
 
-foreign import ccall "umfpack.h umfpack_zi_symbolic" c_symbolic_complex
-    :: Int  -- ^ matrix rows
-    -> Int  -- ^ matrix columns
-    -> Ptr Int  -- ^ index of initial entry in each column
-    -> Ptr Int  -- ^ row indices of matrix entries
-    -> Ptr Double  -- ^ matrix entries (real parts)
-    -> Ptr Double  -- ^ matrix entries (complex parts)
-    -> Ptr (Symbolic (Complex Double))
+type Umfpack_numeric a
+    =  Ptr (Cs a)  -- ^ matrix
+    -> Symbolic a
+    -> Ptr (Numeric a)
     -> Control
     -> Info
     -> IO Int  -- ^ status code
 
-type Numeric a = Ptr ()
-foreign import ccall "umfpack.h umfpack_di_numeric" c_numeric_real
-    :: Ptr Int  -- ^ index of initial entry in each column
-    -> Ptr Int  -- ^ row indices of matrix entries
-    -> Ptr Double  -- ^ matrix entries
-    -> Symbolic Double
-    -> Ptr (Numeric Double)
+type Umfpack_solve a
+    =  Ptr (Cs a)  -- ^ matrix
+    -> Ptr a  -- ^ solution vector
+    -> Ptr a  -- ^ rhs vector (real parts)
+    -> Numeric a
     -> Control
     -> Info
     -> IO Int  -- ^ status code
 
-foreign import ccall "umfpack.h umfpack_zi_numeric" c_numeric_complex
-    :: Ptr Int  -- ^ index of initial entry in each column
-    -> Ptr Int  -- ^ row indices of matrix entries
-    -> Ptr Double  -- ^ matrix entries (real parts)
-    -> Ptr Double  -- ^ matrix entries (complex parts)
-    -> Symbolic (Complex Double)
-    -> Ptr (Numeric (Complex Double))
-    -> Control
-    -> Info
-    -> IO Int  -- ^ status code
+class Umfpack a where
+    umfpack_symbolic :: Umfpack_symbolic a
+    umfpack_numeric :: Umfpack_numeric a
+    umfpack_solve :: Umfpack_solve a
+    umfpack_free_symbolic :: Symbolic a -> IO ()
+    umfpack_free_numeric :: Numeric a -> IO ()
 
-foreign import ccall "umfpack.h umfpack_di_solve" c_solve_real
-    :: Int  -- ^ system type
-    -> Ptr Int  -- ^ index of initial entry in each column
-    -> Ptr Int  -- ^ row indices of matrix entries
-    -> Ptr Double  -- ^ matrix entries
-    -> Ptr Double  -- ^ solution vector
-    -> Ptr Double  -- ^ rhs vector
-    -> Numeric Double
-    -> Control
-    -> Info
-    -> IO Int  -- ^ status code
+foreign import ccall "umfpack_cs_zi_symbolic" umfpack_zi_symbolic
+  :: Umfpack_symbolic (Complex Double)
+foreign import ccall "umfpack_cs_zi_numeric" umfpack_zi_numeric
+  :: Umfpack_numeric (Complex Double)
+foreign import ccall "umfpack_cs_zi_solve" umfpack_zi_solve
+  :: Umfpack_solve (Complex Double)
+foreign import ccall "umfpack.h umfpack_zi_free_symbolic" umfpack_zi_free_symbolic
+  :: Ptr () -> IO ()
+foreign import ccall "umfpack.h umfpack_zi_free_numeric" umfpack_zi_free_numeric
+  :: Ptr () -> IO ()
 
-foreign import ccall "umfpack.h umfpack_zi_solve" c_solve_complex
-    :: Int  -- ^ system type
-    -> Ptr Int  -- ^ index of initial entry in each column
-    -> Ptr Int  -- ^ row indices of matrix entries
-    -> Ptr Double  -- ^ matrix entries (real parts)
-    -> Ptr Double  -- ^ matrix entries (imaginary parts)
-    -> Ptr Double  -- ^ solution vector (real parts)
-    -> Ptr Double  -- ^ solution vector (imaginary parts)
-    -> Ptr Double  -- ^ rhs vector (real parts)
-    -> Ptr Double  -- ^ rhs vector (imaginary parts)
-    -> Numeric (Complex Double)
-    -> Control
-    -> Info
-    -> IO Int  -- ^ status code
+instance Umfpack (Complex Double) where
+    {-# INLINE umfpack_symbolic #-}
+    {-# INLINE umfpack_numeric #-}
+    {-# INLINE umfpack_solve #-}
+    {-# INLINE umfpack_free_symbolic #-}
+    {-# INLINE umfpack_free_numeric #-}
+    umfpack_symbolic = umfpack_zi_symbolic
+    umfpack_numeric = umfpack_zi_numeric
+    umfpack_solve = umfpack_zi_solve
+    umfpack_free_symbolic = umfpack_zi_free_symbolic . derefSym
+    umfpack_free_numeric = umfpack_zi_free_numeric . derefNum
 
-foreign import ccall "umfpack.h umfpack_di_free_symbolic" c_free_symbolic_real
-    :: Symbolic Double -> IO ()
-
-foreign import ccall "umfpack.h umfpack_zi_free_symbolic" c_free_symbolic_complex
-    :: Symbolic (Complex Double) -> IO ()
-
-foreign import ccall "umfpack.h umfpack_di_free_numeric" c_free_numeric_real
-    :: Numeric Double -> IO ()
-
-foreign import ccall "umfpack.h umfpack_zi_free_numeric" c_free_numeric_complex
-    :: Numeric (Complex Double) -> IO ()
-
-wrap_umfpack :: IO (Int, a) -> IO a
+wrap_umfpack :: IO Int -> IO ()
 wrap_umfpack act = do
-    (status, result) <- act
-    case fromIntegral status of
+    status <- act
+    case status of
       0 -> return ()
       1 -> warnWithStackTrace "umfpack: singular matrix"
       2 -> warnWithStackTrace "umfpack: determinant underflow"
@@ -115,7 +96,6 @@ wrap_umfpack act = do
       (-18) -> errorWithStackTrace "umfpack: ordering failed"
       (-911) -> errorWithStackTrace "umfpack: internal error"
       x -> errorWithStackTrace $ "umfpack: unknown error " ++ show x
-    return result
 
 warnWithStackTrace :: String -> IO ()
 warnWithStackTrace x = do

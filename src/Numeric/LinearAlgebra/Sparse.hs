@@ -2,9 +2,20 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Numeric.LinearAlgebra.Sparse where
+module Numeric.LinearAlgebra.Sparse
+    ( CxSparse()
+    , mul
+    , compress
+    , transpose, ctrans
+    , lin
+    , add
+    , gaxpy, gaxpy_, mulV
+    , cmap, scale
+    , hcat, vcat
+    , kronecker
+    , takeDiag, diag, ident
+    ) where
 
-import Control.Loop.For
 import Control.Monad (void)
 import Data.Complex
 import Data.Foldable
@@ -118,10 +129,6 @@ hcat mats
 vcat :: (CxSparse a, Storable a) => [Matrix a] -> Matrix a
 vcat = transpose . hcat . map transpose
 {-# INLINE vcat #-}
-
-colSlice :: Int -> Matrix a -> ForI Int
-colSlice c Matrix{..} = forI (colps V.! c) (colps V.! (c + 1))
-{-# INLINE colSlice #-}
 
 kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 kronecker a b = unsafePerformIO $

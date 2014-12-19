@@ -3,7 +3,11 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Numeric.LinearAlgebra.Matrix.Sparse.Internal where
+module Numeric.LinearAlgebra.Matrix.Sparse.Internal
+    ( Cs(), fromCs, cs_free
+    , Matrix(..), withMatrix, unsafeWithMatrix
+    , withTriples, unsafeWithTriples
+    ) where
 
 import Control.Monad (unless)
 import Data.Complex
