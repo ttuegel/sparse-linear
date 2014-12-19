@@ -1,15 +1,13 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Numeric.LinearAlgebra.Matrix.Sparse where
+module Numeric.LinearAlgebra.Sparse where
 
 import Control.Loop.For
 import Control.Monad (void)
 import Data.Foldable
-import Data.STRef (modifySTRef', newSTRef, readSTRef)
 import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
-import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable.Mutable (IOVector)
@@ -22,6 +20,7 @@ import Prelude hiding (any)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Numeric.LinearAlgebra.Matrix.Sparse.Internal
+import Numeric.LinearAlgebra.Sparse.Internal
 
 mul :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 mul a b = unsafePerformIO $
@@ -35,7 +34,7 @@ compress
   => Int -> Int -> U.Vector (Int, Int, a) -> Matrix a
 compress nr nc (U.unzip3 -> (rs, cs, xs)) = unsafePerformIO $
     unsafeWithTriples nr nc (V.convert rs) (V.convert cs) (V.convert xs)
-      $ \cs -> cs_compress cs >>= peek >>= fromCs
+      $ \pcs -> cs_compress pcs >>= peek >>= fromCs
 {-# INLINE compress #-}
 
 transpose :: CxSparse a => Matrix a -> Matrix a
