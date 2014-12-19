@@ -5,7 +5,6 @@ module Numeric.LinearAlgebra.Matrix.Sparse where
 
 import Control.Loop.For
 import Control.Monad (void)
-import Control.Monad.ST (runST)
 import Data.Foldable
 import Data.STRef (modifySTRef', newSTRef, readSTRef)
 import Data.Vector.Unboxed (Unbox)
@@ -15,6 +14,7 @@ import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable.Mutable (IOVector)
 import qualified Data.Vector.Storable.Mutable as MV
+import Foreign.ForeignPtr.Safe (newForeignPtr)
 import Foreign.Marshal.Utils (with)
 import Foreign.Storable
 import GHC.Stack
@@ -120,5 +120,14 @@ kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 kronecker a b = unsafePerformIO $
     unsafeWithMatrix a $ \csa ->
     unsafeWithMatrix b $ \csb ->
-        kron csa csb >>= peek >>= fromCs
+        cs_kron csa csb >>= peek >>= fromCs
 {-# INLINE kronecker #-}
+
+diag :: CxSparse a => Matrix a -> Vector a
+diag a@Matrix{..} = unsafePerformIO $
+    unsafeWithMatrix a $ \csa -> do
+        d <- cs_diag csa >>= newForeignPtr cs_free
+        return $ V.unsafeFromForeignPtr0 d nd
+  where
+    nd = min nrows ncols
+{-# INLINE diag #-}

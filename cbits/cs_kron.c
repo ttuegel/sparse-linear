@@ -1,6 +1,6 @@
 #include "cs.h"
 
-cs_ci* zkron(const cs_ci* A, const cs_ci* B)
+cs_ci* cs_ci_kron(const cs_ci* A, const cs_ci* B)
 {
   if (A->nz >= 0 || B->nz >= 0)
     return 0;
