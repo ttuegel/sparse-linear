@@ -10,9 +10,10 @@ import Data.Foldable
 import Data.STRef (modifySTRef', newSTRef, readSTRef)
 import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
-import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Unboxed.Mutable as MU
+import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
+import Data.Vector.Storable.Mutable (IOVector)
 import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.Marshal.Utils (with)
 import Foreign.Storable
@@ -57,13 +58,19 @@ add a b = lin 1 a 1 b
 {-# INLINE add #-}
 
 gaxpy :: CxSparse a => Matrix a -> Vector a -> Vector a -> Vector a
-gaxpy a x y = unsafePerformIO $
-    unsafeWithMatrix a $ \csa ->
-    V.unsafeWith x $ \px -> do
-        y_ <- V.thaw y
-        MV.unsafeWith y_ $ \py -> void $ cs_gaxpy csa px py
-        V.unsafeFreeze y_
+gaxpy a x y = unsafePerformIO $ do
+    y_ <- V.thaw y
+    gaxpy_ a x y_
+    V.unsafeFreeze y_
 {-# INLINE gaxpy #-}
+
+gaxpy_ :: CxSparse a => Matrix a -> Vector a -> IOVector a -> IO ()
+gaxpy_ a x y =
+    unsafeWithMatrix a $ \csa ->
+    V.unsafeWith x $ \px ->
+    MV.unsafeWith y $ \py ->
+        void $ cs_gaxpy csa px py
+{-# INLINE gaxpy_ #-}
 
 mulV :: (CxSparse a, Num a) => Matrix a -> Vector a -> Vector a
 mulV a x = unsafePerformIO $
