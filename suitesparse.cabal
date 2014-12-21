@@ -24,9 +24,14 @@ library
     , vector >=0.10 && <1
   hs-source-dirs: src
   default-language: Haskell2010
-  extra-libraries: umfpack
+  extra-libraries:
+    feast
+    umfpack
   ghc-options: -Wall
+  include-dirs:
+    cbits
   c-sources:
+    cbits/feast_cs.c
     cbits/cs_add_ptrs.c
     cbits/cs_kron.c
     cbits/cs_diag.c

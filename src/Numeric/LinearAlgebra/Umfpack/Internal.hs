@@ -52,11 +52,11 @@ class Umfpack a where
     umfpack_free_symbolic :: Symbolic a -> IO ()
     umfpack_free_numeric :: Numeric a -> IO ()
 
-foreign import ccall "umfpack_cs_zi_symbolic" umfpack_zi_symbolic
+foreign import ccall "umfpack_cs.h umfpack_cs_zi_symbolic" umfpack_zi_symbolic
   :: Umfpack_symbolic (Complex Double)
-foreign import ccall "umfpack_cs_zi_numeric" umfpack_zi_numeric
+foreign import ccall "umfpack_cs.h umfpack_cs_zi_numeric" umfpack_zi_numeric
   :: Umfpack_numeric (Complex Double)
-foreign import ccall "umfpack_cs_zi_solve" umfpack_zi_solve
+foreign import ccall "umfpack_cs.h umfpack_cs_zi_solve" umfpack_zi_solve
   :: Umfpack_solve (Complex Double)
 foreign import ccall "umfpack.h umfpack_zi_free_symbolic" umfpack_zi_free_symbolic
   :: Ptr () -> IO ()
