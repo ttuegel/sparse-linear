@@ -23,9 +23,13 @@ main = hspec $ do
 
     it "lin 1 a (-1) a == 0" $ property prop_addInv
 
+    it "a `add` zeros == a" $ property prop_addId
+
     it "transpose . transpose == id" $ property prop_transposeId
 
     it "ctrans . ctrans == id" $ property prop_ctransId
+
+    it "a `mul` ident == a" $ property prop_mulId
 
 prop_kroneckerIdent :: Int -> Int -> Property
 prop_kroneckerIdent x y = (x > 0 && y > 0) ==> lhs == rhs
@@ -47,11 +51,17 @@ prop_addInv m = lin 1 m (-1) m == m0
   where
     m0 = cmap (const 0) m
 
+prop_addId :: Matrix (Complex Double) -> Bool
+prop_addId m = add m (zeros (nrows m) (ncols m)) == m
+
 prop_transposeId :: Matrix (Complex Double) -> Bool
 prop_transposeId m = transpose (transpose m) == m
 
 prop_ctransId :: Matrix (Complex Double) -> Bool
 prop_ctransId m = ctrans (ctrans m) == m
+
+prop_mulId :: Matrix (Complex Double) -> Bool
+prop_mulId m = m `mul` (ident $ ncols m) == m
 
 instance (Arbitrary a, Storable a) => Arbitrary (Vector a) where
     arbitrary = fmap V.fromList $ suchThat arbitrary $ \v -> length v > 0

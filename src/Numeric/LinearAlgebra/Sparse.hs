@@ -4,7 +4,7 @@
 
 module Numeric.LinearAlgebra.Sparse
     ( CxSparse()
-    , Matrix()
+    , Matrix(nrows, ncols)
     , mul
     , compress
     , transpose, ctrans
@@ -15,6 +15,7 @@ module Numeric.LinearAlgebra.Sparse
     , hcat, vcat
     , kronecker
     , takeDiag, diag, ident
+    , zeros
     , module Data.Complex
     ) where
 
@@ -160,3 +161,11 @@ diag vals = Matrix{..}
 ident :: (Num a, Storable a) => Int -> Matrix a
 ident n = diag $ V.replicate n 1
 {-# INLINE ident #-}
+
+zeros :: (Num a, Storable a) => Int -> Int -> Matrix a
+zeros nrows ncols = Matrix{..}
+  where
+    colps = V.replicate (ncols + 1) 0
+    rowixs = V.empty
+    vals = V.empty
+{-# INLINE zeros #-}
