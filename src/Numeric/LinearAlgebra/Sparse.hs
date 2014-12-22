@@ -94,12 +94,10 @@ gaxpy_ a x y =
 {-# INLINE gaxpy_ #-}
 
 mulV :: (CxSparse a, Num a) => Matrix a -> Vector a -> Vector a
-mulV a x = unsafePerformIO $
-    unsafeWithMatrix a $ \csa ->
-    V.unsafeWith x $ \px -> do
-        y <- MV.replicate (V.length x) 0
-        MV.unsafeWith y $ \py -> void $ cs_gaxpy csa px py
-        V.unsafeFreeze y
+mulV a x = unsafePerformIO $ do
+    y <- MV.replicate (V.length x) 0
+    gaxpy_ a x y
+    V.unsafeFreeze y
 {-# INLINE mulV #-}
 
 cmap :: (Storable a, Storable b) => (a -> b) -> Matrix a -> Matrix b
