@@ -21,19 +21,19 @@ linearSolve
 linearSolve mat@Matrix{..} bs =
     unsafePerformIO $
     unsafeWithMatrix mat $ \cs -> do
-        sym <- alloca $ \psym -> do
-            wrap_umfpack $ umfpack_symbolic cs psym nullPtr nullPtr
-            peek psym
-        num <- alloca $ \pnum -> do
-            wrap_umfpack $ umfpack_numeric cs sym pnum nullPtr nullPtr
-            peek pnum
-        umfpack_free_symbolic sym
+        psym <- malloc
+        wrap_umfpack $ umfpack_symbolic cs psym nullPtr nullPtr
+        pnum <- malloc
+        sym <- peek psym
+        wrap_umfpack $ umfpack_numeric cs sym pnum nullPtr nullPtr
+        umfpack_free_symbolic psym
+        num <- peek pnum
         xs <- forM bs $ \b -> V.unsafeWith b $ \pb -> do
             x <- MV.replicate ncols 0
             MV.unsafeWith x $ \px ->
                 wrap_umfpack $ umfpack_solve cs px pb num nullPtr nullPtr
             V.freeze x
-        umfpack_free_numeric num
+        umfpack_free_numeric pnum
         return xs
 
 (<\>) :: (CxSparse a, Num a, Umfpack a) => Matrix a -> Vector a -> Vector a

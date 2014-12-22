@@ -45,12 +45,16 @@ type Umfpack_solve a
     -> Info
     -> IO Int  -- ^ status code
 
+type Umfpack_free_symbolic a = Ptr (Symbolic a) -> IO ()
+
+type Umfpack_free_numeric a = Ptr (Numeric a) -> IO ()
+
 class Umfpack a where
     umfpack_symbolic :: Umfpack_symbolic a
     umfpack_numeric :: Umfpack_numeric a
     umfpack_solve :: Umfpack_solve a
-    umfpack_free_symbolic :: Symbolic a -> IO ()
-    umfpack_free_numeric :: Numeric a -> IO ()
+    umfpack_free_symbolic :: Ptr (Symbolic a) -> IO ()
+    umfpack_free_numeric :: Ptr (Numeric a) -> IO ()
 
 foreign import ccall "umfpack_cs.h umfpack_cs_zi_symbolic" umfpack_zi_symbolic
   :: Umfpack_symbolic (Complex Double)
@@ -59,9 +63,9 @@ foreign import ccall "umfpack_cs.h umfpack_cs_zi_numeric" umfpack_zi_numeric
 foreign import ccall "umfpack_cs.h umfpack_cs_zi_solve" umfpack_zi_solve
   :: Umfpack_solve (Complex Double)
 foreign import ccall "umfpack.h umfpack_zi_free_symbolic" umfpack_zi_free_symbolic
-  :: Ptr () -> IO ()
+  :: Umfpack_free_symbolic (Complex Double)
 foreign import ccall "umfpack.h umfpack_zi_free_numeric" umfpack_zi_free_numeric
-  :: Ptr () -> IO ()
+  :: Umfpack_free_numeric (Complex Double)
 
 instance Umfpack (Complex Double) where
     {-# INLINE umfpack_symbolic #-}
@@ -72,8 +76,8 @@ instance Umfpack (Complex Double) where
     umfpack_symbolic = umfpack_zi_symbolic
     umfpack_numeric = umfpack_zi_numeric
     umfpack_solve = umfpack_zi_solve
-    umfpack_free_symbolic = umfpack_zi_free_symbolic . derefSym
-    umfpack_free_numeric = umfpack_zi_free_numeric . derefNum
+    umfpack_free_symbolic = umfpack_zi_free_symbolic
+    umfpack_free_numeric = umfpack_zi_free_numeric
 
 wrap_umfpack :: IO Int -> IO ()
 wrap_umfpack act = do
