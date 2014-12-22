@@ -12,7 +12,7 @@ module Numeric.LinearAlgebra.Sparse
     , add
     , gaxpy, gaxpy_, mulV
     , cmap, scale
-    , hcat, vcat
+    , hcat, vcat, fromBlocks
     , kronecker
     , takeDiag, diag, ident
     , zeros
@@ -130,6 +130,10 @@ hcat mats
 vcat :: (CxSparse a, Storable a) => [Matrix a] -> Matrix a
 vcat = transpose . hcat . map transpose
 {-# INLINE vcat #-}
+
+fromBlocks :: (CxSparse a, Storable a) => [[Matrix a]] -> Matrix a
+fromBlocks = vcat . map hcat
+{-# INLINE fromBlocks #-}
 
 kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 kronecker a b = unsafePerformIO $
