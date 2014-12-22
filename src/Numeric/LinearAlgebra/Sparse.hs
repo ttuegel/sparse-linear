@@ -4,6 +4,7 @@
 
 module Numeric.LinearAlgebra.Sparse
     ( CxSparse()
+    , Matrix()
     , mul
     , compress
     , transpose, ctrans
@@ -14,6 +15,7 @@ module Numeric.LinearAlgebra.Sparse
     , hcat, vcat
     , kronecker
     , takeDiag, diag, ident
+    , module Data.Complex
     ) where
 
 import Control.Monad (void)
@@ -151,8 +153,8 @@ diag vals = Matrix{..}
   where
     ncols = V.length vals
     nrows = ncols
-    colps = V.iterateN 0 (+1) (nrows + 1)
-    rowixs = V.iterateN 0 (+1) ncols
+    colps = V.iterateN (nrows + 1) (+1) 0
+    rowixs = V.iterateN ncols (+1) 0
 {-# INLINE diag #-}
 
 ident :: (Num a, Storable a) => Int -> Matrix a

@@ -25,6 +25,7 @@ library
   hs-source-dirs: src
   default-language: Haskell2010
   extra-libraries:
+    cxsparse
     feast
     umfpack
   ghc-options: -Wall
@@ -37,3 +38,15 @@ library
     cbits/cs_diag.c
     cbits/umfpack_cs.c
   cc-options: -O3
+
+test-suite sparse
+  type: exitcode-stdio-1.0
+  main-is: Numeric/LinearAlgebra/Sparse/Test.hs
+  hs-source-dirs: tests
+  default-language: Haskell2010
+  ghc-options: -Wall
+  build-depends:
+      base
+    , hspec >=2.1 && <3
+    , QuickCheck >=2.7 && <3
+    , suitesparse

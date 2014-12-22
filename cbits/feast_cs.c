@@ -135,11 +135,11 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
   if(D)
     cs_ci_spfree(D);
 
-  cs_free(work1);
-  cs_free(work2);
-  cs_free(Aq);
-  cs_free(Bq);
-  cs_free(tmp);
+  cs_ci_free(work1);
+  cs_ci_free(work2);
+  cs_ci_free(Aq);
+  cs_ci_free(Bq);
+  cs_ci_free(tmp);
 
   return info;
 }

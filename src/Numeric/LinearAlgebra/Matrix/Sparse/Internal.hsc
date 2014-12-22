@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Numeric.LinearAlgebra.Matrix.Sparse.Internal
     ( Cs(), fromCs, cs_free
@@ -14,6 +15,7 @@ import Data.Complex
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
+import Foreign.C.Types
 import Foreign.ForeignPtr.Safe (FinalizerPtr, newForeignPtr)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
@@ -23,13 +25,13 @@ import GHC.Stack
 #include "cs.h"
 
 data Cs a = Cs
-    { nzmax :: Int  -- ^ maximum number of entries
-    , m :: Int  -- ^ number of rows
-    , n :: Int  -- ^ number of columns
-    , p :: Ptr Int  -- ^ column pointers or indices
-    , i :: Ptr Int  -- ^ row indices
+    { nzmax :: CInt  -- ^ maximum number of entries
+    , m :: CInt  -- ^ number of rows
+    , n :: CInt  -- ^ number of columns
+    , p :: Ptr CInt  -- ^ column pointers or indices
+    , i :: Ptr CInt  -- ^ row indices
     , x :: Ptr a  -- ^ values
-    , nz :: Int  -- ^ number of entries (triplet) or (-1) for compressed col
+    , nz :: CInt  -- ^ number of entries (triplet) or (-1) for compressed col
     }
 
 instance Storable (Cs (Complex Double)) where
@@ -62,16 +64,17 @@ data Matrix a = Matrix
     , rowixs :: Vector Int
     , vals :: Vector a
     }
+  deriving (Eq, Read, Show)
 
 withMatrix
   :: (Storable a, Storable (Cs a)) => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
 withMatrix Matrix{..} act = do
-    let nzmax = V.length vals
-        m = nrows
-        n = ncols
+    let nzmax = fromIntegral $ V.length vals
+        m = fromIntegral nrows
+        n = fromIntegral ncols
         nz = -1
-    colps_ <- V.thaw colps
-    rowixs_ <- V.thaw rowixs
+    colps_ <- V.thaw $ V.map fromIntegral colps
+    rowixs_ <- V.thaw $ V.map fromIntegral rowixs
     vals_ <- V.thaw vals
     MV.unsafeWith colps_ $ \p ->
       MV.unsafeWith rowixs_ $ \i ->
@@ -82,12 +85,12 @@ withMatrix Matrix{..} act = do
 unsafeWithMatrix
   :: (Storable a, Storable (Cs a)) => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
 unsafeWithMatrix Matrix{..} act = do
-    let nzmax = V.length vals
-        m = nrows
-        n = ncols
+    let nzmax = fromIntegral $ V.length vals
+        m = fromIntegral $ nrows
+        n = fromIntegral $ ncols
         nz = -1
-    V.unsafeWith colps $ \p ->
-      V.unsafeWith rowixs $ \i ->
+    V.unsafeWith (V.map fromIntegral colps) $ \p ->
+      V.unsafeWith (V.map fromIntegral rowixs) $ \i ->
       V.unsafeWith vals $ \x ->
       with Cs{..} act
 {-# INLINE unsafeWithMatrix #-}
@@ -96,11 +99,11 @@ withTriples
   :: (Storable a, Storable (Cs a))
   => Int -> Int -> Vector Int -> Vector Int -> Vector a
   -> (Ptr (Cs a) -> IO b) -> IO b
-withTriples m n colps_ rowixs_ vals_ act = do
-    let nzmax = V.length vals_
-        nz = V.length vals_
-    p_ <- V.thaw colps_
-    i_ <- V.thaw rowixs_
+withTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ act = do
+    let nzmax = fromIntegral $ V.length vals_
+        nz = fromIntegral $ V.length vals_
+    p_ <- V.thaw $ V.map fromIntegral colps_
+    i_ <- V.thaw $ V.map fromIntegral rowixs_
     x_ <- V.thaw vals_
     MV.unsafeWith p_ $ \p ->
       MV.unsafeWith i_ $ \i ->
@@ -112,27 +115,29 @@ unsafeWithTriples
   :: (Storable a, Storable (Cs a))
   => Int -> Int -> Vector Int -> Vector Int -> Vector a
   -> (Ptr (Cs a) -> IO b) -> IO b
-unsafeWithTriples m n colps_ rowixs_ vals_ act = do
-    let nzmax = V.length vals_
-        nz = V.length vals_
-    V.unsafeWith colps_ $ \p ->
-      V.unsafeWith rowixs_ $ \i ->
+unsafeWithTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ act = do
+    let nzmax = fromIntegral $ V.length vals_
+        nz = fromIntegral $ V.length vals_
+    V.unsafeWith (V.map fromIntegral colps_) $ \p ->
+      V.unsafeWith (V.map fromIntegral rowixs_) $ \i ->
       V.unsafeWith vals_ $ \x ->
       with Cs{..} act
 {-# INLINE unsafeWithTriples #-}
 
-foreign import ccall "cs.h &cs_free" cs_free :: FinalizerPtr a
+foreign import ccall "cs.h &cs_ci_free" cs_free :: FinalizerPtr a
 
 fromCs :: (Storable a) => Cs a -> IO (Matrix a)
 fromCs Cs{..} = do
-    let nrows = m
-        ncols = n
-    unless (nz < 0) $ errorWithStackTrace "expected compressed matrix"
+    let nrows = fromIntegral m
+        ncols = fromIntegral n
+        nzmax_ = fromIntegral nzmax
+    unless (nz < 0) $ errorWithStackTrace
+      $ "expected compressed matrix, got nz = " ++ show nz
     colps_ <- newForeignPtr cs_free p
     rowixs_ <- newForeignPtr cs_free i
     vals_ <- newForeignPtr cs_free x
-    let colps = V.unsafeFromForeignPtr0 colps_ (n + 1)
-        rowixs = V.unsafeFromForeignPtr0 rowixs_ nzmax
-        vals = V.unsafeFromForeignPtr0 vals_ nzmax
+    let colps = V.map fromIntegral $ V.unsafeFromForeignPtr0 colps_ (ncols + 1)
+        rowixs = V.map fromIntegral $ V.unsafeFromForeignPtr0 rowixs_ nzmax_
+        vals = V.unsafeFromForeignPtr0 vals_ nzmax_
     return Matrix{..}
 {-# INLINE fromCs #-}
