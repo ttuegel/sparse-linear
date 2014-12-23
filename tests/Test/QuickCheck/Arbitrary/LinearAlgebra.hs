@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Test.QuickCheck.Arbitrary.LinearAlgebra where
 
 import Data.Traversable
