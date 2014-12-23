@@ -1,11 +1,11 @@
-{ cabal, atlas, feast, gfortran, hspec, QuickCheck, storableComplex, suitesparse
-, vector }:
+{ cabal, atlas, feast, gfortran, hspec, loops, QuickCheck, storableComplex
+, suitesparse, vector }:
 
 cabal.mkDerivation (self: {
   pname = "suitesparse";
   version = "0.1.0.0";
   src = ./.;
-  buildDepends = [ storableComplex vector ];
+  buildDepends = [ loops storableComplex vector ];
   testDepends = [ hspec QuickCheck vector ];
   extraLibraries = [
     atlas feast suitesparse gfortran.gcc

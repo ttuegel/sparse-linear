@@ -50,7 +50,7 @@ prop_addInv m = lin 1 m (-1) m == m0
     m0 = cmap (const 0) m
 
 prop_addId :: Matrix (Complex Double) -> Bool
-prop_addId m = add m (zeros (nrows m) (ncols m)) == m
+prop_addId m = add m (zeros (nRows m) (nColumns m)) == m
 
 prop_transposeId :: Matrix (Complex Double) -> Bool
 prop_transposeId m = transpose (transpose m) == m
@@ -59,4 +59,4 @@ prop_ctransId :: Matrix (Complex Double) -> Bool
 prop_ctransId m = ctrans (ctrans m) == m
 
 prop_mulId :: Matrix (Complex Double) -> Bool
-prop_mulId m = m `mul` (ident $ ncols m) == m
+prop_mulId m = m `mul` (ident $ nColumns m) == m

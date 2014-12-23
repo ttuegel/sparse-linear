@@ -14,7 +14,7 @@ import Foreign.Ptr (Ptr)
 import Foreign.Storable
 import GHC.Stack (currentCallStack, errorWithStackTrace)
 
-import Numeric.LinearAlgebra.Matrix.Sparse.Internal
+import Data.Matrix.Sparse
 
 type Control = Ptr Double
 type Info = Ptr Double

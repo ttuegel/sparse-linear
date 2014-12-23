@@ -4,17 +4,16 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Numeric.LinearAlgebra.Matrix.Sparse.Internal
+module Data.Matrix.Sparse
     ( Cs(), fromCs, cs_free
-    , Matrix(..), withMatrix, unsafeWithMatrix
-    , withTriples, unsafeWithTriples
+    , Matrix(..), unsafeWithMatrix
+    , unsafeWithTriples
     ) where
 
 import Control.Monad (unless)
 import Data.Complex
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
-import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.C.Types
 import Foreign.ForeignPtr.Safe (FinalizerPtr, newForeignPtr)
 import Foreign.Marshal.Utils (with)
@@ -57,59 +56,28 @@ instance Storable (Cs (Complex Double)) where
         (#poke cs_ci, x) ptr x
         (#poke cs_ci, nz) ptr nz
 
+-- | Matrix in compressed sparse column (CSC) format.
 data Matrix a = Matrix
-    { nrows :: Int
-    , ncols :: Int
-    , colps :: Vector Int
-    , rowixs :: Vector Int
-    , vals :: Vector a
+    { nRows :: Int
+    , nColumns :: Int
+    , columnPointers :: Vector Int
+    , rowIndices :: Vector Int
+    , values :: Vector a
     }
   deriving (Eq, Read, Show)
-
-withMatrix
-  :: (Storable a, Storable (Cs a)) => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
-withMatrix Matrix{..} act = do
-    let nzmax = fromIntegral $ V.length vals
-        m = fromIntegral nrows
-        n = fromIntegral ncols
-        nz = -1
-    colps_ <- V.thaw $ V.map fromIntegral colps
-    rowixs_ <- V.thaw $ V.map fromIntegral rowixs
-    vals_ <- V.thaw vals
-    MV.unsafeWith colps_ $ \p ->
-      MV.unsafeWith rowixs_ $ \i ->
-      MV.unsafeWith vals_ $ \x ->
-      with Cs{..} act
-{-# INLINE withMatrix #-}
 
 unsafeWithMatrix
   :: (Storable a, Storable (Cs a)) => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
 unsafeWithMatrix Matrix{..} act = do
-    let nzmax = fromIntegral $ V.length vals
-        m = fromIntegral $ nrows
-        n = fromIntegral $ ncols
+    let nzmax = fromIntegral $ V.length values
+        m = fromIntegral $ nRows
+        n = fromIntegral $ nColumns
         nz = -1
-    V.unsafeWith (V.map fromIntegral colps) $ \p ->
-      V.unsafeWith (V.map fromIntegral rowixs) $ \i ->
-      V.unsafeWith vals $ \x ->
+    V.unsafeWith (V.map fromIntegral columnPointers) $ \p ->
+      V.unsafeWith (V.map fromIntegral rowIndices) $ \i ->
+      V.unsafeWith values $ \x ->
       with Cs{..} act
 {-# INLINE unsafeWithMatrix #-}
-
-withTriples
-  :: (Storable a, Storable (Cs a))
-  => Int -> Int -> Vector Int -> Vector Int -> Vector a
-  -> (Ptr (Cs a) -> IO b) -> IO b
-withTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ act = do
-    let nzmax = fromIntegral $ V.length vals_
-        nz = fromIntegral $ V.length vals_
-    p_ <- V.thaw $ V.map fromIntegral colps_
-    i_ <- V.thaw $ V.map fromIntegral rowixs_
-    x_ <- V.thaw vals_
-    MV.unsafeWith p_ $ \p ->
-      MV.unsafeWith i_ $ \i ->
-      MV.unsafeWith x_ $ \x ->
-      with Cs{..} act
-{-# INLINE withTriples #-}
 
 unsafeWithTriples
   :: (Storable a, Storable (Cs a))
@@ -128,16 +96,20 @@ foreign import ccall "cs.h &cs_ci_free" cs_free :: FinalizerPtr a
 
 fromCs :: (Storable a) => Cs a -> IO (Matrix a)
 fromCs Cs{..} = do
-    let nrows = fromIntegral m
-        ncols = fromIntegral n
+    let nRows = fromIntegral m
+        nColumns = fromIntegral n
         nzmax_ = fromIntegral nzmax
     unless (nz < 0) $ errorWithStackTrace
       $ "expected compressed matrix, got nz = " ++ show nz
-    colps_ <- newForeignPtr cs_free p
-    rowixs_ <- newForeignPtr cs_free i
-    vals_ <- newForeignPtr cs_free x
-    let colps = V.map fromIntegral $ V.unsafeFromForeignPtr0 colps_ (ncols + 1)
-        rowixs = V.map fromIntegral $ V.unsafeFromForeignPtr0 rowixs_ nzmax_
-        vals = V.unsafeFromForeignPtr0 vals_ nzmax_
+    columnPointers_ <- newForeignPtr cs_free p
+    rowIndices_ <- newForeignPtr cs_free i
+    values_ <- newForeignPtr cs_free x
+    let columnPointers =
+          V.map fromIntegral
+          $ V.unsafeFromForeignPtr0 columnPointers_ (nColumns + 1)
+        rowIndices =
+          V.map fromIntegral
+          $ V.unsafeFromForeignPtr0 rowIndices_ nzmax_
+        values = V.unsafeFromForeignPtr0 values_ nzmax_
     return Matrix{..}
 {-# INLINE fromCs #-}

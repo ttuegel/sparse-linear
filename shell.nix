@@ -4,4 +4,5 @@ with pkgs;
 
 haskellPackages.callPackage ./. {
   suitesparse = suitesparse_4_4_1;
+  loops = haskellPackages.callPackage ../loops {};
 }

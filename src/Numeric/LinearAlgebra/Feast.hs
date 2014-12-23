@@ -6,7 +6,7 @@
 {-# LANGUAGE UnboxedTuples #-}
 
 module Numeric.LinearAlgebra.Feast
-    ( GEigH, geigH
+    ( EigH, geigH, eigH
     ) where
 
 import Control.Monad (when)
@@ -70,7 +70,7 @@ instance Feast (Complex Double) where
     feast_rci = zfeast_hrci
     {-# INLINE feast_rci #-}
 
-type GEigH a =
+type EigH a =
     ( CxSparse (Complex a)
     , Feast (Complex a)
     , Num a
@@ -79,7 +79,7 @@ type GEigH a =
     , Umfpack (Complex a)
     )
 geigH
-  :: (GEigH a)
+  :: (EigH a)
   => Int -> (a, a)
   -> Sparse.Matrix (Complex a) -> Sparse.Matrix (Complex a)
   -> (Vector a, Dense.Matrix (Complex a))
@@ -199,3 +199,12 @@ geigH m0 (emin, emax) matA matB
       -> Sparse.Matrix (Complex Double)
       -> (Vector Double, Dense.Matrix (Complex Double))
     #-}
+
+eigH
+  :: (EigH a)
+  => Int
+  -> (a, a)
+  -> Sparse.Matrix (Complex a)
+  -> (Vector a, Dense.Matrix (Complex a))
+eigH = \m0 bounds matA -> geigH m0 bounds matA $ ident $ nColumns matA
+{-# INLINE eigH #-}

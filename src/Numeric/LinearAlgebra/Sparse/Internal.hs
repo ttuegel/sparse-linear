@@ -8,7 +8,7 @@ import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Storable.Complex ()
 
-import Numeric.LinearAlgebra.Matrix.Sparse.Internal
+import Data.Matrix.Sparse
 
 type Cs_gaxpy a = Ptr (Cs a) -> Ptr a -> Ptr a -> IO Int
 type Cs_compress a = Ptr (Cs a) -> IO (Ptr (Cs a))

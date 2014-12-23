@@ -1,6 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Numeric.LinearAlgebra.Umfpack where
+module Numeric.LinearAlgebra.Umfpack
+    ( Umfpack()
+    , linearSolve, (<\>)
+    ) where
 
 import Data.Traversable
 import Data.Vector.Storable (Vector)
@@ -11,8 +14,8 @@ import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)
 
+import Data.Matrix.Sparse
 import Numeric.LinearAlgebra.Sparse
-import Numeric.LinearAlgebra.Matrix.Sparse.Internal
 import Numeric.LinearAlgebra.Umfpack.Internal
 
 linearSolve
@@ -29,7 +32,7 @@ linearSolve mat@Matrix{..} bs =
         umfpack_free_symbolic psym
         num <- peek pnum
         xs <- forM bs $ \b -> V.unsafeWith b $ \pb -> do
-            x <- MV.replicate ncols 0
+            x <- MV.replicate nColumns 0
             MV.unsafeWith x $ \px ->
                 wrap_umfpack $ umfpack_solve cs px pb num nullPtr nullPtr
             V.freeze x

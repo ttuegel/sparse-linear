@@ -4,10 +4,10 @@
 
 module Numeric.LinearAlgebra.Sparse
     ( CxSparse()
-    , Matrix(nrows, ncols)
+    , Matrix(), nRows, nColumns
     , mul
     , compress
-    , transpose, ctrans
+    , transpose, ctrans, hermitian
     , lin
     , add
     , gaxpy, gaxpy_, mulV
@@ -35,7 +35,7 @@ import GHC.Stack
 import Prelude hiding (any)
 import System.IO.Unsafe (unsafePerformIO)
 
-import Numeric.LinearAlgebra.Matrix.Sparse.Internal
+import Data.Matrix.Sparse
 import Numeric.LinearAlgebra.Sparse.Internal
 
 mul :: CxSparse a => Matrix a -> Matrix a -> Matrix a
@@ -56,7 +56,7 @@ compress nr nc (U.unzip3 -> (rs, cs, xs)) = unsafePerformIO $
 transpose :: CxSparse a => Matrix a -> Matrix a
 transpose a = unsafePerformIO $
     unsafeWithMatrix a $ \cs ->
-        cs_transpose cs (V.length $ vals a) >>= peek >>= fromCs
+        cs_transpose cs (V.length $ values a) >>= peek >>= fromCs
 {-# INLINE transpose #-}
 
 ctrans
@@ -64,6 +64,10 @@ ctrans
   => Matrix (Complex a) -> Matrix (Complex a)
 ctrans = cmap conjugate . transpose
 {-# INLINE ctrans #-}
+
+hermitian :: (CxSparse (Complex a), RealFloat a) => Matrix (Complex a) -> Bool
+hermitian m = ctrans m == m
+{-# INLINE hermitian #-}
 
 lin :: CxSparse a => a -> Matrix a -> a -> Matrix a -> Matrix a
 lin alpha a beta b = unsafePerformIO $
@@ -101,7 +105,7 @@ mulV a x = unsafePerformIO $ do
 {-# INLINE mulV #-}
 
 cmap :: (Storable a, Storable b) => (a -> b) -> Matrix a -> Matrix b
-cmap = \f mat -> mat { vals = V.map f $ vals mat }
+cmap = \f mat -> mat { values = V.map f $ values mat }
 {-# INLINE cmap #-}
 
 scale :: (Num a, Storable a) => a -> Matrix a -> Matrix a
@@ -111,20 +115,20 @@ scale = \x -> cmap (* x)
 hcat :: Storable a => [Matrix a] -> Matrix a
 hcat mats
   | null mats = errorWithStackTrace "no matrices"
-  | any ((/= nr) . nrows) mats =
+  | any ((/= nr) . nRows) mats =
       errorWithStackTrace "matrices must have the same number of rows"
   | otherwise = Matrix
-      { nrows = nr
-      , ncols = foldl' (+) 0 $ map ncols mats
-      , colps = V.concat $ do
-          let colpss = map colps mats
-          (cps, off) <- zip colpss $ 0 : map V.last colpss
+      { nRows = nr
+      , nColumns = foldl' (+) 0 $ map nColumns mats
+      , columnPointers = V.concat $ do
+          let colps = map columnPointers mats
+          (cps, off) <- zip colps $ 0 : map V.last colps
           return $ V.map (+ off) cps
-      , rowixs = V.concat $ map rowixs mats
-      , vals = V.concat $ map vals mats
+      , rowIndices = V.concat $ map rowIndices mats
+      , values = V.concat $ map values mats
       }
   where
-    nr = nrows $ head mats
+    nr = nRows $ head mats
 {-# INLINE hcat #-}
 
 vcat :: (CxSparse a, Storable a) => [Matrix a] -> Matrix a
@@ -148,16 +152,16 @@ takeDiag a@Matrix{..} = unsafePerformIO $
         d <- cs_diag csa >>= newForeignPtr cs_free
         return $ V.unsafeFromForeignPtr0 d nd
   where
-    nd = min nrows ncols
+    nd = min nRows nColumns
 {-# INLINE takeDiag #-}
 
 diag :: Storable a => Vector a -> Matrix a
-diag vals = Matrix{..}
+diag values = Matrix{..}
   where
-    ncols = V.length vals
-    nrows = ncols
-    colps = V.iterateN (nrows + 1) (+1) 0
-    rowixs = V.iterateN ncols (+1) 0
+    nColumns = V.length values
+    nRows = nColumns
+    columnPointers = V.iterateN (nRows + 1) (+1) 0
+    rowIndices = V.iterateN nColumns (+1) 0
 {-# INLINE diag #-}
 
 ident :: (Num a, Storable a) => Int -> Matrix a
@@ -165,9 +169,9 @@ ident n = diag $ V.replicate n 1
 {-# INLINE ident #-}
 
 zeros :: (Num a, Storable a) => Int -> Int -> Matrix a
-zeros nrows ncols = Matrix{..}
+zeros nRows nColumns = Matrix{..}
   where
-    colps = V.replicate (ncols + 1) 0
-    rowixs = V.empty
-    vals = V.empty
+    columnPointers = V.replicate (nColumns + 1) 0
+    rowIndices = V.empty
+    values = V.empty
 {-# INLINE zeros #-}

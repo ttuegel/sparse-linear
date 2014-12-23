@@ -13,13 +13,16 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:
+    Data.Matrix
+    Data.Matrix.Sparse
+    Numeric.LinearAlgebra.Feast
     Numeric.LinearAlgebra.Sparse
     Numeric.LinearAlgebra.Sparse.Internal
-    Numeric.LinearAlgebra.Matrix.Sparse.Internal
     Numeric.LinearAlgebra.Umfpack
     Numeric.LinearAlgebra.Umfpack.Internal
   build-depends:
       base >=4.7 && <4.8
+    , loops >=0.3 && <1
     , storable-complex >=0.2 && <1
     , vector >=0.10 && <1
   hs-source-dirs: src
@@ -39,7 +42,6 @@ library
     colamd
     amd
   c-sources:
-    cbits/feast_cs.c
     cbits/cs_add_ptrs.c
     cbits/cs_kron.c
     cbits/cs_diag.c
