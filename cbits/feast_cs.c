@@ -3,6 +3,11 @@
 #include "umfpack_cs.h"
 #include <string.h>
 
+void cs_memcpy(void* dst, void* src, int rec, int size)
+{
+  memcpy(dst, src, size * rec);
+}
+
 int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int* M, double* E, cs_complex_t* X)
 {
   int info = 0;
@@ -18,8 +23,8 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
   int N = A->n;
   int M0 = *M;
   cs_complex_t Ze;
-  cs_complex_t* work1 = cs_malloc(N * M0, sizeof(cs_complex_t));
-  cs_complex_t* work2 = cs_malloc(N * M0, sizeof(cs_complex_t));
+  cs_complex_t* W1 = cs_malloc(N * M0, sizeof(cs_complex_t));
+  cs_complex_t* W2 = cs_malloc(N * M0, sizeof(cs_complex_t));
   cs_complex_t* Aq = cs_malloc(M0 * M0, sizeof(cs_complex_t));
   cs_complex_t* Bq = cs_malloc(M0 * M0, sizeof(cs_complex_t));
 
@@ -29,11 +34,11 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
   void* numeric;
 
   int c2, xi, xj;
-  cs_complex_t* tmp = cs_calloc(N, sizeof(cs_complex_t));
+  cs_complex_t* V = cs_calloc(N, sizeof(cs_complex_t));
 
   while(ijob != 0)
   {
-    zfeast_hrci_(&ijob, &N, (double*) &Ze, (double*) work1, (double*) work2, (double*) Aq, (double*) Bq, fpm, &epsout, &loop, Emin, Emax, &M0, E, (double*) X, M, &res, &info);
+    zfeast_hrci_(&ijob, &N, (double*) &Ze, (double*) W1, (double*) W2, (double*) Aq, (double*) Bq, fpm, &epsout, &loop, Emin, Emax, &M0, E, (double*) X, M, &res, &info);
     switch (ijob)
     {
       case 10:
@@ -41,9 +46,9 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
         if (C)
           cs_ci_spfree(C);
         if (symbolic)
-          umfpack_zi_free_symbolic(symbolic);
+          umfpack_zi_free_symbolic(&symbolic);
         if (numeric)
-          umfpack_zi_free_numeric(numeric);
+          umfpack_zi_free_numeric(&numeric);
 
         /* factorize (Ze * B - A) */
         C = cs_ci_add(A, B, -1, Ze);
@@ -57,9 +62,9 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
         for (c2 = 0; c2 < M0; ++c2)
         {
           for (xi = 0; xi < N; ++xi)
-            tmp[xi] = 0;
-          umfpack_cs_zi_solve(C, tmp, work2 + c2 * N, numeric, 0, 0);
-          memcpy(work2 + c2 * N, tmp, sizeof(cs_complex_t) * N);
+            V[xi] = 0;
+          umfpack_cs_zi_solve(C, V, W2 + c2 * N, numeric, 0, 0);
+          cs_memcpy(W2 + c2 * N, V, N, sizeof(cs_complex_t));
         }
         break;
       case 20:
@@ -73,7 +78,7 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
 
         /* can reuse symbolic part of factorization only */
         if (numeric)
-          umfpack_zi_free_numeric(numeric);
+          umfpack_zi_free_numeric(&numeric);
         umfpack_cs_zi_numeric(D, symbolic, &numeric, 0, 0);
         break;
       case 21:
@@ -83,9 +88,9 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
         for (c2 = 0; c2 < M0; ++c2)
         {
           for (xi = 0; xi < N; ++xi)
-            tmp[xi] = 0;
-          umfpack_cs_zi_solve(D, tmp, work2 + c2 * N, numeric, 0, 0);
-          memcpy(work2 + c2 * N, tmp, sizeof(cs_complex_t) * N);
+            V[xi] = 0;
+          umfpack_cs_zi_solve(D, V, W2 + c2 * N, numeric, 0, 0);
+          cs_memcpy(W2 + c2 * N, V, N, sizeof(cs_complex_t));
         }
         break;
       case 30:
@@ -98,9 +103,9 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
         for (xi = fpm[23] - 1; xi < xj; ++xi)
         {
           for (xi = 0; xi < N; ++xi)
-            tmp[xi] = 0;
-          cs_ci_gaxpy(A, X + xi * N, tmp);
-          memcpy(work1 + xi * N, tmp, sizeof(cs_complex_t) * N);
+            V[xi] = 0;
+          cs_ci_gaxpy(A, X + xi * N, V);
+          cs_memcpy(W1 + xi * N, V, N, sizeof(cs_complex_t));
         }
         break;
       case 40:
@@ -113,9 +118,9 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
         for (xi = fpm[23] - 1; xi < xj; ++xi)
         {
           for (xi = 0; xi < N; ++xi)
-            tmp[xi] = 0;
-          cs_ci_gaxpy(B, X + xi * N, tmp);
-          memcpy(work1 + xi * N, tmp, sizeof(cs_complex_t) * N);
+            V[xi] = 0;
+          cs_ci_gaxpy(B, X + xi * N, V);
+          cs_memcpy(W1 + xi * N, V, N, sizeof(cs_complex_t));
         }
         break;
       default:
@@ -124,10 +129,10 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
   }
 
   if(numeric)
-    umfpack_zi_free_numeric(numeric);
+    umfpack_zi_free_numeric(&numeric);
 
   if(symbolic)
-    umfpack_zi_free_symbolic(symbolic);
+    umfpack_zi_free_symbolic(&symbolic);
 
   if(C)
     cs_ci_spfree(C);
@@ -135,11 +140,11 @@ int feast_cs_ci(const cs_ci* A, const cs_ci* B, double* Emin, double* Emax, int*
   if(D)
     cs_ci_spfree(D);
 
-  cs_ci_free(work1);
-  cs_ci_free(work2);
+  cs_ci_free(W1);
+  cs_ci_free(W2);
   cs_ci_free(Aq);
   cs_ci_free(Bq);
-  cs_ci_free(tmp);
+  cs_ci_free(V);
 
   return info;
 }
