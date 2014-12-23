@@ -6,9 +6,9 @@ import GHC.Stack (errorWithStackTrace)
 
 -- | Dense matrix in column-major format
 data Matrix a = Matrix
-    { nRows :: Int
-    , nColumns :: Int
-    , values :: Vector a
+    { nRows :: !Int
+    , nColumns :: !Int
+    , values :: !(Vector a)
     }
 
 fromVector :: Storable a => Int -> Int -> Vector a -> Matrix a

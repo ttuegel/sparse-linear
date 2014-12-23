@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -22,6 +23,7 @@ import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
 import GHC.Stack
+import System.GlobalLock (lock)
 import System.IO.Unsafe
 
 import qualified Data.Matrix as Dense
@@ -83,14 +85,14 @@ geigH
   => Int -> (a, a)
   -> Sparse.Matrix (Complex a) -> Sparse.Matrix (Complex a)
   -> (Vector a, Dense.Matrix (Complex a))
-geigH m0 (emin, emax) matA matB
+geigH !m0 (!emin, !emax) !matA !matB
   | not (hermitian matA) = errorWithStackTrace "matrix A must be hermitian"
   | not (hermitian matB) = errorWithStackTrace "matrix B must be hermitian"
   | nRows matA /= nColumns matA = errorWithStackTrace "matrix A must be square"
   | nRows matB /= nColumns matB = errorWithStackTrace "matrix B must be square"
   | nRows matA /= nRows matB =
       errorWithStackTrace "matrices A and B must be the same size"
-  | otherwise = unsafePerformIO $
+  | otherwise = unsafePerformIO $ lock $
       -- initialize scalars
       alloca $ \ijob_ ->
       allocaArray 64 $ \fpm_ ->

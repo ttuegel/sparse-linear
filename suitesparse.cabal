@@ -22,6 +22,7 @@ library
     Numeric.LinearAlgebra.Umfpack.Internal
   build-depends:
       base >=4.7 && <4.8
+    , global-lock >=0.1 && <1
     , loops >=0.3 && <1
     , storable-complex >=0.2 && <1
     , vector >=0.10 && <1

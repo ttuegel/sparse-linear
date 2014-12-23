@@ -18,8 +18,8 @@ import Data.Matrix.Sparse
 
 type Control = Ptr Double
 type Info = Ptr Double
-newtype Numeric a = Numeric { derefNum :: Ptr () } deriving (Storable)
-newtype Symbolic a = Symbolic { derefSym :: Ptr () } deriving (Storable)
+newtype Numeric a = Numeric (Ptr ()) deriving (Storable)
+newtype Symbolic a = Symbolic (Ptr ()) deriving (Storable)
 
 type Umfpack_symbolic a
     =  Ptr (Cs a)  -- ^ matrix

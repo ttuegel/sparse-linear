@@ -24,13 +24,13 @@ import GHC.Stack
 #include "cs.h"
 
 data Cs a = Cs
-    { nzmax :: CInt  -- ^ maximum number of entries
-    , m :: CInt  -- ^ number of rows
-    , n :: CInt  -- ^ number of columns
-    , p :: Ptr CInt  -- ^ column pointers or indices
-    , i :: Ptr CInt  -- ^ row indices
-    , x :: Ptr a  -- ^ values
-    , nz :: CInt  -- ^ number of entries (triplet) or (-1) for compressed col
+    { nzmax :: !CInt  -- ^ maximum number of entries
+    , m :: !CInt  -- ^ number of rows
+    , n :: !CInt  -- ^ number of columns
+    , p :: !(Ptr CInt)  -- ^ column pointers or indices
+    , i :: !(Ptr CInt)  -- ^ row indices
+    , x :: !(Ptr a)  -- ^ values
+    , nz :: !CInt  -- ^ number of entries (triplet) or (-1) for compressed col
     }
 
 instance Storable (Cs (Complex Double)) where
@@ -58,11 +58,11 @@ instance Storable (Cs (Complex Double)) where
 
 -- | Matrix in compressed sparse column (CSC) format.
 data Matrix a = Matrix
-    { nRows :: Int
-    , nColumns :: Int
-    , columnPointers :: Vector Int
-    , rowIndices :: Vector Int
-    , values :: Vector a
+    { nRows :: !Int
+    , nColumns :: !Int
+    , columnPointers :: !(Vector Int)
+    , rowIndices :: !(Vector Int)
+    , values :: !(Vector a)
     }
   deriving (Eq, Read, Show)
 
