@@ -10,6 +10,7 @@ data Matrix a = Matrix
     , nColumns :: !Int
     , values :: !(Vector a)
     }
+  deriving (Eq, Read, Show)
 
 fromVector :: Storable a => Int -> Int -> Vector a -> Matrix a
 fromVector nr nc v
