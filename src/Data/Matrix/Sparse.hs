@@ -16,12 +16,11 @@ import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Foreign.C.Types
 import Foreign.ForeignPtr.Safe (FinalizerPtr, newForeignPtr)
+import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
 import GHC.Stack
-
-#include "cs.h"
 
 data Cs a = Cs
     { nzmax :: !CInt  -- ^ maximum number of entries
@@ -33,28 +32,38 @@ data Cs a = Cs
     , nz :: !CInt  -- ^ number of entries (triplet) or (-1) for compressed col
     }
 
+foreign import ccall "sizeof_cs_ci" sizeof_cs_ci :: CInt
+foreign import ccall "mk_cs_ci" mk_cs_ci :: Ptr (Cs (Complex Double)) -> CInt -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> CInt -> IO ()
+foreign import ccall "match_cs_ci" match_cs_ci :: Ptr (Cs (Complex Double)) -> Ptr CInt -> Ptr CInt -> Ptr CInt -> Ptr (Ptr CInt) -> Ptr (Ptr CInt) -> Ptr (Ptr (Complex Double)) -> Ptr CInt -> IO ()
+
 instance Storable (Cs (Complex Double)) where
-    sizeOf _ = #size cs_ci
-    alignment _ = 256
+  sizeOf _ = fromIntegral sizeof_cs_ci
+  {-# INLINE sizeOf #-}
 
-    peek ptr = do
-        nzmax <- (#peek cs_ci, nzmax) ptr
-        m <- (#peek cs_ci, m) ptr
-        n <- (#peek cs_ci, n) ptr
-        p <- (#peek cs_ci, p) ptr
-        i <- (#peek cs_ci, i) ptr
-        x <- (#peek cs_ci, x) ptr
-        nz <- (#peek cs_ci, nz) ptr
-        return Cs{..}
+  alignment _ = 8
+  {-# INLINE alignment #-}
 
-    poke ptr Cs{..} = do
-        (#poke cs_ci, nzmax) ptr nzmax
-        (#poke cs_ci, m) ptr m
-        (#poke cs_ci, n) ptr n
-        (#poke cs_ci, p) ptr p
-        (#poke cs_ci, i) ptr i
-        (#poke cs_ci, x) ptr x
-        (#poke cs_ci, nz) ptr nz
+  peek ptr =
+    alloca $ \nzmax_ ->
+    alloca $ \m_ ->
+    alloca $ \n_ ->
+    alloca $ \p_ ->
+    alloca $ \i_ ->
+    alloca $ \x_ ->
+    alloca $ \nz_ -> do
+      match_cs_ci ptr nzmax_ m_ n_ p_ i_ x_ nz_
+      nzmax <- peek nzmax_
+      m <- peek m_
+      n <- peek n_
+      p <- peek p_
+      i <- peek i_
+      x <- peek x_
+      nz <- peek nz_
+      return Cs{..}
+  {-# INLINE peek #-}
+
+  poke ptr Cs{..} = mk_cs_ci ptr nzmax m n p i x nz
+  {-# INLINE poke #-}
 
 -- | Matrix in compressed sparse column (CSC) format.
 data Matrix a = Matrix
