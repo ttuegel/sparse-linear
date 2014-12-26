@@ -10,6 +10,7 @@ module Data.Matrix.Sparse
     , unsafeWithTriples
     ) where
 
+import Control.Applicative
 import Control.Monad (unless)
 import Data.Complex
 import Data.Vector.Storable (Vector)
@@ -21,6 +22,7 @@ import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
 import GHC.Stack
+import System.IO.Unsafe (unsafePerformIO)
 
 data Cs a = Cs
     { nzmax :: !CInt  -- ^ maximum number of entries
@@ -32,12 +34,12 @@ data Cs a = Cs
     , nz :: !CInt  -- ^ number of entries (triplet) or (-1) for compressed col
     }
 
-foreign import ccall "sizeof_cs_ci" sizeof_cs_ci :: CInt
+foreign import ccall "&sizeof_cs_ci" sizeof_cs_ci :: Ptr CInt
 foreign import ccall "mk_cs_ci" mk_cs_ci :: Ptr (Cs (Complex Double)) -> CInt -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> CInt -> IO ()
 foreign import ccall "match_cs_ci" match_cs_ci :: Ptr (Cs (Complex Double)) -> Ptr CInt -> Ptr CInt -> Ptr CInt -> Ptr (Ptr CInt) -> Ptr (Ptr CInt) -> Ptr (Ptr (Complex Double)) -> Ptr CInt -> IO ()
 
 instance Storable (Cs (Complex Double)) where
-  sizeOf _ = fromIntegral sizeof_cs_ci
+  sizeOf _ = unsafePerformIO $ fromIntegral <$> peek sizeof_cs_ci
   {-# INLINE sizeOf #-}
 
   alignment _ = 8
@@ -62,7 +64,8 @@ instance Storable (Cs (Complex Double)) where
       return Cs{..}
   {-# INLINE peek #-}
 
-  poke ptr Cs{..} = mk_cs_ci ptr nzmax m n p i x nz
+  poke ptr Cs{..} = do
+    mk_cs_ci ptr nzmax m n p i x nz
   {-# INLINE poke #-}
 
 -- | Matrix in compressed sparse column (CSC) format.
