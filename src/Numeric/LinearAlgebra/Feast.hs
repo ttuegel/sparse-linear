@@ -40,7 +40,7 @@ type family ComplexOf a where
   ComplexOf (Complex a) = (Complex a)
 
 type Feast_rci a
-    =  Ptr CChar  -- ^ ijob
+    =  Ptr CInt  -- ^ ijob
     -> Ptr CInt  -- ^ N
     -> Ptr a  -- ^ Ze
     -> Ptr a  -- ^ work
@@ -48,7 +48,7 @@ type Feast_rci a
     -> Ptr a  -- ^ Aq
     -> Ptr a  -- ^ Sq
     -> Ptr CInt  -- ^ feastparam
-    -> Ptr Double  -- ^ epsout
+    -> Ptr (RealOf a)  -- ^ epsout
     -> Ptr CInt  -- ^ loop
     -> Ptr (RealOf a)  -- ^ Emin
     -> Ptr (RealOf a)  -- ^ Emax
@@ -63,10 +63,9 @@ type Feast_rci a
 class Feast a where
     feast_rci :: Feast_rci a
 
-foreign import ccall "feast.h feastinit_" feastinit :: Ptr CInt -> IO ()
+foreign import ccall "feastinit_" feastinit :: Ptr CInt -> IO ()
 
-foreign import ccall "feast.h zfeast_hrci_"
-  zfeast_hrci :: Feast_rci (Complex Double)
+foreign import ccall "zfeast_hrci_" zfeast_hrci :: Feast_rci (Complex Double)
 
 instance Feast (Complex Double) where
     feast_rci = zfeast_hrci
@@ -95,7 +94,7 @@ geigH !m0 (!emin, !emax) !matA !matB
   | otherwise = unsafePerformIO $ lock $
       -- initialize scalars
       with (-1) $ \ijob_ ->
-      withArray (1 : replicate 63 0) $ \fpm_ ->
+      withArray (replicate 64 0) $ \fpm_ ->
       with (fromIntegral n) $ \n_ ->
       with 0 $ \ze_ ->
       with 0 $ \epsout_ ->
@@ -126,6 +125,7 @@ geigH !m0 (!emin, !emax) !matA !matB
 
           -- initialize
           feastinit fpm_
+          poke fpm_ 1
 
           let feast_go =
                 MV.unsafeWith work1 $ \work1_ ->
@@ -155,37 +155,21 @@ geigH !m0 (!emin, !emax) !matA !matB
                     res_
                     info_
           let geigSH_go = do
-                  putStrLn "geigSH_go"
-                  feast_go
-                  ijob <- peek ijob_
-                  when (ijob /= 0) $ do
-                      case ijob of
-                        10 -> return ()
-                        11 -> do
-                            ze <- peek ze_
-                            solveLin $ lin ze matB (-1) matA
-                        20 -> return ()
-                        21 -> do
-                            ze <- peek ze_
-                            solveLin $ ctrans $ lin ze matB (-1) matA
-                        30 -> multiply matA
-                        40 -> multiply matB
-                        _ -> do
-                          info <- peek info_
-                          errorWithStackTrace
-                            $ "unknown ijob " ++ show ijob ++ " info " ++ show info
-                      geigSH_go
-              solveLin c = do
-                vecs2_ <- mapM V.freeze vecs2
-                let solns = linearSolve c vecs2_
-                forM_ (zip vecs2 solns) $ \(v, soln) -> V.copy v soln
-              multiply mat = do
-                dropped <- fromIntegral <$> peekElemOff fpm_ 23
-                len <- fromIntegral <$> peekElemOff fpm_ 24
-                let vecs1_ = take len $ drop (dropped - 1) vecs1
-                vecs1__ <- mapM V.freeze vecs1_
-                let solns = map (mulV mat) vecs1__
-                forM_ (zip vecs1_ solns) $ \(v, soln) -> V.copy v soln
+                putStrLn "geigSH_go"
+                feast_go
+                ijob <- peek ijob_
+                when (ijob /= 0) $ do
+                  case ijob of
+                   10 -> return ()
+                   11 -> return ()
+                   20 -> return ()
+                   21 -> return ()
+                   30 -> return ()
+                   40 -> return ()
+                   _ -> do
+                     info <- peek info_
+                     errorWithStackTrace
+                       $ "unknown ijob " ++ show ijob ++ " info " ++ show info
           geigSH_go
 
           eigenvalues <- V.unsafeFreeze eigenvalues_
