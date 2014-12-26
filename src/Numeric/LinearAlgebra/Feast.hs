@@ -10,6 +10,7 @@ module Numeric.LinearAlgebra.Feast
     ( EigH, geigH, eigH
     ) where
 
+import Control.Applicative
 import Control.Monad (when)
 import Data.Foldable
 import Data.Foldable.For
@@ -17,8 +18,7 @@ import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.C.Types
-import Foreign.Marshal.Alloc (alloca)
-import Foreign.Marshal.Array (allocaArray)
+import Foreign.Marshal.Array (withArray)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
@@ -63,9 +63,9 @@ type Feast_rci a
 class Feast a where
     feast_rci :: Feast_rci a
 
-foreign import ccall "feast.h feastinit" feastinit :: Ptr CInt -> IO ()
+foreign import ccall "feast.h feastinit_" feastinit :: Ptr CInt -> IO ()
 
-foreign import ccall "feast.h zfeast_hrci"
+foreign import ccall "feast.h zfeast_hrci_"
   zfeast_hrci :: Feast_rci (Complex Double)
 
 instance Feast (Complex Double) where
@@ -94,17 +94,16 @@ geigH !m0 (!emin, !emax) !matA !matB
       errorWithStackTrace "matrices A and B must be the same size"
   | otherwise = unsafePerformIO $ lock $
       -- initialize scalars
-      alloca $ \ijob_ ->
-      allocaArray 64 $ \fpm_ ->
-      alloca $ \n_ ->
-      alloca $ \ze_ ->
-      alloca $ \epsout_ ->
-      alloca $ \loop_ ->
+      with (-1) $ \ijob_ ->
+      withArray (1 : replicate 63 0) $ \fpm_ ->
+      with (fromIntegral n) $ \n_ ->
+      with 0 $ \ze_ ->
+      with 0 $ \epsout_ ->
+      with 0 $ \loop_ ->
       with emin $ \emin_ -> with emax $ \emax_ ->
       with (fromIntegral m0) $ \m0_ ->
-      alloca $ \mode_ ->
-      alloca $ \res_ ->
-      alloca $ \info_ -> do
+      with 0 $ \mode_ ->
+      with 0 $ \info_ -> do
 
           -- initialize vectors
           eigenvalues_ <- MV.replicate m0 0
@@ -113,6 +112,7 @@ geigH !m0 (!emin, !emax) !matA !matB
           work2 <- MV.replicate (m0 * n) 0
           aq <- MV.replicate (m0 * m0) 0
           bq <- MV.replicate (m0 * m0) 0
+          res <- MV.replicate m0 0
 
           let vecs1 = toList $ F
                   work1
@@ -126,35 +126,36 @@ geigH !m0 (!emin, !emax) !matA !matB
 
           -- initialize
           feastinit fpm_
-          poke ijob_ (-1)
 
           let feast_go =
-                  MV.unsafeWith work1 $ \work1_ ->
-                  MV.unsafeWith work2 $ \work2_ ->
-                  MV.unsafeWith aq $ \aq_ ->
-                  MV.unsafeWith bq $ \bq_ ->
-                  MV.unsafeWith eigenvalues_ $ \eigenvalues__ ->
-                  MV.unsafeWith eigenvectors_ $ \eigenvectors__ ->
-                      feast_rci
-                        ijob_
-                        n_
-                        ze_
-                        work1_
-                        work2_
-                        aq_
-                        bq_
-                        fpm_
-                        epsout_
-                        loop_
-                        emin_
-                        emax_
-                        m0_
-                        eigenvalues__
-                        eigenvectors__
-                        mode_
-                        res_
-                        info_
+                MV.unsafeWith work1 $ \work1_ ->
+                MV.unsafeWith work2 $ \work2_ ->
+                MV.unsafeWith aq $ \aq_ ->
+                MV.unsafeWith bq $ \bq_ ->
+                MV.unsafeWith eigenvalues_ $ \eigenvalues__ ->
+                MV.unsafeWith eigenvectors_ $ \eigenvectors__ ->
+                MV.unsafeWith res $ \res_ ->
+                  feast_rci
+                    ijob_
+                    n_
+                    ze_
+                    work1_
+                    work2_
+                    aq_
+                    bq_
+                    fpm_
+                    epsout_
+                    loop_
+                    emin_
+                    emax_
+                    m0_
+                    eigenvalues__
+                    eigenvectors__
+                    mode_
+                    res_
+                    info_
           let geigSH_go = do
+                  putStrLn "geigSH_go"
                   feast_go
                   ijob <- peek ijob_
                   when (ijob /= 0) $ do
@@ -169,16 +170,22 @@ geigH !m0 (!emin, !emax) !matA !matB
                             solveLin $ ctrans $ lin ze matB (-1) matA
                         30 -> multiply matA
                         40 -> multiply matB
-                        _ -> errorWithStackTrace $ "unknown ijob " ++ show ijob
+                        _ -> do
+                          info <- peek info_
+                          errorWithStackTrace
+                            $ "unknown ijob " ++ show ijob ++ " info " ++ show info
                       geigSH_go
               solveLin c = do
-                vecs2_ <- mapM V.unsafeFreeze vecs2
+                vecs2_ <- mapM V.freeze vecs2
                 let solns = linearSolve c vecs2_
                 forM_ (zip vecs2 solns) $ \(v, soln) -> V.copy v soln
               multiply mat = do
-                vecs1_ <- mapM V.unsafeFreeze vecs1
-                let solns = map (mulV mat) vecs1_
-                forM_ (zip vecs1 solns) $ \(v, soln) -> V.copy v soln
+                dropped <- fromIntegral <$> peekElemOff fpm_ 23
+                len <- fromIntegral <$> peekElemOff fpm_ 24
+                let vecs1_ = take len $ drop (dropped - 1) vecs1
+                vecs1__ <- mapM V.freeze vecs1_
+                let solns = map (mulV mat) vecs1__
+                forM_ (zip vecs1_ solns) $ \(v, soln) -> V.copy v soln
           geigSH_go
 
           eigenvalues <- V.unsafeFreeze eigenvalues_
