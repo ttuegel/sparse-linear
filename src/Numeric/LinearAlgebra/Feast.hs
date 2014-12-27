@@ -13,7 +13,6 @@ module Numeric.LinearAlgebra.Feast
 import Control.Applicative
 import Control.Monad (when)
 import Data.Foldable
-import Data.Foldable.For
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
@@ -84,107 +83,115 @@ geigH
   => Int -> (a, a)
   -> Sparse.Matrix (Complex a) -> Sparse.Matrix (Complex a)
   -> (Vector a, Dense.Matrix (Complex a))
-geigH !m0 (!emin, !emax) !matA !matB
+geigH !m0 (!_emin, !_emax) !matA !matB
   | not (hermitian matA) = errorWithStackTrace "matrix A must be hermitian"
   | not (hermitian matB) = errorWithStackTrace "matrix B must be hermitian"
   | nRows matA /= nColumns matA = errorWithStackTrace "matrix A must be square"
   | nRows matB /= nColumns matB = errorWithStackTrace "matrix B must be square"
   | nRows matA /= nRows matB =
       errorWithStackTrace "matrices A and B must be the same size"
-  | otherwise = unsafePerformIO $ lock $
-      -- initialize scalars
-      with (-1) $ \ijob_ ->
-      withArray (replicate 64 0) $ \fpm_ ->
-      with (fromIntegral n) $ \n_ ->
-      with 0 $ \ze_ ->
-      with 0 $ \epsout_ ->
-      with 0 $ \loop_ ->
-      with emin $ \emin_ -> with emax $ \emax_ ->
-      with (fromIntegral m0) $ \m0_ ->
-      with 0 $ \mode_ ->
-      with 0 $ \info_ -> do
+  | otherwise =
+      unsafePerformIO $ lock $
+        -- initialize scalars
+        with (-1) $ \_ijob ->
+        withArray (replicate 64 0) $ \fpm ->
+        with (fromIntegral n) $ \n_ ->
+        with 0 $ \_ze ->
+        with 0 $ \epsout ->
+        with 0 $ \loop ->
+        with _emin $ \_emin -> with _emax $ \_emax ->
+        with (fromIntegral m0) $ \m0_ ->
+        with 0 $ \mode ->
+        with 0 $ \info -> do
 
           -- initialize vectors
-          eigenvalues_ <- MV.replicate m0 0
-          eigenvectors_ <- MV.replicate (m0 * n) 0
-          work1 <- MV.replicate (m0 * n) 0
-          work2 <- MV.replicate (m0 * n) 0
-          aq <- MV.replicate (m0 * m0) 0
-          bq <- MV.replicate (m0 * m0) 0
-          res <- MV.replicate m0 0
-
-          let vecs1 = toList $ F
-                  work1
-                  (\v -> MV.length v > 0)
-                  (\v -> let (this, rest) = MV.splitAt n v in (# rest, this #))
-
-              vecs2 = toList $ F
-                  work2
-                  (\v -> MV.length v > 0)
-                  (\v -> let (this, rest) = MV.splitAt n v in (# rest, this #))
+          _eigenvalues <- MV.replicate m0 0
+          _eigenvectors <- MV.replicate (m0 * n) 0
+          _work1 <- MV.replicate (m0 * n) 0
+          _work2 <- MV.replicate (m0 * n) 0
+          _aq <- MV.replicate (m0 * m0) 0
+          _bq <- MV.replicate (m0 * m0) 0
+          _res <- MV.replicate m0 0
 
           -- initialize
-          feastinit fpm_
-          poke fpm_ 1
+          feastinit fpm
 
           let feast_go =
-                MV.unsafeWith work1 $ \work1_ ->
-                MV.unsafeWith work2 $ \work2_ ->
-                MV.unsafeWith aq $ \aq_ ->
-                MV.unsafeWith bq $ \bq_ ->
-                MV.unsafeWith eigenvalues_ $ \eigenvalues__ ->
-                MV.unsafeWith eigenvectors_ $ \eigenvectors__ ->
-                MV.unsafeWith res $ \res_ ->
+                MV.unsafeWith _work1 $ \_work1 ->
+                MV.unsafeWith _work2 $ \_work2 ->
+                MV.unsafeWith _aq $ \_aq ->
+                MV.unsafeWith _bq $ \_bq ->
+                MV.unsafeWith _eigenvalues $ \_eigenvalues ->
+                MV.unsafeWith _eigenvectors $ \_eigenvectors ->
+                MV.unsafeWith _res $ \_res ->
                   feast_rci
-                    ijob_
+                    _ijob
                     n_
-                    ze_
-                    work1_
-                    work2_
-                    aq_
-                    bq_
-                    fpm_
-                    epsout_
-                    loop_
-                    emin_
-                    emax_
+                    _ze
+                    _work1
+                    _work2
+                    _aq
+                    _bq
+                    fpm
+                    epsout
+                    loop
+                    _emin
+                    _emax
                     m0_
-                    eigenvalues__
-                    eigenvectors__
-                    mode_
-                    res_
-                    info_
+                    _eigenvalues
+                    _eigenvectors
+                    mode
+                    _res
+                    info
           let geigSH_go = do
-                putStrLn "geigSH_go"
                 feast_go
-                ijob <- peek ijob_
-                when (ijob /= 0) $ do
-                  case ijob of
+                _ijob <- peek _ijob
+                when (_ijob /= 0) $ do
+                  case _ijob of
                    10 -> return ()
-                   11 -> return ()
+                   11 -> do
+                     _ze <- peek _ze
+                     solveLinear $ lin (-1) matA _ze matB
                    20 -> return ()
-                   21 -> return ()
-                   30 -> return ()
-                   40 -> return ()
-                   _ -> do
-                     info <- peek info_
-                     errorWithStackTrace
-                       $ "unknown ijob " ++ show ijob ++ " info " ++ show info
+                   21 -> do
+                     _ze <- peek _ze
+                     solveLinear $ lin (-1) matA' (conjugate _ze) matB'
+                   30 -> multiplyWork matA
+                   40 -> multiplyWork matB
+                   _ -> return ()
+                  geigSH_go
+              solveLinear mat = do
+                let rhses = flip map [0..(m0 - 1)] $ \c -> MV.slice (c * n) n _work2
+                solns <- linearSolve mat <$> mapM V.freeze rhses
+                forM_ (zip rhses solns) $ uncurry V.copy
+              multiplyWork mat = do
+                i <- (+ (-1)) . fromIntegral <$> peekElemOff fpm 23
+                j <- (+ i) . fromIntegral <$> peekElemOff fpm 24
+                let multiplyWork_loop c
+                      | c < j = do
+                          let dst = MV.slice (c * n) n _work1
+                          x <- V.freeze $ MV.slice (c * n) n _eigenvectors
+                          V.copy dst $ mat `mulV` x
+                          multiplyWork_loop $ c + 1
+                      | otherwise = return ()
+                multiplyWork_loop i
           geigSH_go
 
-          eigenvalues <- V.unsafeFreeze eigenvalues_
-          eigenvectors <- V.unsafeFreeze eigenvectors_
+          _eigenvalues <- V.unsafeFreeze _eigenvalues
+          _eigenvectors <- V.unsafeFreeze _eigenvectors
 
           let eigenvectorMat = Dense.Matrix
                   { Dense.nRows = m0
                   , Dense.nColumns = m0
-                  , Dense.values = eigenvectors
+                  , Dense.values = _eigenvectors
                   }
 
-          return (eigenvalues, eigenvectorMat)
+          return (_eigenvalues, eigenvectorMat)
 
   where
     n = nColumns matA
+    matA' = ctrans matA
+    matB' = ctrans matB
 {-# SPECIALIZE
     geigH
       :: Int -> (Double, Double)
