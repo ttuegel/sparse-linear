@@ -15,6 +15,7 @@ library
   exposed-modules:
     Data.Matrix
     Data.Matrix.Sparse
+    Data.Vector.Mutability
     Numeric.LinearAlgebra.Feast
     Numeric.LinearAlgebra.Sparse
     Numeric.LinearAlgebra.Sparse.Internal

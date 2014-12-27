@@ -22,11 +22,11 @@ module Numeric.LinearAlgebra.Sparse
 import Control.Monad (void)
 import Data.Complex
 import Data.Foldable
+import Data.Vector.Mutability
 import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
-import Data.Vector.Storable.Mutable (IOVector)
 import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.ForeignPtr.Safe (newForeignPtr)
 import Foreign.Marshal.Utils (with)
@@ -82,25 +82,22 @@ add :: (CxSparse a, Num a) => Matrix a -> Matrix a -> Matrix a
 add a b = lin 1 a 1 b
 {-# INLINE add #-}
 
-gaxpy :: CxSparse a => Matrix a -> Vector a -> Vector a -> Vector a
-gaxpy a x y = unsafePerformIO $ do
-    y_ <- V.thaw y
-    gaxpy_ a x y_
-    V.unsafeFreeze y_
-{-# INLINE gaxpy #-}
-
-gaxpy_ :: CxSparse a => Matrix a -> Vector a -> IOVector a -> IO ()
-gaxpy_ a x y =
-    unsafeWithMatrix a $ \csa ->
-    V.unsafeWith x $ \px ->
-    MV.unsafeWith y $ \py ->
-        void $ cs_gaxpy csa px py
+gaxpy_ :: (CxSparse a, WithImm v, WithMut w) => Matrix a -> v a -> w a -> IO (w a)
+gaxpy_ _a _x _y =
+  withMut _y $ \_y ->
+  unsafeWithMatrix _a $ \_a ->
+  withImm _x $ \_x ->
+    void $ cs_gaxpy _a _x _y
 {-# INLINE gaxpy_ #-}
+
+gaxpy :: CxSparse a => Matrix a -> Vector a -> Vector a -> Vector a
+gaxpy a x y = unsafePerformIO $ gaxpy_ a x y
+{-# INLINE gaxpy #-}
 
 mulV :: (CxSparse a, Num a) => Matrix a -> Vector a -> Vector a
 mulV a x = unsafePerformIO $ do
     y <- MV.replicate (V.length x) 0
-    gaxpy_ a x y
+    _ <- gaxpy_ a x y
     V.unsafeFreeze y
 {-# INLINE mulV #-}
 

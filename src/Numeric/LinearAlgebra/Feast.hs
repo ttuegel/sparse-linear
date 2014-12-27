@@ -170,8 +170,9 @@ geigH !m0 (!_emin, !_emax) !matA !matB
                 let multiplyWork_loop c
                       | c < j = do
                           let dst = MV.slice (c * n) n _work1
-                          x <- V.freeze $ MV.slice (c * n) n _eigenvectors
-                          V.copy dst $ mat `mulV` x
+                              x = MV.slice (c * n) n _eigenvectors
+                          MV.set dst 0
+                          _ <- gaxpy_ mat x dst
                           multiplyWork_loop $ c + 1
                       | otherwise = return ()
                 multiplyWork_loop i
