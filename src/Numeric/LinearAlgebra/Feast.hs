@@ -160,10 +160,10 @@ geigH !m0 (!_emin, !_emax) !matA !matB
                    40 -> multiplyWork matB
                    _ -> return ()
                   geigSH_go
+              workVectors = flip map [0..(m0 - 1)] $ \c -> MV.slice (c * n) n _work2
               solveLinear mat = do
-                let rhses = flip map [0..(m0 - 1)] $ \c -> MV.slice (c * n) n _work2
-                solns <- linearSolve mat <$> mapM V.freeze rhses
-                forM_ (zip rhses solns) $ uncurry V.copy
+                solns <- linearSolve mat <$> mapM V.freeze workVectors
+                forM_ (zip workVectors solns) $ uncurry V.copy
               multiplyWork mat = do
                 i <- (+ (-1)) . fromIntegral <$> peekElemOff fpm 23
                 j <- (+ i) . fromIntegral <$> peekElemOff fpm 24
