@@ -107,6 +107,37 @@ instance CxSparse (Complex Double) where
     cs_kron = cs_ci_kron
     cs_diag = cs_ci_diag
 
+foreign import ccall "cs.h cs_di_gaxpy"
+  cs_di_gaxpy :: CsGaxpy Double
+foreign import ccall "cs.h cs_di_compress"
+  cs_di_compress :: CsCompress Double
+foreign import ccall "cs.h cs_di_transpose"
+  cs_di_transpose :: CsTranspose Double
+foreign import ccall "cs.h cs_di_multiply"
+  cs_di_multiply :: CsMultiply Double
+foreign import ccall "cs_di_add_ptrs"
+  cs_di_add :: CsAdd Double
+foreign import ccall "cs_di_kron"
+  cs_di_kron :: CsMultiply Double
+foreign import ccall "cs_di_diag"
+  cs_di_diag :: CsDiag Double
+
+instance CxSparse Double where
+    {-# INLINE cs_gaxpy #-}
+    {-# INLINE cs_compress #-}
+    {-# INLINE cs_transpose #-}
+    {-# INLINE cs_multiply #-}
+    {-# INLINE cs_add #-}
+    {-# INLINE cs_kron #-}
+    {-# INLINE cs_diag #-}
+    cs_gaxpy = cs_di_gaxpy
+    cs_compress = cs_di_compress
+    cs_transpose = cs_di_transpose
+    cs_multiply = cs_di_multiply
+    cs_add = cs_di_add
+    cs_kron = cs_di_kron
+    cs_diag = cs_di_diag
+
 withConstCs :: CxSparse a => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
 withConstCs Matrix{..} act = do
     let nzmax = fromIntegral $ V.length values
