@@ -24,7 +24,7 @@ linearSolve
   => Matrix a -> [v a] -> [Vector a]
 linearSolve mat@Matrix{..} bs =
     unsafePerformIO $
-    unsafeWithMatrix mat $ \cs -> do
+    withConstCs mat $ \cs -> do
         psym <- malloc
         wrap_umfpack $ umfpack_symbolic cs psym nullPtr nullPtr
         pnum <- malloc

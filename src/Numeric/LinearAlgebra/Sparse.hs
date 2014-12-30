@@ -11,7 +11,6 @@ module Numeric.LinearAlgebra.Sparse
     , lin
     , add
     , gaxpy, gaxpy_, mulV
-    , cmap, scale
     , hcat, vcat, fromBlocks
     , kronecker
     , takeDiag, diag, ident
@@ -19,16 +18,19 @@ module Numeric.LinearAlgebra.Sparse
     , module Data.Complex
     ) where
 
+import Control.Applicative
 import Control.Monad (void)
 import Data.Complex
 import Data.Foldable
-import Data.Vector.Mutability
+import Data.MonoTraversable
 import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
+import Data.Vector.Storable.Mutable (IOVector)
 import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.ForeignPtr.Safe (newForeignPtr)
+import Foreign.Marshal.Alloc (finalizerFree)
 import Foreign.Marshal.Utils (with)
 import Foreign.Storable
 import GHC.Stack
@@ -36,33 +38,35 @@ import Prelude hiding (any)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Data.Matrix.Sparse
-import Numeric.LinearAlgebra.Sparse.Internal
 
 mul :: CxSparse a => Matrix a -> Matrix a -> Matrix a
-mul a b = unsafePerformIO $
-    unsafeWithMatrix a $ \csa ->
-    unsafeWithMatrix b $ \csb ->
-        cs_multiply csa csb >>= peek >>= fromCs
+mul _a _b =
+  unsafePerformIO $
+  withConstCs _a $ \_a ->
+  withConstCs _b $ \_b ->
+    cs_multiply _a _b >>= fromCs
 {-# INLINE mul #-}
 
 compress
   :: (CxSparse a, Unbox a)
   => Int -> Int -> U.Vector (Int, Int, a) -> Matrix a
-compress nr nc (U.unzip3 -> (rs, cs, xs)) = unsafePerformIO $
-    unsafeWithTriples nr nc (V.convert rs) (V.convert cs) (V.convert xs)
-      $ \pcs -> cs_compress pcs >>= peek >>= fromCs
+compress nr nc (U.unzip3 -> (rs, cs, xs)) =
+  unsafePerformIO $
+  withConstTriples nr nc (V.convert rs) (V.convert cs) (V.convert xs) $ \pcs ->
+    cs_compress pcs >>= fromCs
 {-# INLINE compress #-}
 
 transpose :: CxSparse a => Matrix a -> Matrix a
-transpose a = unsafePerformIO $
-    unsafeWithMatrix a $ \cs ->
-        cs_transpose cs (V.length $ values a) >>= peek >>= fromCs
+transpose mat =
+  unsafePerformIO $
+  withConstCs mat $ \cs ->
+    cs_transpose cs (V.length $ values mat) >>= fromCs
 {-# INLINE transpose #-}
 
 ctrans
   :: (CxSparse (Complex a), RealFloat a)
   => Matrix (Complex a) -> Matrix (Complex a)
-ctrans = cmap conjugate . transpose
+ctrans = omap conjugate . transpose
 {-# INLINE ctrans #-}
 
 hermitian :: (CxSparse (Complex a), RealFloat a) => Matrix (Complex a) -> Bool
@@ -70,50 +74,49 @@ hermitian m = ctrans m == m
 {-# INLINE hermitian #-}
 
 lin :: CxSparse a => a -> Matrix a -> a -> Matrix a -> Matrix a
-lin alpha a beta b = unsafePerformIO $
-    unsafeWithMatrix a $ \csa ->
-    unsafeWithMatrix b $ \csb ->
-    with alpha $ \al ->
-    with beta $ \bt ->
-        cs_add csa csb al bt >>= peek >>= fromCs
+lin _alpha _a _beta _b =
+  unsafePerformIO $
+  withConstCs _a $ \_a ->
+  withConstCs _b $ \_b ->
+  with _alpha $ \_alpha ->
+  with _beta $ \_beta ->
+    cs_add _a _b _alpha _beta >>= fromCs
 {-# INLINE lin #-}
 
 add :: (CxSparse a, Num a) => Matrix a -> Matrix a -> Matrix a
 add a b = lin 1 a 1 b
 {-# INLINE add #-}
 
-gaxpy_ :: (CxSparse a, WithImm v, WithMut w) => Matrix a -> v a -> w a -> IO (w a)
+gaxpy_ :: (CxSparse a) => Matrix a -> IOVector a -> IOVector a -> IO ()
 gaxpy_ _a _x _y =
-  withMut _y $ \_y ->
-  unsafeWithMatrix _a $ \_a ->
-  withImm _x $ \_x ->
+  withConstCs _a $ \_a ->
+  MV.unsafeWith _x $ \_x ->
+  MV.unsafeWith _y $ \_y ->
     void $ cs_gaxpy _a _x _y
 {-# INLINE gaxpy_ #-}
 
 gaxpy :: CxSparse a => Matrix a -> Vector a -> Vector a -> Vector a
-gaxpy a x y = unsafePerformIO $ gaxpy_ a x y
+gaxpy a _x _y =
+  unsafePerformIO $ do
+    _y <- V.thaw _y
+    _x <- V.unsafeThaw _x
+    gaxpy_ a _x _y
+    V.unsafeFreeze _y
 {-# INLINE gaxpy #-}
 
 mulV :: (CxSparse a, Num a) => Matrix a -> Vector a -> Vector a
-mulV a x = unsafePerformIO $ do
-    y <- MV.replicate (V.length x) 0
-    _ <- gaxpy_ a x y
+mulV a _x =
+  unsafePerformIO $ do
+    _x <- V.unsafeThaw _x
+    y <- MV.replicate (MV.length _x) 0
+    gaxpy_ a _x y
     V.unsafeFreeze y
 {-# INLINE mulV #-}
-
-cmap :: (Storable a, Storable b) => (a -> b) -> Matrix a -> Matrix b
-cmap = \f mat -> mat { values = V.map f $ values mat }
-{-# INLINE cmap #-}
-
-scale :: (Num a, Storable a) => a -> Matrix a -> Matrix a
-scale = \x -> cmap (* x)
-{-# INLINE scale #-}
 
 hcat :: Storable a => [Matrix a] -> Matrix a
 hcat mats
   | null mats = errorWithStackTrace "no matrices"
-  | any ((/= nr) . nRows) mats =
-      errorWithStackTrace "matrices must have the same number of rows"
+  | any ((/= nr) . nRows) mats = errorWithStackTrace "row dimensions differ"
   | otherwise = Matrix
       { nRows = nr
       , nColumns = foldl' (+) 0 $ map nColumns mats
@@ -137,19 +140,20 @@ fromBlocks = vcat . map hcat
 {-# INLINE fromBlocks #-}
 
 kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a
-kronecker a b = unsafePerformIO $
-    unsafeWithMatrix a $ \csa ->
-    unsafeWithMatrix b $ \csb ->
-        cs_kron csa csb >>= peek >>= fromCs
+kronecker _a _b =
+  unsafePerformIO $
+  withConstCs _a $ \_a ->
+  withConstCs _b $ \_b ->
+    cs_kron _a _b >>= fromCs
 {-# INLINE kronecker #-}
 
 takeDiag :: CxSparse a => Matrix a -> Vector a
-takeDiag a@Matrix{..} = unsafePerformIO $
-    unsafeWithMatrix a $ \csa -> do
-        d <- cs_diag csa >>= newForeignPtr cs_free
-        return $ V.unsafeFromForeignPtr0 d nd
-  where
-    nd = min nRows nColumns
+takeDiag _a@Matrix{..} =
+  unsafePerformIO $
+  withConstCs _a $ \_a ->
+  V.unsafeFromForeignPtr0
+    <$> (cs_diag _a >>= newForeignPtr finalizerFree)
+    <*> pure (min nRows nColumns)
 {-# INLINE takeDiag #-}
 
 diag :: Storable a => Vector a -> Matrix a

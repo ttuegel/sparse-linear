@@ -10,25 +10,24 @@ module Numeric.LinearAlgebra.Umfpack.Internal
     ) where
 
 import Data.Complex (Complex)
-import Foreign.Ptr (Ptr)
 import Foreign.Storable
 import GHC.Stack (currentCallStack, errorWithStackTrace)
 
-import Data.Matrix.Sparse
+import Data.Cs
 
 type Control = Ptr Double
 type Info = Ptr Double
 newtype Numeric a = Numeric (Ptr ()) deriving (Storable)
 newtype Symbolic a = Symbolic (Ptr ()) deriving (Storable)
 
-type Umfpack_symbolic a
+type UmfpackSymbolic a
     =  Ptr (Cs a)  -- ^ matrix
     -> Ptr (Symbolic a)
     -> Control
     -> Info
     -> IO Int  -- ^ status code
 
-type Umfpack_numeric a
+type UmfpackNumeric a
     =  Ptr (Cs a)  -- ^ matrix
     -> Symbolic a
     -> Ptr (Numeric a)
@@ -36,7 +35,7 @@ type Umfpack_numeric a
     -> Info
     -> IO Int  -- ^ status code
 
-type Umfpack_solve a
+type UmfpackSolve a
     =  Ptr (Cs a)  -- ^ matrix
     -> Ptr a  -- ^ solution vector
     -> Ptr a  -- ^ rhs vector (real parts)
@@ -45,27 +44,27 @@ type Umfpack_solve a
     -> Info
     -> IO Int  -- ^ status code
 
-type Umfpack_free_symbolic a = Ptr (Symbolic a) -> IO ()
+type UmfpackFreeSymbolic a = Ptr (Symbolic a) -> IO ()
 
-type Umfpack_free_numeric a = Ptr (Numeric a) -> IO ()
+type UmfpackFreeNumeric a = Ptr (Numeric a) -> IO ()
 
 class Umfpack a where
-    umfpack_symbolic :: Umfpack_symbolic a
-    umfpack_numeric :: Umfpack_numeric a
-    umfpack_solve :: Umfpack_solve a
-    umfpack_free_symbolic :: Ptr (Symbolic a) -> IO ()
-    umfpack_free_numeric :: Ptr (Numeric a) -> IO ()
+    umfpack_symbolic :: UmfpackSymbolic a
+    umfpack_numeric :: UmfpackNumeric a
+    umfpack_solve :: UmfpackSolve a
+    umfpack_free_symbolic :: UmfpackFreeSymbolic a
+    umfpack_free_numeric :: UmfpackFreeNumeric a
 
-foreign import ccall "umfpack_cs.h umfpack_cs_zi_symbolic" umfpack_zi_symbolic
-  :: Umfpack_symbolic (Complex Double)
-foreign import ccall "umfpack_cs.h umfpack_cs_zi_numeric" umfpack_zi_numeric
-  :: Umfpack_numeric (Complex Double)
-foreign import ccall "umfpack_cs.h umfpack_cs_zi_solve" umfpack_zi_solve
-  :: Umfpack_solve (Complex Double)
-foreign import ccall "umfpack.h umfpack_zi_free_symbolic" umfpack_zi_free_symbolic
-  :: Umfpack_free_symbolic (Complex Double)
-foreign import ccall "umfpack.h umfpack_zi_free_numeric" umfpack_zi_free_numeric
-  :: Umfpack_free_numeric (Complex Double)
+foreign import ccall "umfpack_cs.h umfpack_cs_zi_symbolic"
+  umfpack_ci_symbolic :: UmfpackSymbolic (Complex Double)
+foreign import ccall "umfpack_cs.h umfpack_cs_zi_numeric"
+  umfpack_ci_numeric :: UmfpackNumeric (Complex Double)
+foreign import ccall "umfpack_cs.h umfpack_cs_zi_solve"
+  umfpack_ci_solve :: UmfpackSolve (Complex Double)
+foreign import ccall "umfpack.h umfpack_zi_free_symbolic"
+  umfpack_ci_free_symbolic :: UmfpackFreeSymbolic (Complex Double)
+foreign import ccall "umfpack.h umfpack_zi_free_numeric"
+  umfpack_ci_free_numeric :: UmfpackFreeNumeric (Complex Double)
 
 instance Umfpack (Complex Double) where
     {-# INLINE umfpack_symbolic #-}
@@ -73,11 +72,11 @@ instance Umfpack (Complex Double) where
     {-# INLINE umfpack_solve #-}
     {-# INLINE umfpack_free_symbolic #-}
     {-# INLINE umfpack_free_numeric #-}
-    umfpack_symbolic = umfpack_zi_symbolic
-    umfpack_numeric = umfpack_zi_numeric
-    umfpack_solve = umfpack_zi_solve
-    umfpack_free_symbolic = umfpack_zi_free_symbolic
-    umfpack_free_numeric = umfpack_zi_free_numeric
+    umfpack_symbolic = umfpack_ci_symbolic
+    umfpack_numeric = umfpack_ci_numeric
+    umfpack_solve = umfpack_ci_solve
+    umfpack_free_symbolic = umfpack_ci_free_symbolic
+    umfpack_free_numeric = umfpack_ci_free_numeric
 
 wrap_umfpack :: IO Int -> IO ()
 wrap_umfpack act = do
@@ -99,12 +98,12 @@ wrap_umfpack act = do
       (-17) -> errorWithStackTrace "umfpack: I/O error"
       (-18) -> errorWithStackTrace "umfpack: ordering failed"
       (-911) -> errorWithStackTrace "umfpack: internal error"
-      x -> errorWithStackTrace $ "umfpack: unknown error " ++ show x
+      code -> errorWithStackTrace $ "umfpack: unknown error " ++ show code
 
 warnWithStackTrace :: String -> IO ()
-warnWithStackTrace x = do
+warnWithStackTrace str = do
     ccs <- currentCallStack
-    putStrLn $ x ++ "\n" ++ renderStack ccs
+    putStrLn $ str ++ "\n" ++ renderStack ccs
   where
     renderStack :: [String] -> String
     renderStack strs = "Stack trace:" ++ concatMap ("\n  "++) (reverse strs)

@@ -2,85 +2,113 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.Matrix.Sparse
-    ( Cs(), fromCs, cs_free
-    , Matrix(..), unsafeWithMatrix
-    , unsafeWithTriples
+    ( Matrix(..), withConstCs, fromCs, withConstTriples
+    , CxSparse(..)
     ) where
 
 import Control.Applicative
 import Control.Monad (unless)
 import Data.Complex
+import Data.MonoTraversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Foreign.C.Types
 import Foreign.ForeignPtr.Safe (FinalizerPtr, newForeignPtr)
-import Foreign.Marshal.Alloc (alloca)
+import Foreign.Marshal.Alloc (alloca, free, finalizerFree)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
+import Foreign.Storable.Complex ()
 import GHC.Stack
 import System.IO.Unsafe (unsafePerformIO)
 
-data Cs a = Cs
-    { nzmax :: !CInt  -- ^ maximum number of entries
-    , m :: !CInt  -- ^ number of rows
-    , n :: !CInt  -- ^ number of columns
-    , p :: !(Ptr CInt)  -- ^ column pointers or indices
-    , i :: !(Ptr CInt)  -- ^ row indices
-    , x :: !(Ptr a)  -- ^ values
-    , nz :: !CInt  -- ^ number of entries (triplet) or (-1) for compressed col
-    }
-
-foreign import ccall "&sizeof_cs_ci" sizeof_cs_ci :: Ptr CInt
-foreign import ccall "mk_cs_ci" mk_cs_ci :: Ptr (Cs (Complex Double)) -> CInt -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> CInt -> IO ()
-foreign import ccall "match_cs_ci" match_cs_ci :: Ptr (Cs (Complex Double)) -> Ptr CInt -> Ptr CInt -> Ptr CInt -> Ptr (Ptr CInt) -> Ptr (Ptr CInt) -> Ptr (Ptr (Complex Double)) -> Ptr CInt -> IO ()
-
-instance Storable (Cs (Complex Double)) where
-  sizeOf _ = unsafePerformIO $ fromIntegral <$> peek sizeof_cs_ci
-  {-# INLINE sizeOf #-}
-
-  alignment _ = 8
-  {-# INLINE alignment #-}
-
-  peek ptr =
-    alloca $ \nzmax_ ->
-    alloca $ \m_ ->
-    alloca $ \n_ ->
-    alloca $ \p_ ->
-    alloca $ \i_ ->
-    alloca $ \x_ ->
-    alloca $ \nz_ -> do
-      match_cs_ci ptr nzmax_ m_ n_ p_ i_ x_ nz_
-      nzmax <- peek nzmax_
-      m <- peek m_
-      n <- peek n_
-      p <- peek p_
-      i <- peek i_
-      x <- peek x_
-      nz <- peek nz_
-      return Cs{..}
-  {-# INLINE peek #-}
-
-  poke ptr Cs{..} = do
-    mk_cs_ci ptr nzmax m n p i x nz
-  {-# INLINE poke #-}
+import Data.Cs
 
 -- | Matrix in compressed sparse column (CSC) format.
 data Matrix a = Matrix
     { nRows :: !Int
     , nColumns :: !Int
-    , columnPointers :: !(Vector Int)
-    , rowIndices :: !(Vector Int)
+    , columnPointers :: !(Vector CInt)
+    , rowIndices :: !(Vector CInt)
     , values :: !(Vector a)
     }
   deriving (Eq, Read, Show)
 
-unsafeWithMatrix
-  :: (Storable a, Storable (Cs a)) => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
-unsafeWithMatrix Matrix{..} act = do
+type instance Element (Matrix a) = a
+
+instance Storable a => MonoFunctor (Matrix a) where
+  omap = \f mat -> mat { values = omap f $ values mat }
+  {-# INLINE omap #-}
+
+instance Storable a => MonoFoldable (Matrix a) where
+  ofoldMap = \f Matrix{..} -> ofoldMap f values
+  {-# INLINE ofoldMap #-}
+
+  ofoldr = \f r Matrix{..} -> ofoldr f r values
+  {-# INLINE ofoldr #-}
+
+  ofoldl' = \f r Matrix{..} -> ofoldl' f r values
+  {-# INLINE ofoldl' #-}
+
+  ofoldr1Ex = \f Matrix{..} -> ofoldr1Ex f values
+  {-# INLINE ofoldr1Ex #-}
+
+  ofoldl1Ex' = \f Matrix{..} -> ofoldl1Ex' f values
+  {-# INLINE ofoldl1Ex' #-}
+
+type CsGaxpy a = Ptr (Cs a) -> Ptr a -> Ptr a -> IO Int
+type CsCompress a = Ptr (Cs a) -> IO (Ptr (Cs a))
+type CsTranspose a = Ptr (Cs a) -> Int -> IO (Ptr (Cs a))
+type CsMultiply a = Ptr (Cs a) -> Ptr (Cs a) -> IO (Ptr (Cs a))
+type CsAdd a = Ptr (Cs a) -> Ptr (Cs a) -> Ptr a -> Ptr a -> IO (Ptr (Cs a))
+type CsDiag a = Ptr (Cs a) -> IO (Ptr a)
+
+class (Storable a, Storable (Cs a)) => CxSparse a where
+    cs_gaxpy :: CsGaxpy a
+    cs_compress :: CsCompress a
+    cs_transpose :: CsTranspose a
+    cs_multiply :: CsMultiply a
+    cs_add :: CsAdd a
+    cs_kron :: CsMultiply a
+    cs_diag :: CsDiag a
+
+foreign import ccall "cs.h cs_ci_gaxpy"
+  cs_ci_gaxpy :: CsGaxpy (Complex Double)
+foreign import ccall "cs.h cs_ci_compress"
+  cs_ci_compress :: CsCompress (Complex Double)
+foreign import ccall "cs.h cs_ci_transpose"
+  cs_ci_transpose :: CsTranspose (Complex Double)
+foreign import ccall "cs.h cs_ci_multiply"
+  cs_ci_multiply :: CsMultiply (Complex Double)
+foreign import ccall "cs_ci_add_ptrs"
+  cs_ci_add :: CsAdd (Complex Double)
+foreign import ccall "cs_ci_kron"
+  cs_ci_kron :: CsMultiply (Complex Double)
+foreign import ccall "cs_ci_diag"
+  cs_ci_diag :: CsDiag (Complex Double)
+
+instance CxSparse (Complex Double) where
+    {-# INLINE cs_gaxpy #-}
+    {-# INLINE cs_compress #-}
+    {-# INLINE cs_transpose #-}
+    {-# INLINE cs_multiply #-}
+    {-# INLINE cs_add #-}
+    {-# INLINE cs_kron #-}
+    {-# INLINE cs_diag #-}
+    cs_gaxpy = cs_ci_gaxpy
+    cs_compress = cs_ci_compress
+    cs_transpose = cs_ci_transpose
+    cs_multiply = cs_ci_multiply
+    cs_add = cs_ci_add
+    cs_kron = cs_ci_kron
+    cs_diag = cs_ci_diag
+
+withConstCs :: CxSparse a => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
+withConstCs Matrix{..} act = do
     let nzmax = fromIntegral $ V.length values
         m = fromIntegral $ nRows
         n = fromIntegral $ nColumns
@@ -89,39 +117,48 @@ unsafeWithMatrix Matrix{..} act = do
       V.unsafeWith (V.map fromIntegral rowIndices) $ \i ->
       V.unsafeWith values $ \x ->
       with Cs{..} act
-{-# INLINE unsafeWithMatrix #-}
+{-# INLINE withConstCs #-}
 
-unsafeWithTriples
-  :: (Storable a, Storable (Cs a))
+withConstTriples
+  :: CxSparse a
   => Int -> Int -> Vector Int -> Vector Int -> Vector a
   -> (Ptr (Cs a) -> IO b) -> IO b
-unsafeWithTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ act = do
+withConstTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ act = do
     let nzmax = fromIntegral $ V.length vals_
         nz = fromIntegral $ V.length vals_
     V.unsafeWith (V.map fromIntegral colps_) $ \p ->
       V.unsafeWith (V.map fromIntegral rowixs_) $ \i ->
       V.unsafeWith vals_ $ \x ->
       with Cs{..} act
-{-# INLINE unsafeWithTriples #-}
+{-# INLINE withConstTriples #-}
 
 foreign import ccall "cs.h &cs_ci_free" cs_free :: FinalizerPtr a
 
-fromCs :: (Storable a) => Cs a -> IO (Matrix a)
-fromCs Cs{..} = do
-    let nRows = fromIntegral m
-        nColumns = fromIntegral n
-        nzmax_ = fromIntegral nzmax
-    unless (nz < 0) $ errorWithStackTrace
-      $ "expected compressed matrix, got nz = " ++ show nz
-    columnPointers_ <- newForeignPtr cs_free p
-    rowIndices_ <- newForeignPtr cs_free i
-    values_ <- newForeignPtr cs_free x
-    let columnPointers =
-          V.map fromIntegral
-          $ V.unsafeFromForeignPtr0 columnPointers_ (nColumns + 1)
-        rowIndices =
-          V.map fromIntegral
-          $ V.unsafeFromForeignPtr0 rowIndices_ nzmax_
-        values = V.unsafeFromForeignPtr0 values_ nzmax_
-    return Matrix{..}
+fromCs :: CxSparse a => Ptr (Cs a) -> IO (Matrix a)
+fromCs _ptr = do
+  Cs{..} <- peek _ptr
+  let nRows = fromIntegral m
+      nColumns = fromIntegral n
+      nzmax_ = fromIntegral nzmax
+  _ptr <- if nz < 0
+             then return _ptr
+          else do
+            ptr' <- cs_compress _ptr
+            free p >> free i >> free x >> free _ptr
+            return ptr'
+  Cs{..} <- peek _ptr
+  columnPointers <-
+    V.unsafeFromForeignPtr0
+    <$> newForeignPtr finalizerFree p
+    <*> pure (nColumns + 1)
+  rowIndices <-
+    V.unsafeFromForeignPtr0
+    <$> newForeignPtr finalizerFree i
+    <*> pure nzmax_
+  values <-
+    V.unsafeFromForeignPtr0
+    <$> newForeignPtr finalizerFree x
+    <*> pure nzmax_
+  free _ptr
+  return Matrix{..}
 {-# INLINE fromCs #-}

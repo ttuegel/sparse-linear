@@ -1,5 +1,6 @@
 module Main where
 
+import Data.MonoTraversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Test.Hspec
@@ -47,7 +48,7 @@ prop_identMulV v = mulV identM v == v
 prop_addInv :: Matrix (Complex Double) -> Bool
 prop_addInv m = lin 1 m (-1) m == m0
   where
-    m0 = cmap (const 0) m
+    m0 = omap (const 0) m
 
 prop_addId :: Matrix (Complex Double) -> Bool
 prop_addId m = add m (zeros (nRows m) (nColumns m)) == m
