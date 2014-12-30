@@ -55,11 +55,11 @@ class Umfpack a where
     umfpack_free_symbolic :: UmfpackFreeSymbolic a
     umfpack_free_numeric :: UmfpackFreeNumeric a
 
-foreign import ccall "umfpack_cs.h umfpack_cs_zi_symbolic"
+foreign import ccall "umfpack_cs.h umfpack_cs_ci_symbolic"
   umfpack_ci_symbolic :: UmfpackSymbolic (Complex Double)
-foreign import ccall "umfpack_cs.h umfpack_cs_zi_numeric"
+foreign import ccall "umfpack_cs.h umfpack_cs_ci_numeric"
   umfpack_ci_numeric :: UmfpackNumeric (Complex Double)
-foreign import ccall "umfpack_cs.h umfpack_cs_zi_solve"
+foreign import ccall "umfpack_cs.h umfpack_cs_ci_solve"
   umfpack_ci_solve :: UmfpackSolve (Complex Double)
 foreign import ccall "umfpack.h umfpack_zi_free_symbolic"
   umfpack_ci_free_symbolic :: UmfpackFreeSymbolic (Complex Double)
@@ -77,6 +77,29 @@ instance Umfpack (Complex Double) where
     umfpack_solve = umfpack_ci_solve
     umfpack_free_symbolic = umfpack_ci_free_symbolic
     umfpack_free_numeric = umfpack_ci_free_numeric
+
+foreign import ccall "umfpack_cs.h umfpack_cs_di_symbolic"
+  umfpack_di_symbolic :: UmfpackSymbolic Double
+foreign import ccall "umfpack_cs.h umfpack_cs_di_numeric"
+  umfpack_di_numeric :: UmfpackNumeric Double
+foreign import ccall "umfpack_cs.h umfpack_cs_di_solve"
+  umfpack_di_solve :: UmfpackSolve Double
+foreign import ccall "umfpack.h umfpack_di_free_symbolic"
+  umfpack_di_free_symbolic :: UmfpackFreeSymbolic Double
+foreign import ccall "umfpack.h umfpack_di_free_numeric"
+  umfpack_di_free_numeric :: UmfpackFreeNumeric Double
+
+instance Umfpack Double where
+    {-# INLINE umfpack_symbolic #-}
+    {-# INLINE umfpack_numeric #-}
+    {-# INLINE umfpack_solve #-}
+    {-# INLINE umfpack_free_symbolic #-}
+    {-# INLINE umfpack_free_numeric #-}
+    umfpack_symbolic = umfpack_di_symbolic
+    umfpack_numeric = umfpack_di_numeric
+    umfpack_solve = umfpack_di_solve
+    umfpack_free_symbolic = umfpack_di_free_symbolic
+    umfpack_free_numeric = umfpack_di_free_numeric
 
 wrap_umfpack :: IO Int -> IO ()
 wrap_umfpack act = do

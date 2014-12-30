@@ -16,7 +16,6 @@ import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)
 
 import Data.Matrix.Sparse
-import Numeric.LinearAlgebra.Sparse
 import Numeric.LinearAlgebra.Umfpack.Internal
 
 linearSolve
