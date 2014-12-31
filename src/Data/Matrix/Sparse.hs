@@ -20,6 +20,7 @@ import Foreign.Marshal.Alloc (free, finalizerFree)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
+import GHC.Stack
 
 import Data.Complex.Enhanced
 import Data.Cs
@@ -164,30 +165,33 @@ withConstTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ ac
 {-# INLINE withConstTriples #-}
 
 fromCs :: CxSparse a => Ptr (Cs a) -> IO (Matrix a)
-fromCs _ptr = do
-  cs <- peek _ptr
-  _ptr <- if nz cs < 0
-             then return _ptr
+fromCs _ptr
+  | _ptr == nullPtr = errorWithStackTrace "fromCs: null pointer"
+  | otherwise = do
+      cs <- peek _ptr
+      _ptr <- do
+        ptr' <- cs_compress _ptr
+        if ptr' == nullPtr
+           then return _ptr
           else do
-            ptr' <- cs_compress _ptr
             free (p cs) >> free (i cs) >> free (x cs) >> free _ptr
             return ptr'
-  Cs{..} <- peek _ptr
-  let nRows = fromIntegral m
-      nColumns = fromIntegral n
-      nzmax_ = fromIntegral nzmax
-  columnPointers <-
-    V.unsafeFromForeignPtr0
-    <$> newForeignPtr finalizerFree p
-    <*> pure (nColumns + 1)
-  rowIndices <-
-    V.unsafeFromForeignPtr0
-    <$> newForeignPtr finalizerFree i
-    <*> pure nzmax_
-  values <-
-    V.unsafeFromForeignPtr0
-    <$> newForeignPtr finalizerFree x
-    <*> pure nzmax_
-  free _ptr
-  return Matrix{..}
+      Cs{..} <- peek _ptr
+      let nRows = fromIntegral m
+          nColumns = fromIntegral n
+          nzmax_ = fromIntegral nzmax
+      columnPointers <-
+        V.unsafeFromForeignPtr0
+        <$> newForeignPtr finalizerFree p
+        <*> pure (nColumns + 1)
+      rowIndices <-
+        V.unsafeFromForeignPtr0
+        <$> newForeignPtr finalizerFree i
+        <*> pure nzmax_
+      values <-
+        V.unsafeFromForeignPtr0
+        <$> newForeignPtr finalizerFree x
+        <*> pure nzmax_
+      free _ptr
+      return Matrix{..}
 {-# INLINE fromCs #-}
