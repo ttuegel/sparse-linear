@@ -13,10 +13,10 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:
+    Data.Complex.Enhanced
     Data.Cs
     Data.Matrix
     Data.Matrix.Sparse
-    Data.Vector.Mutability
     Numeric.LinearAlgebra.Feast
     Numeric.LinearAlgebra.Sparse
     Numeric.LinearAlgebra.Umfpack

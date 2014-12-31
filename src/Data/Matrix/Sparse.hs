@@ -7,12 +7,11 @@
 
 module Data.Matrix.Sparse
     ( Matrix(..), withConstCs, fromCs, withConstTriples
-    , CxSparse(..)
+    , CxSparse(..), RealOf, ComplexOf
     ) where
 
 import Control.Applicative
 import Control.Monad (unless)
-import Data.Complex
 import Data.MonoTraversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
@@ -22,10 +21,10 @@ import Foreign.Marshal.Alloc (alloca, free, finalizerFree)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
-import Foreign.Storable.Complex ()
 import GHC.Stack
 import System.IO.Unsafe (unsafePerformIO)
 
+import Data.Complex.Enhanced
 import Data.Cs
 
 -- | Matrix in compressed sparse column (CSC) format.

@@ -9,10 +9,10 @@ module Numeric.LinearAlgebra.Umfpack.Internal
     , wrap_umfpack
     ) where
 
-import Data.Complex (Complex)
 import Foreign.Storable
 import GHC.Stack (currentCallStack, errorWithStackTrace)
 
+import Data.Complex.Enhanced
 import Data.Cs
 
 type Control = Ptr Double

@@ -3,11 +3,12 @@
 
 module Data.Cs (Cs(..), CInt(..), Ptr) where
 
-import Data.Complex
 import Control.Applicative
 import Foreign.C.Types (CInt(..))
 import Foreign.Ptr (Ptr)
 import Foreign.Storable
+
+import Data.Complex.Enhanced
 
 #include "cs.h"
 

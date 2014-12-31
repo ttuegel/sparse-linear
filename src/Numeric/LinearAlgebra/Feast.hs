@@ -13,6 +13,7 @@ module Numeric.LinearAlgebra.Feast
 import Control.Applicative
 import Control.Monad (when)
 import Data.Foldable
+import Data.Traversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
@@ -30,15 +31,7 @@ import Data.Matrix.Sparse as Sparse
 import Numeric.LinearAlgebra.Sparse
 import Numeric.LinearAlgebra.Umfpack
 
-type family RealOf a where
-  RealOf Double = Double
-  RealOf (Complex a) = a
-
-type family ComplexOf a where
-  ComplexOf Double = Complex Double
-  ComplexOf (Complex a) = (Complex a)
-
-type Feast_rci a
+type FeastRci a
     =  Ptr CInt  -- ^ ijob
     -> Ptr CInt  -- ^ N
     -> Ptr a  -- ^ Ze
@@ -60,29 +53,37 @@ type Feast_rci a
     -> IO ()
 
 class Feast a where
-    feast_rci :: Feast_rci a
+    feast_rci :: FeastRci a
 
 foreign import ccall "feastinit_" feastinit :: Ptr CInt -> IO ()
 
-foreign import ccall "zfeast_hrci_" zfeast_hrci :: Feast_rci (Complex Double)
+foreign import ccall "zfeast_hrci_" zfeast_hrci :: FeastRci (Complex Double)
+
+foreign import ccall "dfeast_srci_" dfeast_srci :: FeastRci Double
 
 instance Feast (Complex Double) where
     feast_rci = zfeast_hrci
     {-# INLINE feast_rci #-}
 
+instance Feast Double where
+    feast_rci = dfeast_srci
+    {-# INLINE feast_rci #-}
+
 type EigH a =
-    ( CxSparse (Complex a)
-    , Feast (Complex a)
+    ( CxSparse a
+    , Eq a
+    , Feast a
+    , IsReal a
+    , Num (RealOf a)
     , Num a
-    , RealFloat a
-    , Storable a
-    , Umfpack (Complex a)
+    , Storable (RealOf a)
+    , Umfpack a
     )
 geigH
   :: (EigH a)
-  => Int -> (a, a)
-  -> Sparse.Matrix (Complex a) -> Sparse.Matrix (Complex a)
-  -> (Vector a, Dense.Matrix (Complex a))
+  => Int -> (RealOf a, RealOf a)
+  -> Sparse.Matrix a -> Sparse.Matrix a
+  -> (Vector (RealOf a), Dense.Matrix a)
 geigH !m0 (!_emin, !_emax) !matA !matB
   | not (hermitian matA) = errorWithStackTrace "matrix A must be hermitian"
   | not (hermitian matB) = errorWithStackTrace "matrix B must be hermitian"
@@ -90,7 +91,14 @@ geigH !m0 (!_emin, !_emax) !matA !matB
   | nRows matB /= nColumns matB = errorWithStackTrace "matrix B must be square"
   | nRows matA /= nRows matB =
       errorWithStackTrace "matrices A and B must be the same size"
-  | otherwise =
+  | otherwise = geigH_go
+  where
+    n = nColumns matA
+    matA' = ctrans matA
+    matB' = ctrans matB
+
+    {-# NOINLINE geigH_go #-}
+    geigH_go =
       unsafePerformIO $ lock $
         -- initialize scalars
         with (-1) $ \_ijob ->
@@ -143,6 +151,12 @@ geigH !m0 (!_emin, !_emax) !matA !matB
                     mode
                     _res
                     info
+
+          _work1 <- forM [0..(m0 - 1)] $ \c ->
+            return $ MV.slice (c * n) n _work1
+          _work2 <- forM [0..(m0 - 1)] $ \c ->
+            return $ MV.slice (c * n) n _work2
+
           let geigSH_go = do
                 feast_go
                 _ijob <- peek _ijob
@@ -155,27 +169,23 @@ geigH !m0 (!_emin, !_emax) !matA !matB
                    20 -> return ()
                    21 -> do
                      _ze <- peek _ze
-                     solveLinear $ lin (-1) matA' (conjugate _ze) matB'
+                     solveLinear $ lin (-1) matA' (conj _ze) matB'
                    30 -> multiplyWork matA
                    40 -> multiplyWork matB
                    _ -> return ()
                   geigSH_go
-              workVectors = flip map [0..(m0 - 1)] $ \c -> MV.slice (c * n) n _work2
               solveLinear mat = do
-                solns <- linearSolve mat <$> mapM V.freeze workVectors
-                forM_ (zip workVectors solns) $ uncurry V.copy
+                solns <- linearSolve_ mat _work1
+                forM_ (zip _work1 solns) $ uncurry MV.copy
               multiplyWork mat = do
                 i <- (+ (-1)) . fromIntegral <$> peekElemOff fpm 23
                 j <- (+ i) . fromIntegral <$> peekElemOff fpm 24
-                let multiplyWork_loop c
-                      | c < j = do
-                          let dst = MV.slice (c * n) n _work1
-                              x = MV.slice (c * n) n _eigenvectors
-                          MV.set dst 0
-                          _ <- gaxpy_ mat x dst
-                          multiplyWork_loop $ c + 1
-                      | otherwise = return ()
-                multiplyWork_loop i
+                _eigenvectors <- forM [i..(j - 1)] $ \c ->
+                  return $ MV.slice (c * n) n _eigenvectors
+                _work1 <- return $ take (j - i) $ drop (i - 1) _work1
+                forM_ (zip _work1 _eigenvectors) $ \(dst, x) -> do
+                  MV.set dst 0
+                  gaxpy_ mat x dst
           geigSH_go
 
           _eigenvalues <- V.unsafeFreeze _eigenvalues
@@ -188,24 +198,13 @@ geigH !m0 (!_emin, !_emax) !matA !matB
                   }
 
           return (_eigenvalues, eigenvectorMat)
-
-  where
-    n = nColumns matA
-    matA' = ctrans matA
-    matB' = ctrans matB
-{-# SPECIALIZE
-    geigH
-      :: Int -> (Double, Double)
-      -> Sparse.Matrix (Complex Double)
-      -> Sparse.Matrix (Complex Double)
-      -> (Vector Double, Dense.Matrix (Complex Double))
-    #-}
+{-# INLINE geigH #-}
 
 eigH
   :: (EigH a)
   => Int
-  -> (a, a)
-  -> Sparse.Matrix (Complex a)
-  -> (Vector a, Dense.Matrix (Complex a))
+  -> (RealOf a, RealOf a)
+  -> Sparse.Matrix a
+  -> (Vector (RealOf a), Dense.Matrix a)
 eigH = \m0 bounds matA -> geigH m0 bounds matA $ ident $ nColumns matA
 {-# INLINE eigH #-}

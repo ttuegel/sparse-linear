@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -15,12 +16,11 @@ module Numeric.LinearAlgebra.Sparse
     , kronecker
     , takeDiag, diag, ident
     , zeros
-    , module Data.Complex
+    , module Data.Complex.Enhanced
     ) where
 
 import Control.Applicative
 import Control.Monad (void)
-import Data.Complex
 import Data.Foldable
 import Data.MonoTraversable
 import Data.Vector.Unboxed (Unbox)
@@ -37,6 +37,7 @@ import GHC.Stack
 import Prelude hiding (any)
 import System.IO.Unsafe (unsafePerformIO)
 
+import Data.Complex.Enhanced
 import Data.Matrix.Sparse
 
 mul :: CxSparse a => Matrix a -> Matrix a -> Matrix a
@@ -63,13 +64,11 @@ transpose mat =
     cs_transpose cs (V.length $ values mat) >>= fromCs
 {-# INLINE transpose #-}
 
-ctrans
-  :: (CxSparse (Complex a), RealFloat a)
-  => Matrix (Complex a) -> Matrix (Complex a)
-ctrans = omap conjugate . transpose
+ctrans :: (CxSparse a, IsReal a) => Matrix a -> Matrix a
+ctrans = omap conj . transpose
 {-# INLINE ctrans #-}
 
-hermitian :: (CxSparse (Complex a), RealFloat a) => Matrix (Complex a) -> Bool
+hermitian :: (Eq a, IsReal a, CxSparse a) => Matrix a -> Bool
 hermitian m = ctrans m == m
 {-# INLINE hermitian #-}
 
