@@ -30,6 +30,8 @@ main = hspec $ do
 
     it "a `mul` ident == a" $ property prop_mulId
 
+    it "fromBlocks [[1, 0], [0, 1']] == ident (1 + 1')" $ property prop_fromBlocksId
+
 prop_kroneckerIdent :: Int -> Int -> Property
 prop_kroneckerIdent x y = (x > 0 && y > 0) ==> lhs == rhs
   where
@@ -61,3 +63,9 @@ prop_ctransId m = ctrans (ctrans m) == m
 
 prop_mulId :: Matrix (Complex Double) -> Bool
 prop_mulId m = m `mul` (ident $ nColumns m) == m
+
+prop_fromBlocksId :: Int -> Int -> Property
+prop_fromBlocksId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
+  where
+    lhs :: Matrix (Complex Double)
+    lhs = fromBlocks [[ident x, zeros x y], [zeros y x, ident y]]

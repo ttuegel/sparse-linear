@@ -34,7 +34,7 @@ import Foreign.Marshal.Alloc (finalizerFree)
 import Foreign.Marshal.Utils (with)
 import Foreign.Storable
 import GHC.Stack
-import Prelude hiding (any)
+import Prelude hiding (any, foldl1)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Data.Complex.Enhanced
@@ -112,30 +112,30 @@ mulV a _x =
     V.unsafeFreeze y
 {-# INLINE mulV #-}
 
-hcat :: Storable a => [Matrix a] -> Matrix a
-hcat mats
-  | null mats = errorWithStackTrace "no matrices"
-  | any ((/= nr) . nRows) mats = errorWithStackTrace "dimension mismatch"
+hcat :: Storable a => Matrix a -> Matrix a -> Matrix a
+hcat a b
+  | nRows a /= nRows b = errorWithStackTrace "row dimension mismatch"
   | otherwise = Matrix
-      { nRows = nr
-      , nColumns = foldl' (+) 0 $ map nColumns mats
-      , columnPointers = V.concat $ do
-          let colps = map columnPointers mats
-          (cps, off) <- zip colps $ 0 : map V.last colps
-          return $ V.map (+ off) cps
-      , rowIndices = V.concat $ map rowIndices mats
-      , values = V.concat $ map values mats
+      { nRows = nRows a
+      , nColumns = nc
+      , columnPointers =
+        V.init (columnPointers a) V.++ (V.map (+ nza) $ columnPointers b)
+      , rowIndices = rowIndices a V.++ rowIndices b
+      , values = values a V.++ values b
       }
   where
-    nr = nRows $ head mats
+    nc = nColumns a + nColumns b
+    nza = V.last $ columnPointers a
 {-# INLINE hcat #-}
 
-vcat :: (CxSparse a, Storable a) => [Matrix a] -> Matrix a
-vcat = transpose . hcat . map transpose
+vcat :: (CxSparse a, Storable a) => Matrix a -> Matrix a -> Matrix a
+vcat a b
+  | nColumns a /= nColumns b = errorWithStackTrace "column dimension mismatch"
+  | otherwise = transpose $ hcat (transpose a) (transpose b)
 {-# INLINE vcat #-}
 
 fromBlocks :: (CxSparse a, Storable a) => [[Matrix a]] -> Matrix a
-fromBlocks = vcat . map hcat
+fromBlocks = foldl1 vcat . map (foldl1 hcat)
 {-# INLINE fromBlocks #-}
 
 kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a

@@ -11,18 +11,15 @@ module Data.Matrix.Sparse
     ) where
 
 import Control.Applicative
-import Control.Monad (unless)
 import Data.MonoTraversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Foreign.C.Types
-import Foreign.ForeignPtr.Safe (FinalizerPtr, newForeignPtr)
-import Foreign.Marshal.Alloc (alloca, free, finalizerFree)
+import Foreign.ForeignPtr.Safe (newForeignPtr)
+import Foreign.Marshal.Alloc (free, finalizerFree)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
-import GHC.Stack
-import System.IO.Unsafe (unsafePerformIO)
 
 import Data.Complex.Enhanced
 import Data.Cs
@@ -162,21 +159,19 @@ withConstTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ ac
       with Cs{..} act
 {-# INLINE withConstTriples #-}
 
-foreign import ccall "cs.h &cs_ci_free" cs_free :: FinalizerPtr a
-
 fromCs :: CxSparse a => Ptr (Cs a) -> IO (Matrix a)
 fromCs _ptr = do
+  cs <- peek _ptr
+  _ptr <- if nz cs < 0
+             then return _ptr
+          else do
+            ptr' <- cs_compress _ptr
+            free (p cs) >> free (i cs) >> free (x cs) >> free _ptr
+            return ptr'
   Cs{..} <- peek _ptr
   let nRows = fromIntegral m
       nColumns = fromIntegral n
       nzmax_ = fromIntegral nzmax
-  _ptr <- if nz < 0
-             then return _ptr
-          else do
-            ptr' <- cs_compress _ptr
-            free p >> free i >> free x >> free _ptr
-            return ptr'
-  Cs{..} <- peek _ptr
   columnPointers <-
     V.unsafeFromForeignPtr0
     <$> newForeignPtr finalizerFree p
