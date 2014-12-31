@@ -11,6 +11,7 @@ module Data.Matrix.Sparse
     ) where
 
 import Control.Applicative
+import Control.Monad (unless)
 import Data.MonoTraversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
@@ -61,7 +62,8 @@ cmap :: (Storable a, Storable b) => (a -> b) -> Matrix a -> Matrix b
 {-# INLINE cmap #-}
 cmap = \f m -> m { values = V.map f $ values m }
 
-type CsGaxpy a = Ptr (Cs a) -> Ptr a -> Ptr a -> IO Int
+type CsDupl a = Ptr (Cs a) -> IO CInt
+type CsGaxpy a = Ptr (Cs a) -> Ptr a -> Ptr a -> IO CInt
 type CsCompress a = Ptr (Cs a) -> IO (Ptr (Cs a))
 type CsTranspose a = Ptr (Cs a) -> Int -> IO (Ptr (Cs a))
 type CsMultiply a = Ptr (Cs a) -> Ptr (Cs a) -> IO (Ptr (Cs a))
@@ -69,14 +71,17 @@ type CsAdd a = Ptr (Cs a) -> Ptr (Cs a) -> Ptr a -> Ptr a -> IO (Ptr (Cs a))
 type CsDiag a = Ptr (Cs a) -> IO (Ptr a)
 
 class (Storable a, Storable (Cs a)) => CxSparse a where
-    cs_gaxpy :: CsGaxpy a
-    cs_compress :: CsCompress a
-    cs_transpose :: CsTranspose a
-    cs_multiply :: CsMultiply a
-    cs_add :: CsAdd a
-    cs_kron :: CsMultiply a
-    cs_diag :: CsDiag a
+  cs_dupl :: CsDupl a
+  cs_gaxpy :: CsGaxpy a
+  cs_compress :: CsCompress a
+  cs_transpose :: CsTranspose a
+  cs_multiply :: CsMultiply a
+  cs_add :: CsAdd a
+  cs_kron :: CsMultiply a
+  cs_diag :: CsDiag a
 
+foreign import ccall "cs.h cs_ci_dupl"
+  cs_ci_dupl :: CsDupl (Complex Double)
 foreign import ccall "cs.h cs_ci_gaxpy"
   cs_ci_gaxpy :: CsGaxpy (Complex Double)
 foreign import ccall "cs.h cs_ci_compress"
@@ -93,21 +98,25 @@ foreign import ccall "cs_ci_diag"
   cs_ci_diag :: CsDiag (Complex Double)
 
 instance CxSparse (Complex Double) where
-    {-# INLINE cs_gaxpy #-}
-    {-# INLINE cs_compress #-}
-    {-# INLINE cs_transpose #-}
-    {-# INLINE cs_multiply #-}
-    {-# INLINE cs_add #-}
-    {-# INLINE cs_kron #-}
-    {-# INLINE cs_diag #-}
-    cs_gaxpy = cs_ci_gaxpy
-    cs_compress = cs_ci_compress
-    cs_transpose = cs_ci_transpose
-    cs_multiply = cs_ci_multiply
-    cs_add = cs_ci_add
-    cs_kron = cs_ci_kron
-    cs_diag = cs_ci_diag
+  {-# INLINE cs_dupl #-}
+  {-# INLINE cs_gaxpy #-}
+  {-# INLINE cs_compress #-}
+  {-# INLINE cs_transpose #-}
+  {-# INLINE cs_multiply #-}
+  {-# INLINE cs_add #-}
+  {-# INLINE cs_kron #-}
+  {-# INLINE cs_diag #-}
+  cs_dupl = cs_ci_dupl
+  cs_gaxpy = cs_ci_gaxpy
+  cs_compress = cs_ci_compress
+  cs_transpose = cs_ci_transpose
+  cs_multiply = cs_ci_multiply
+  cs_add = cs_ci_add
+  cs_kron = cs_ci_kron
+  cs_diag = cs_ci_diag
 
+foreign import ccall "cs.h cs_di_dupl"
+  cs_di_dupl :: CsDupl Double
 foreign import ccall "cs.h cs_di_gaxpy"
   cs_di_gaxpy :: CsGaxpy Double
 foreign import ccall "cs.h cs_di_compress"
@@ -124,20 +133,22 @@ foreign import ccall "cs_di_diag"
   cs_di_diag :: CsDiag Double
 
 instance CxSparse Double where
-    {-# INLINE cs_gaxpy #-}
-    {-# INLINE cs_compress #-}
-    {-# INLINE cs_transpose #-}
-    {-# INLINE cs_multiply #-}
-    {-# INLINE cs_add #-}
-    {-# INLINE cs_kron #-}
-    {-# INLINE cs_diag #-}
-    cs_gaxpy = cs_di_gaxpy
-    cs_compress = cs_di_compress
-    cs_transpose = cs_di_transpose
-    cs_multiply = cs_di_multiply
-    cs_add = cs_di_add
-    cs_kron = cs_di_kron
-    cs_diag = cs_di_diag
+  {-# INLINE cs_dupl #-}
+  {-# INLINE cs_gaxpy #-}
+  {-# INLINE cs_compress #-}
+  {-# INLINE cs_transpose #-}
+  {-# INLINE cs_multiply #-}
+  {-# INLINE cs_add #-}
+  {-# INLINE cs_kron #-}
+  {-# INLINE cs_diag #-}
+  cs_dupl = cs_di_dupl
+  cs_gaxpy = cs_di_gaxpy
+  cs_compress = cs_di_compress
+  cs_transpose = cs_di_transpose
+  cs_multiply = cs_di_multiply
+  cs_add = cs_di_add
+  cs_kron = cs_di_kron
+  cs_diag = cs_di_diag
 
 withConstCs :: CxSparse a => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
 withConstCs Matrix{..} act = do
@@ -168,14 +179,16 @@ fromCs :: CxSparse a => Ptr (Cs a) -> IO (Matrix a)
 fromCs _ptr
   | _ptr == nullPtr = errorWithStackTrace "fromCs: null pointer"
   | otherwise = do
-      cs <- peek _ptr
       _ptr <- do
         ptr' <- cs_compress _ptr
         if ptr' == nullPtr
            then return _ptr
           else do
+            cs <- peek _ptr
             free (p cs) >> free (i cs) >> free (x cs) >> free _ptr
             return ptr'
+      duplStatus <- cs_dupl _ptr
+      unless (duplStatus > 0) $ errorWithStackTrace "fromCs: deduplication failed"
       Cs{..} <- peek _ptr
       let nRows = fromIntegral m
           nColumns = fromIntegral n
