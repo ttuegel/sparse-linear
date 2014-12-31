@@ -6,7 +6,7 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.Matrix.Sparse
-    ( Matrix(..), withConstCs, fromCs, withConstTriples
+    ( Matrix(..), withConstCs, fromCs, withConstTriples, cmap
     , CxSparse(..), RealOf, ComplexOf
     ) where
 
@@ -55,6 +55,10 @@ instance Storable a => MonoFoldable (Matrix a) where
 
   ofoldl1Ex' = \f Matrix{..} -> ofoldl1Ex' f values
   {-# INLINE ofoldl1Ex' #-}
+
+cmap :: (Storable a, Storable b) => (a -> b) -> Matrix a -> Matrix b
+{-# INLINE cmap #-}
+cmap = \f m -> m { values = V.map f $ values m }
 
 type CsGaxpy a = Ptr (Cs a) -> Ptr a -> Ptr a -> IO Int
 type CsCompress a = Ptr (Cs a) -> IO (Ptr (Cs a))
