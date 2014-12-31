@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -12,7 +13,7 @@ module Numeric.LinearAlgebra.Sparse
     , lin
     , add
     , gaxpy, gaxpy_, mulV
-    , hcat, vcat, fromBlocks
+    , hcat, vcat, fromBlocks, fromBlocksDiag
     , kronecker
     , takeDiag, diag, ident
     , zeros
@@ -22,6 +23,7 @@ module Numeric.LinearAlgebra.Sparse
 import Control.Applicative
 import Control.Monad (void)
 import Data.Foldable
+import qualified Data.List as List
 import Data.MonoTraversable
 import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
@@ -149,6 +151,16 @@ vcat a b
 fromBlocks :: (CxSparse a, Storable a) => [[Matrix a]] -> Matrix a
 fromBlocks = foldl1 vcat . map (foldl1 hcat)
 {-# INLINE fromBlocks #-}
+
+fromBlocksDiag :: (CxSparse a, Storable a) => [[Matrix a]] -> Matrix a
+fromBlocksDiag = foldl1 vcat . zipWith joinAt [0..] . List.transpose where
+  {-# INLINE joinAt #-}
+  joinAt = \n mats ->
+    case splitAt n mats of
+     ([], ls) -> foldl1 hcat ls
+     (rs, []) -> foldl1 hcat rs
+     (rs, ls) -> foldl1 hcat ls `hcat` foldl1 hcat rs
+{-# INLINE fromBlocksDiag #-}
 
 kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 kronecker = kronecker_go where

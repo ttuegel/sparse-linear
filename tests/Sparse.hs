@@ -12,25 +12,33 @@ import Test.QuickCheck.Arbitrary.LinearAlgebra ()
 main :: IO ()
 main = hspec $ do
   describe "Numeric.LinearAlgebra.Sparse" $ do
+    describe "kronecker" $ do
+      it "assembes identity matrices" $ property prop_kroneckerIdent
 
-    it "kronecker (ident x) (ident y) == ident (x * y)"
-      $ property prop_kroneckerIdent
+    describe "takeDiag" $ do
+      it "returns what diag is given" $ property prop_takeDiag
 
-    it "takeDiag . diag == id" $ property prop_takeDiag
+    describe "mulV" $ do
+      it "identity" $ property prop_identMulV
 
-    it "ident n `mulV` xs == xs" $ property prop_identMulV
+    describe "lin" $ do
+      it "additive inverse" $ property prop_addInv
+      it "additive identity" $ property prop_addId
 
-    it "lin 1 a (-1) a == 0" $ property prop_addInv
+    describe "transpose" $ do
+      it "self-inverse" $ property prop_transposeId
 
-    it "a `add` zeros == a" $ property prop_addId
+    describe "ctrans" $ do
+      it "self-inverse" $ property prop_ctransId
 
-    it "transpose . transpose == id" $ property prop_transposeId
+    describe "mul" $ do
+      it "identity on matrices" $ property prop_mulId
 
-    it "ctrans . ctrans == id" $ property prop_ctransId
+    describe "fromBlocks" $ do
+      it "assembles identity matrices" $ property prop_fromBlocksId
 
-    it "a `mul` ident == a" $ property prop_mulId
-
-    it "fromBlocks [[1, 0], [0, 1']] == ident (1 + 1')" $ property prop_fromBlocksId
+    describe "fromBlocksDiag" $ do
+      it "assembles identity matrices" $ property prop_fromBlocksDiagId
 
 prop_kroneckerIdent :: Int -> Int -> Property
 prop_kroneckerIdent x y = (x > 0 && y > 0) ==> lhs == rhs
@@ -69,3 +77,9 @@ prop_fromBlocksId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
   where
     lhs :: Matrix (Complex Double)
     lhs = fromBlocks [[ident x, zeros x y], [zeros y x, ident y]]
+
+prop_fromBlocksDiagId :: Int -> Int -> Property
+prop_fromBlocksDiagId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
+  where
+    lhs :: Matrix (Complex Double)
+    lhs = fromBlocksDiag [[ident x, ident y], [zeros x y, zeros y x]]
