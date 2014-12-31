@@ -37,15 +37,20 @@ linearSolve_ mat@Matrix{..} bs =
       return _x
     umfpack_free_numeric pnum
     return xs
+{-# INLINE linearSolve_ #-}
 
 linearSolve
   :: (CxSparse a, Num a, Umfpack a)
   => Matrix a -> [Vector a] -> [Vector a]
-linearSolve mat@Matrix{..} _bs =
-  unsafePerformIO $ do
-    _bs <- mapM V.unsafeThaw _bs
-    _xs <- linearSolve_ mat _bs
-    mapM V.unsafeFreeze _xs
+linearSolve = linearSolve_go where
+  {-# NOINLINE linearSolve_go #-}
+  linearSolve_go mat@Matrix{..} _bs =
+    unsafePerformIO $ do
+      _bs <- mapM V.unsafeThaw _bs
+      _xs <- linearSolve_ mat _bs
+      mapM V.unsafeFreeze _xs
+{-# INLINE linearSolve #-}
 
 (<\>) :: (CxSparse a, Num a, Umfpack a) => Matrix a -> Vector a -> Vector a
 (<\>) mat b = head $ linearSolve mat [b]
+{-# INLINE (<\>) #-}

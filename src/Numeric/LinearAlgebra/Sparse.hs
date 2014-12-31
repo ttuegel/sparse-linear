@@ -41,27 +41,33 @@ import Data.Complex.Enhanced
 import Data.Matrix.Sparse
 
 mul :: CxSparse a => Matrix a -> Matrix a -> Matrix a
-mul _a _b =
-  unsafePerformIO $
-  withConstCs _a $ \_a ->
-  withConstCs _b $ \_b ->
-    cs_multiply _a _b >>= fromCs
+mul = mul_go where
+  {-# NOINLINE mul_go #-}
+  mul_go _a _b =
+    unsafePerformIO $
+    withConstCs _a $ \_a ->
+    withConstCs _b $ \_b ->
+      cs_multiply _a _b >>= fromCs
 {-# INLINE mul #-}
 
 compress
   :: (CxSparse a, Unbox a)
   => Int -> Int -> U.Vector (Int, Int, a) -> Matrix a
-compress nr nc (U.unzip3 -> (rs, cs, xs)) =
-  unsafePerformIO $
-  withConstTriples nr nc (V.convert rs) (V.convert cs) (V.convert xs) $ \pcs ->
-    cs_compress pcs >>= fromCs
+compress = compress_go where
+  {-# NOINLINE compress_go #-}
+  compress_go nr nc (U.unzip3 -> (rs, cs, xs)) =
+    unsafePerformIO $
+    withConstTriples nr nc (V.convert rs) (V.convert cs) (V.convert xs) $ \pcs ->
+      cs_compress pcs >>= fromCs
 {-# INLINE compress #-}
 
 transpose :: CxSparse a => Matrix a -> Matrix a
-transpose mat =
-  unsafePerformIO $
-  withConstCs mat $ \cs ->
-    cs_transpose cs (V.length $ values mat) >>= fromCs
+transpose = transpose_go where
+  {-# NOINLINE transpose_go #-}
+  transpose_go mat =
+    unsafePerformIO $
+    withConstCs mat $ \cs ->
+      cs_transpose cs (V.length $ values mat) >>= fromCs
 {-# INLINE transpose #-}
 
 ctrans :: (CxSparse a, IsReal a) => Matrix a -> Matrix a
@@ -73,13 +79,15 @@ hermitian m = ctrans m == m
 {-# INLINE hermitian #-}
 
 lin :: CxSparse a => a -> Matrix a -> a -> Matrix a -> Matrix a
-lin _alpha _a _beta _b =
-  unsafePerformIO $
-  withConstCs _a $ \_a ->
-  withConstCs _b $ \_b ->
-  with _alpha $ \_alpha ->
-  with _beta $ \_beta ->
-    cs_add _a _b _alpha _beta >>= fromCs
+lin = lin_go where
+  {-# NOINLINE lin_go #-}
+  lin_go _alpha _a _beta _b =
+    unsafePerformIO $
+    withConstCs _a $ \_a ->
+    withConstCs _b $ \_b ->
+    with _alpha $ \_alpha ->
+    with _beta $ \_beta ->
+      cs_add _a _b _alpha _beta >>= fromCs
 {-# INLINE lin #-}
 
 add :: (CxSparse a, Num a) => Matrix a -> Matrix a -> Matrix a
@@ -95,21 +103,25 @@ gaxpy_ _a _x _y =
 {-# INLINE gaxpy_ #-}
 
 gaxpy :: CxSparse a => Matrix a -> Vector a -> Vector a -> Vector a
-gaxpy a _x _y =
-  unsafePerformIO $ do
-    _y <- V.thaw _y
-    _x <- V.unsafeThaw _x
-    gaxpy_ a _x _y
-    V.unsafeFreeze _y
+gaxpy = gaxpy_go where
+  {-# NOINLINE gaxpy_go #-}
+  gaxpy_go a _x _y =
+    unsafePerformIO $ do
+      _y <- V.thaw _y
+      _x <- V.unsafeThaw _x
+      gaxpy_ a _x _y
+      V.unsafeFreeze _y
 {-# INLINE gaxpy #-}
 
 mulV :: (CxSparse a, Num a) => Matrix a -> Vector a -> Vector a
-mulV a _x =
-  unsafePerformIO $ do
-    _x <- V.unsafeThaw _x
-    y <- MV.replicate (MV.length _x) 0
-    gaxpy_ a _x y
-    V.unsafeFreeze y
+mulV = mulV_go where
+  {-# NOINLINE mulV_go #-}
+  mulV_go a _x =
+    unsafePerformIO $ do
+      _x <- V.unsafeThaw _x
+      y <- MV.replicate (MV.length _x) 0
+      gaxpy_ a _x y
+      V.unsafeFreeze y
 {-# INLINE mulV #-}
 
 hcat :: Storable a => Matrix a -> Matrix a -> Matrix a
@@ -139,20 +151,24 @@ fromBlocks = foldl1 vcat . map (foldl1 hcat)
 {-# INLINE fromBlocks #-}
 
 kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a
-kronecker _a _b =
-  unsafePerformIO $
-  withConstCs _a $ \_a ->
-  withConstCs _b $ \_b ->
-    cs_kron _a _b >>= fromCs
+kronecker = kronecker_go where
+  {-# NOINLINE kronecker_go #-}
+  kronecker_go _a _b =
+    unsafePerformIO $
+    withConstCs _a $ \_a ->
+    withConstCs _b $ \_b ->
+      cs_kron _a _b >>= fromCs
 {-# INLINE kronecker #-}
 
 takeDiag :: CxSparse a => Matrix a -> Vector a
-takeDiag _a@Matrix{..} =
-  unsafePerformIO $
-  withConstCs _a $ \_a ->
-  V.unsafeFromForeignPtr0
-    <$> (cs_diag _a >>= newForeignPtr finalizerFree)
-    <*> pure (min nRows nColumns)
+takeDiag = takeDiag_go where
+  {-# NOINLINE takeDiag_go #-}
+  takeDiag_go _a@Matrix{..} =
+    unsafePerformIO $
+    withConstCs _a $ \_a ->
+      V.unsafeFromForeignPtr0
+      <$> (cs_diag _a >>= newForeignPtr finalizerFree)
+      <*> pure (min nRows nColumns)
 {-# INLINE takeDiag #-}
 
 diag :: Storable a => Vector a -> Matrix a
