@@ -4,7 +4,7 @@
 
 module Data.Complex.Enhanced
        ( RealOf, ComplexOf, IsReal(..), IsImag(..)
-       , Complex(..)
+       , Complex(..), magnitude
        ) where
 
 import Data.Complex
