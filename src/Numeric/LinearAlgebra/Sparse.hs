@@ -8,7 +8,7 @@ module Numeric.LinearAlgebra.Sparse
     ( CxSparse()
     , Matrix(), nRows, nColumns
     , mul
-    , compress
+    , compress, fromTriples, (><)
     , transpose, ctrans, hermitian
     , lin
     , add
@@ -62,6 +62,19 @@ compress = compress_go where
     withConstTriples nr nc (V.convert rs) (V.convert cs) (V.convert xs) $ \pcs ->
       cs_compress pcs >>= fromCs
 {-# INLINE compress #-}
+
+fromTriples :: CxSparse a => Int -> Int -> [(Int, Int, a)] -> Matrix a
+{-# INLINE fromTriples #-}
+fromTriples = fromTriples_go where
+  {-# NOINLINE fromTriples_go #-}
+  fromTriples_go nr nc (unzip3 -> (rs, cs, xs)) =
+    unsafePerformIO $
+    withConstTriples nr nc (V.fromList rs) (V.fromList cs) (V.fromList xs)
+      $ \ptr -> cs_compress ptr >>= fromCs
+
+(><) :: CxSparse a => Int -> Int -> [(Int, Int, a)] -> Matrix a
+{-# INLINE (><) #-}
+(><) = fromTriples
 
 transpose :: CxSparse a => Matrix a -> Matrix a
 transpose = transpose_go where
