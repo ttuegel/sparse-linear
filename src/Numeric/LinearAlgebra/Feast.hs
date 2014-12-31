@@ -7,7 +7,7 @@
 {-# LANGUAGE UnboxedTuples #-}
 
 module Numeric.LinearAlgebra.Feast
-    ( EigH, geigH, eigH
+    ( EigSH, geigSH, eigSH
     ) where
 
 import Control.Applicative
@@ -69,24 +69,25 @@ instance Feast Double where
     feast_rci = dfeast_srci
     {-# INLINE feast_rci #-}
 
-type EigH a =
+type EigSH a =
     ( CxSparse a
     , Eq a
     , Feast a
     , IsReal a
     , Num (RealOf a)
     , Num a
+    , Show a
     , Storable (RealOf a)
     , Umfpack a
     )
-geigH
-  :: (EigH a)
+geigSH
+  :: (EigSH a)
   => Int -> (RealOf a, RealOf a)
   -> Sparse.Matrix a -> Sparse.Matrix a
   -> (Vector (RealOf a), Dense.Matrix a)
-geigH !m0 (!_emin, !_emax) !matA !matB
-  | not (hermitian matA) = errorWithStackTrace "matrix A must be hermitian"
-  | not (hermitian matB) = errorWithStackTrace "matrix B must be hermitian"
+geigSH !m0 (!_emin, !_emax) !matA !matB
+  | not (assertEq matA matA') = errorWithStackTrace "matrix A must be hermitian"
+  | not (assertEq matB matB') = errorWithStackTrace "matrix B must be hermitian"
   | nRows matA /= nColumns matA = errorWithStackTrace "matrix A must be square"
   | nRows matB /= nColumns matB = errorWithStackTrace "matrix B must be square"
   | nRows matA /= nRows matB =
@@ -190,13 +191,13 @@ geigH !m0 (!_emin, !_emax) !matA !matB
           _eigenvectors <- V.unsafeFreeze _eigenvectors
 
           return (_eigenvalues, Dense.fromVector m0 m0 _eigenvectors)
-{-# INLINE geigH #-}
+{-# INLINE geigSH #-}
 
-eigH
-  :: (EigH a)
+eigSH
+  :: (EigSH a)
   => Int
   -> (RealOf a, RealOf a)
   -> Sparse.Matrix a
   -> (Vector (RealOf a), Dense.Matrix a)
-eigH = \m0 bounds matA -> geigH m0 bounds matA $ ident $ nColumns matA
-{-# INLINE eigH #-}
+eigSH = \m0 bounds matA -> geigSH m0 bounds matA $ ident $ nColumns matA
+{-# INLINE eigSH #-}

@@ -13,6 +13,6 @@ main = hspec $ do
     it "ident" $ do
       let m :: Matrix (Complex Double)
           m = compress 2 2 $ U.fromList [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
-          eigenvalues = fst $ eigH 2 (-5, 5) m
+          eigenvalues = fst $ eigSH 2 (-5, 5) m
           res = V.map abs $ V.zipWith (-) eigenvalues (V.fromList [1, 3])
       V.all (< 1E-12) res `shouldBe` True

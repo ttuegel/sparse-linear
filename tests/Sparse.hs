@@ -27,6 +27,7 @@ main = hspec $ do
 
     describe "transpose" $ do
       it "self-inverse" $ property prop_transposeId
+      it "preserves diagonal" $ property prop_transposeDiag
 
     describe "ctrans" $ do
       it "self-inverse" $ property prop_ctransId
@@ -66,6 +67,11 @@ prop_addId m = add m (zeros (nRows m) (nColumns m)) == m
 prop_transposeId :: Matrix (Complex Double) -> Bool
 prop_transposeId m = transpose (transpose m) == m
 
+prop_transposeDiag :: Vector Double -> Bool
+prop_transposeDiag v = m == transpose m
+  where
+    m = diag v
+
 prop_ctransId :: Matrix (Complex Double) -> Bool
 prop_ctransId m = ctrans (ctrans m) == m
 
@@ -76,10 +82,10 @@ prop_fromBlocksId :: Int -> Int -> Property
 prop_fromBlocksId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
   where
     lhs :: Matrix (Complex Double)
-    lhs = fromBlocks [[ident x, zeros x y], [zeros y x, ident y]]
+    lhs = fromBlocks [[Just (ident x), Nothing], [Nothing, Just (ident y)]]
 
 prop_fromBlocksDiagId :: Int -> Int -> Property
 prop_fromBlocksDiagId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
   where
     lhs :: Matrix (Complex Double)
-    lhs = fromBlocksDiag [[ident x, ident y], [zeros x y, zeros y x]]
+    lhs = fromBlocksDiag [[Just (ident x), Just (ident y)], [Nothing, Nothing]]

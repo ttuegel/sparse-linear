@@ -25,7 +25,7 @@ type UmfpackSymbolic a
     -> Ptr (Symbolic a)
     -> Control
     -> Info
-    -> IO Int  -- ^ status code
+    -> IO CInt  -- ^ status code
 
 type UmfpackNumeric a
     =  Ptr (Cs a)  -- ^ matrix
@@ -33,7 +33,7 @@ type UmfpackNumeric a
     -> Ptr (Numeric a)
     -> Control
     -> Info
-    -> IO Int  -- ^ status code
+    -> IO CInt  -- ^ status code
 
 type UmfpackSolve a
     =  Ptr (Cs a)  -- ^ matrix
@@ -42,7 +42,7 @@ type UmfpackSolve a
     -> Numeric a
     -> Control
     -> Info
-    -> IO Int  -- ^ status code
+    -> IO CInt  -- ^ status code
 
 type UmfpackFreeSymbolic a = Ptr (Symbolic a) -> IO ()
 
@@ -101,7 +101,7 @@ instance Umfpack Double where
     umfpack_free_symbolic = umfpack_di_free_symbolic
     umfpack_free_numeric = umfpack_di_free_numeric
 
-wrap_umfpack :: IO Int -> IO ()
+wrap_umfpack :: IO CInt -> IO ()
 wrap_umfpack act = do
     status <- act
     case status of
