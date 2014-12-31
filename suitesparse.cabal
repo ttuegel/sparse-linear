@@ -17,6 +17,7 @@ library
     Data.Cs
     Data.Matrix
     Data.Matrix.Sparse
+    Data.Vector.Sparse
     Numeric.LinearAlgebra.Feast
     Numeric.LinearAlgebra.Sparse
     Numeric.LinearAlgebra.Umfpack
@@ -28,6 +29,7 @@ library
     , mono-traversable >=0.6 && <1
     , storable-complex >=0.2 && <1
     , vector >=0.10 && <1
+    , vector-algorithms >=0.6 && <1
   hs-source-dirs: src
   default-language: Haskell2010
   ghc-options: -Wall
