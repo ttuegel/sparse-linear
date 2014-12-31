@@ -115,7 +115,7 @@ mulV a _x =
 hcat :: Storable a => [Matrix a] -> Matrix a
 hcat mats
   | null mats = errorWithStackTrace "no matrices"
-  | any ((/= nr) . nRows) mats = errorWithStackTrace "row dimensions differ"
+  | any ((/= nr) . nRows) mats = errorWithStackTrace "dimension mismatch"
   | otherwise = Matrix
       { nRows = nr
       , nColumns = foldl' (+) 0 $ map nColumns mats
