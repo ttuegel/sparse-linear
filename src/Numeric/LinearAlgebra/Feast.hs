@@ -154,8 +154,6 @@ geigH !m0 (!_emin, !_emax) !matA !matB
 
           _work1 <- forM [0..(m0 - 1)] $ \c ->
             return $ MV.slice (c * n) n _work1
-          _work2 <- forM [0..(m0 - 1)] $ \c ->
-            return $ MV.slice (c * n) n _work2
 
           let geigSH_go = do
                 feast_go
@@ -191,13 +189,7 @@ geigH !m0 (!_emin, !_emax) !matA !matB
           _eigenvalues <- V.unsafeFreeze _eigenvalues
           _eigenvectors <- V.unsafeFreeze _eigenvectors
 
-          let eigenvectorMat = Dense.Matrix
-                  { Dense.nRows = m0
-                  , Dense.nColumns = m0
-                  , Dense.values = _eigenvectors
-                  }
-
-          return (_eigenvalues, eigenvectorMat)
+          return (_eigenvalues, Dense.fromVector m0 m0 _eigenvectors)
 {-# INLINE geigH #-}
 
 eigH
