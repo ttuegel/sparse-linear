@@ -195,20 +195,14 @@ fromCs _ptr
       let nRows = fromIntegral m
           nColumns = fromIntegral n
           nzmax_ = fromIntegral nzmax
-      columnPointers <-
-        V.unsafeFromForeignPtr0
-        <$> newForeignPtr finalizerFree p
-        <*> pure (nColumns + 1)
-      rowIndices <-
-        V.unsafeFromForeignPtr0
-        <$> newForeignPtr finalizerFree i
-        <*> pure nzmax_
-      values <-
-        V.unsafeFromForeignPtr0
-        <$> newForeignPtr finalizerFree x
-        <*> pure nzmax_
+      columnPointers <- mkVector p (nColumns + 1)
+      rowIndices <- mkVector i nzmax_
+      values <- mkVector x nzmax_
       free _ptr
       return Matrix{..}
+  where
+    mkVector ptr len =
+      V.unsafeFromForeignPtr0 <$> newForeignPtr finalizerFree ptr <*> pure len
 {-# INLINE fromCs #-}
 
 toColumns :: Storable a => Matrix a -> [SpV.Vector a]
