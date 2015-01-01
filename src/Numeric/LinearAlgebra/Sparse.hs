@@ -121,6 +121,7 @@ assertEq a b
 
 lin :: CxSparse a => a -> Matrix a -> a -> Matrix a -> Matrix a
 lin = lin_go where
+  {-# NOINLINE lin_go #-}
   lin_go _alpha _a _beta _b =
     unsafePerformIO $
     withConstCs _a $ \_a ->
