@@ -96,20 +96,6 @@ transpose = transpose_go where
     withConstCs mat $ \cs ->
       cs_transpose cs (V.length $ values mat) >>= fromCs
 
-toColumns :: Storable a => Matrix a -> [SpV.Vector a]
-toColumns = \Matrix{..} ->
-  let starts = map fromIntegral $ V.toList $ V.init columnPointers
-      ends = map fromIntegral $ V.toList $ V.tail columnPointers
-      lens = zipWith (-) ends starts
-      chop v = zipWith (\n len -> V.slice n len v) starts lens
-  in do
-    (inds, vals) <- zip (chop rowIndices) (chop values)
-    return SpV.Vector
-      { SpV.dim = nRows
-      , SpV.indices = inds
-      , SpV.values = vals
-      }
-
 toRows :: CxSparse a => Matrix a -> [SpV.Vector a]
 toRows = toColumns . transpose
 
