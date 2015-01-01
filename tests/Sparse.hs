@@ -6,7 +6,6 @@ import qualified Data.Vector.Storable as V
 import Test.Hspec
 import Test.QuickCheck
 
-import Data.Matrix.Sparse
 import Numeric.LinearAlgebra.Sparse
 import Test.LinearAlgebra
 

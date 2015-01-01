@@ -27,7 +27,7 @@ import System.GlobalLock (lock)
 import System.IO.Unsafe
 
 import qualified Data.Matrix as Dense
-import Data.Matrix.Sparse as Sparse
+import qualified Data.Matrix.Sparse as Sparse
 import Numeric.LinearAlgebra.Sparse
 import Numeric.LinearAlgebra.Umfpack
 
