@@ -7,6 +7,7 @@
 
 module Data.Matrix.Sparse
     ( Matrix(..), withConstCs, fromCs, withConstTriples, cmap
+    , toColumns, assertValid
     , CxSparse(..), RealOf, ComplexOf
     ) where
 
@@ -25,6 +26,7 @@ import GHC.Stack
 
 import Data.Complex.Enhanced
 import Data.Cs
+import qualified Data.Vector.Sparse as SpV
 
 -- | Matrix in compressed sparse column (CSC) format.
 data Matrix a = Matrix
@@ -208,3 +210,36 @@ fromCs _ptr
       free _ptr
       return Matrix{..}
 {-# INLINE fromCs #-}
+
+toColumns :: Storable a => Matrix a -> [SpV.Vector a]
+toColumns = \Matrix{..} ->
+  let starts = map fromIntegral $ V.toList $ V.init columnPointers
+      ends = map fromIntegral $ V.toList $ V.tail columnPointers
+      lens = zipWith (-) ends starts
+      chop :: Storable b => Vector b -> [Vector b]
+      chop v = zipWith (\n len -> V.slice n len v) starts lens
+  in do
+    (inds, vals) <- zip (chop rowIndices) (chop values)
+    return SpV.Vector
+      { SpV.dim = nRows
+      , SpV.indices = inds
+      , SpV.values = vals
+      }
+
+nondecreasing :: (Ord a, Storable a) => Vector a -> Bool
+nondecreasing vec = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
+
+increasing :: (Ord a, Storable a) => Vector a -> Bool
+increasing vec = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
+
+assertValid :: Storable a => Matrix a -> Matrix a
+assertValid mat@Matrix{..}
+  | not (nondecreasing columnPointers) =
+      errorWithStackTrace "column pointers are not nondecreasing"
+  | V.length columnPointers /= nColumns + 1 =
+      errorWithStackTrace "wrong number of column pointers"
+  | V.length values /= (fromIntegral $ V.last columnPointers) =
+      errorWithStackTrace "length values is wrong"
+  | any (not . increasing . SpV.indices) (toColumns mat) =
+      errorWithStackTrace "row indices are not increasing"
+  | otherwise = mat
