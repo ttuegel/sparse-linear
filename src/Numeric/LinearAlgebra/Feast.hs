@@ -88,8 +88,6 @@ geigSH
 geigSH !m0 (!_emin, !_emax) !matA !matB
   | not (assertEq matA matA') = errorWithStackTrace "matrix A must be hermitian"
   | not (assertEq matB matB') = errorWithStackTrace "matrix B must be hermitian"
-  | nRows matA /= nColumns matA = errorWithStackTrace "matrix A must be square"
-  | nRows matB /= nColumns matB = errorWithStackTrace "matrix B must be square"
   | nRows matA /= nRows matB =
       errorWithStackTrace "matrices A and B must be the same size"
   | otherwise = geigH_go
