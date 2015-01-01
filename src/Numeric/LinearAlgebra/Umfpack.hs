@@ -1,9 +1,11 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Numeric.LinearAlgebra.Umfpack
     ( Umfpack(), linearSolve, linearSolve_, (<\>)
     ) where
 
+import Control.Monad (when)
 import Data.Traversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
@@ -12,6 +14,7 @@ import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.Marshal.Alloc
 import Foreign.Ptr
 import Foreign.Storable
+import GHC.Stack (errorWithStackTrace)
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -24,16 +27,24 @@ linearSolve_
 linearSolve_ mat@Matrix{..} bs =
   withConstCs mat $ \cs -> do
     psym <- malloc
-    wrap_umfpack $ umfpack_symbolic cs psym nullPtr nullPtr
+    _stat <- umfpack_symbolic cs psym nullPtr nullPtr
+    umfpack_report_status cs nullPtr _stat
+    when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_symbolic failed"
+
     pnum <- malloc
     sym <- peek psym
-    wrap_umfpack $ umfpack_numeric cs sym pnum nullPtr nullPtr
+    _stat <- umfpack_numeric cs sym pnum nullPtr nullPtr
+    umfpack_report_status cs nullPtr _stat
     umfpack_free_symbolic psym
+    when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_numeric failed"
+
     num <- peek pnum
     xs <- forM bs $ \_b -> do
       _x <- MV.replicate nColumns 0
-      _ <- MV.unsafeWith _b $ \_b -> MV.unsafeWith _x $ \_x ->
-        wrap_umfpack $ umfpack_solve cs _x _b num nullPtr nullPtr
+      _ <- MV.unsafeWith _b $ \_b -> MV.unsafeWith _x $ \_x -> do
+        _stat <- umfpack_solve cs _x _b num nullPtr nullPtr
+        umfpack_report_status cs nullPtr _stat
+        when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_solve failed"
       return _x
     umfpack_free_numeric pnum
     return xs
