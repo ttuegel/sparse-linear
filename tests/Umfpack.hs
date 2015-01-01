@@ -7,7 +7,7 @@ import Test.QuickCheck
 
 import Numeric.LinearAlgebra.Sparse
 import Numeric.LinearAlgebra.Umfpack
-import Test.QuickCheck.Arbitrary.LinearAlgebra ()
+import Test.LinearAlgebra ()
 
 main :: IO ()
 main = hspec $ do
