@@ -2,9 +2,12 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Data.Matrix.Sparse.Compress ( compress, deduplicate ) where
+module Data.Matrix.Sparse.Compress
+       ( compress, decompress
+       , deduplicate
+       ) where
 
-import Control.Monad (liftM)
+import Control.Monad (liftM, zipWithM_)
 import Data.Ord (comparing)
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import qualified Data.Vector.Algorithms.Intro as Intro
@@ -22,7 +25,7 @@ import Data.Matrix.Sparse.Type
 import Data.Triples
 
 compress
-  :: (CxSparse a, Num a, PrimMonad m, Storable a)
+  :: (Num a, PrimMonad m, Storable a)
   => Int  -- ^ number of rows
   -> Int  -- ^ number of columns
   -> MVector (PrimState m) CInt  -- ^ row indices
@@ -42,7 +45,7 @@ computePtrs nc cols =
     liftM fromIntegral $ binarySearchL cols (fromIntegral c)
 
 deduplicate
-  :: (CxSparse a, PrimMonad m, Storable a)
+  :: (Num a, PrimMonad m, Storable a)
   => Int
   -> Int
   -> Vector CInt  -- ^ column pointers
@@ -86,3 +89,19 @@ dedupCol pairs@(MPairs rows vals) = do
               MV.unsafeWrite rows ixR (-1)
               dedupCol_go ixW (ixR + 1) (nDel + 1)
       | otherwise = return nDel
+
+decompress
+  :: (PrimMonad m, s ~ PrimState m, Storable a)
+  => Matrix a -> m (Int, Int, MVector s CInt, MVector s CInt, MVector s a)
+decompress Matrix{..} = do
+  rows <- V.thaw rowIndices
+  vals <- V.thaw values
+  cols <- MV.new $ MV.length rows
+  let decompressCols (start, end) c = do
+        let sl = MV.slice start (end - start) cols
+        MV.set sl c
+  zipWithM_ decompressCols extents [0..]
+  return (nRows, nColumns, rows, cols, vals)
+  where
+    extents = zip ps $ tail ps
+      where ps = map fromIntegral $ V.toList columnPointers

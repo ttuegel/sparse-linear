@@ -8,11 +8,13 @@
 
 module Data.Matrix.Sparse
     ( Matrix(..), cmap
-    , compress, deduplicate
+    , compress, decompress, deduplicate
+    , transpose
     , toColumns, assertValid
     , module Data.Cs, fromCs, withConstCs
     ) where
 
+import Control.Monad.ST (runST)
 import Data.Vector.Storable (Storable, Vector)
 import qualified Data.Vector.Storable as V
 import GHC.Stack (errorWithStackTrace)
@@ -63,3 +65,8 @@ assertValid mat@Matrix{..}
   | any (not . increasing . SpV.indices) (toColumns mat) =
       errorWithStackTrace "row indices are not increasing"
   | otherwise = mat
+
+transpose :: (Num a, Storable a) => Matrix a -> Matrix a
+transpose mat = runST $ do
+  (nr, nc, rows, cols, vals) <- decompress mat
+  compress nc nr cols rows vals

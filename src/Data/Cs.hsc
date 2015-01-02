@@ -79,14 +79,12 @@ instance Storable (Cs Double) where
   {-# INLINE poke #-}
 
 type CsGaxpy a = Ptr (Cs a) -> Ptr a -> Ptr a -> IO CInt
-type CsTranspose a = Ptr (Cs a) -> Int -> IO (Ptr (Cs a))
 type CsMultiply a = Ptr (Cs a) -> Ptr (Cs a) -> IO (Ptr (Cs a))
 type CsAdd a = Ptr (Cs a) -> Ptr (Cs a) -> Ptr a -> Ptr a -> IO (Ptr (Cs a))
 type CsDiag a = Ptr (Cs a) -> IO (Ptr a)
 
 class (Num a, Storable a, Storable (Cs a), Unbox a) => CxSparse a where
   cs_gaxpy :: CsGaxpy a
-  cs_transpose :: CsTranspose a
   cs_multiply :: CsMultiply a
   cs_add :: CsAdd a
   cs_kron :: CsMultiply a
@@ -94,8 +92,6 @@ class (Num a, Storable a, Storable (Cs a), Unbox a) => CxSparse a where
 
 foreign import ccall "cs.h cs_ci_gaxpy"
   cs_ci_gaxpy :: CsGaxpy (Complex Double)
-foreign import ccall "cs.h cs_ci_transpose"
-  cs_ci_transpose :: CsTranspose (Complex Double)
 foreign import ccall "cs.h cs_ci_multiply"
   cs_ci_multiply :: CsMultiply (Complex Double)
 foreign import ccall "cs_ci_add_ptrs"
@@ -107,13 +103,11 @@ foreign import ccall "cs_ci_diag"
 
 instance CxSparse (Complex Double) where
   {-# INLINE cs_gaxpy #-}
-  {-# INLINE cs_transpose #-}
   {-# INLINE cs_multiply #-}
   {-# INLINE cs_add #-}
   {-# INLINE cs_kron #-}
   {-# INLINE cs_diag #-}
   cs_gaxpy = cs_ci_gaxpy
-  cs_transpose = cs_ci_transpose
   cs_multiply = cs_ci_multiply
   cs_add = cs_ci_add
   cs_kron = cs_ci_kron
@@ -121,8 +115,6 @@ instance CxSparse (Complex Double) where
 
 foreign import ccall "cs.h cs_di_gaxpy"
   cs_di_gaxpy :: CsGaxpy Double
-foreign import ccall "cs.h cs_di_transpose"
-  cs_di_transpose :: CsTranspose Double
 foreign import ccall "cs.h cs_di_multiply"
   cs_di_multiply :: CsMultiply Double
 foreign import ccall "cs_di_add_ptrs"
@@ -134,13 +126,11 @@ foreign import ccall "cs_di_diag"
 
 instance CxSparse Double where
   {-# INLINE cs_gaxpy #-}
-  {-# INLINE cs_transpose #-}
   {-# INLINE cs_multiply #-}
   {-# INLINE cs_add #-}
   {-# INLINE cs_kron #-}
   {-# INLINE cs_diag #-}
   cs_gaxpy = cs_di_gaxpy
-  cs_transpose = cs_di_transpose
   cs_multiply = cs_di_multiply
   cs_add = cs_di_add
   cs_kron = cs_di_kron

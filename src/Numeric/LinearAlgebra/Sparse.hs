@@ -79,18 +79,10 @@ fromTriples = fromTriples_go where
 (><) :: CxSparse a => Int -> Int -> [(Int, Int, a)] -> Matrix a
 (><) = fromTriples
 
-transpose :: CxSparse a => Matrix a -> Matrix a
-transpose = transpose_go where
-  {-# NOINLINE transpose_go #-}
-  transpose_go mat =
-    unsafePerformIO $
-    withConstCs mat $ \cs ->
-      cs_transpose cs (V.length $ values mat) >>= fromCs False
-
 toRows :: CxSparse a => Matrix a -> [SpV.Vector a]
 toRows = toColumns . transpose
 
-ctrans :: (CxSparse a, IsReal a) => Matrix a -> Matrix a
+ctrans :: (Num a, IsReal a, Storable a) => Matrix a -> Matrix a
 ctrans = omap conj . transpose
 
 hermitian :: (Eq a, IsReal a, CxSparse a) => Matrix a -> Bool
