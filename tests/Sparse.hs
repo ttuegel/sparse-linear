@@ -75,6 +75,7 @@ main = hspec $ do
       it "column pointers length"
         $ property prop_fromBlocksDiagColumnPointersLength
       it "values length" $ property prop_fromBlocksDiagValuesLength
+      it "produces hermitian matrices" $ property prop_fromBlocksDiagHermitian
 
 prop_kroneckerIdent :: Int -> Int -> Property
 prop_kroneckerIdent x y = (x > 0 && y > 0) ==> lhs == rhs
@@ -219,3 +220,18 @@ prop_fromBlocksDiagValuesLength
 prop_fromBlocksDiagValuesLength x y =
   prop_valuesLength
   $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
+
+prop_fromBlocksDiagHermitian :: [Vector (Complex Double)] -> Property
+prop_fromBlocksDiagHermitian diags =
+  (n >= 2) ==> hermitian superm
+  where
+    n = length mats
+    mats = map diag diags
+    mats' = reverse $ map ctrans mats
+    superm =
+      fromBlocksDiag $ concat
+        [ [replicate (n + 1) Nothing]
+        , [map Just mats ++ [Nothing]]
+        , replicate (n - 2) (replicate (n + 1) Nothing)
+        , [[Nothing] ++ map Just mats']
+        ]
