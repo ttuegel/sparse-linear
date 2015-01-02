@@ -17,6 +17,9 @@ library
     Data.Cs
     Data.Matrix
     Data.Matrix.Sparse
+    Data.Matrix.Sparse.Compress
+    Data.Matrix.Sparse.Foreign
+    Data.Matrix.Sparse.Type
     Data.Pairs
     Data.Triples
     Data.Vector.Sparse
