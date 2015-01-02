@@ -195,7 +195,7 @@ fixDimsByRow rows = do
 
 fromBlocksDiag :: CxSparse a => [[Maybe (Matrix a)]] -> Matrix a
 fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . List.transpose where
-  rejoin = \n mats -> let (rs, ls) = splitAt n mats in ls ++ rs
+  rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
 
 kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 kronecker = kronecker_go where
