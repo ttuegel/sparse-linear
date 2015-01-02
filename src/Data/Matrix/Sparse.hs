@@ -7,15 +7,26 @@
 
 module Data.Matrix.Sparse
     ( Matrix(..), withConstCs, fromCs, withConstTriples, cmap
+    , compress
     , toColumns, assertValid
     , module Data.Cs
     ) where
 
 import Control.Applicative
-import Control.Monad (unless)
+import Control.Monad (liftM)
+import Control.Monad.Primitive (PrimMonad, PrimState)
 import Data.MonoTraversable
+import Data.Ord (comparing)
+import Data.Pairs
+import Data.Triples
+import qualified Data.Vector.Algorithms.Intro as Intro
+import Data.Vector.Algorithms.Search (binarySearchL)
+import qualified Data.Vector.Generic as G
+import qualified Data.Vector.Generic.Mutable as MG
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
+import Data.Vector.Storable.Mutable (MVector)
+import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.C.Types
 import Foreign.ForeignPtr.Safe (newForeignPtr)
 import Foreign.Marshal.Alloc (free, finalizerFree)
@@ -86,32 +97,101 @@ withConstTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ ac
       V.unsafeWith vals_ $ \x ->
       with Cs{..} act
 
+dedupCol
+  :: (Num a, PrimMonad m, Storable a)
+  => MPairs (PrimState m) (CInt, a) -> m CInt
+dedupCol pairs@(MPairs rows vals) = do
+  Intro.sortBy (comparing fst) pairs
+  dedupCol_go 0 1 0
+  where
+    len = MV.length rows
+    dedupCol_go ixW ixR nDel
+      | ixR < len = do
+          rW <- MV.unsafeRead rows ixW
+          rR <- MV.unsafeRead rows ixR
+          xR <- MV.unsafeRead vals ixR
+          MV.unsafeWrite rows ixR (-1)
+          if rW /= rR
+            then do
+              MV.unsafeWrite rows (ixW + 1) rR
+              MV.unsafeWrite vals (ixW + 1) xR
+              dedupCol_go (ixW + 1) (ixR + 1) nDel
+            else do
+              xW <- MV.unsafeRead vals ixW
+              MV.unsafeWrite vals ixW $! xW + xR
+              dedupCol_go ixW (ixR + 1) (nDel + 1)
+      | otherwise = return nDel
+
+compress
+  :: (CxSparse a, Num a, PrimMonad m, Storable a)
+  => Int  -- ^ number of rows
+  -> Int  -- ^ number of columns
+  -> MVector (PrimState m) CInt  -- ^ row indices
+  -> MVector (PrimState m) CInt  -- ^ column indices
+  -> MVector (PrimState m) a  -- ^ values
+  -> m (Matrix a)
+compress nr nc _rows _cols _vals = do
+  let comparingCol (c, _, _) (c', _, _) = compare c c'
+      triples = MTriples _cols _rows _vals
+  Intro.sortBy comparingCol triples
+  colPtrs <- computePtrs nc _cols
+  deduplicate nr nc colPtrs _rows _vals
+
+computePtrs
+  :: PrimMonad m => Int -> MVector (PrimState m) CInt -> m (Vector CInt)
+computePtrs nc cols =
+  V.generateM (nc + 1) $ \c ->
+    liftM fromIntegral $ binarySearchL cols (fromIntegral c)
+
+deduplicate
+  :: (CxSparse a, PrimMonad m, Storable a)
+  => Int
+  -> Int
+  -> Vector CInt  -- ^ column pointers
+  -> MVector (PrimState m) CInt  -- ^ row indices
+  -> MVector (PrimState m) a  -- ^ values
+  -> m (Matrix a)
+deduplicate nRows nColumns _cols _rows _vals = do
+  let starts = V.init $ V.map fromIntegral _cols
+      ends = V.tail $ V.map fromIntegral _cols
+      lens = V.zipWith (-) ends starts
+      pairs = MPairs _rows _vals
+      dels_go ix len = dedupCol $ MG.slice ix len pairs
+  dels <- liftM (V.postscanl (+) 0) $ V.zipWithM dels_go starts lens
+
+  let columnPointers :: Vector CInt
+      columnPointers = V.zipWith (-) _cols (V.cons 0 dels)
+
+  _rows <- V.unsafeFreeze _rows
+  _vals <- V.unsafeFreeze _vals
+  case G.filter ((>= 0) . fst) (Pairs _rows _vals) of
+   Pairs rowIndices values -> return Matrix{..}
+
 fromCs :: CxSparse a => Ptr (Cs a) -> IO (Matrix a)
 fromCs _ptr
   | _ptr == nullPtr = errorWithStackTrace "fromCs: null pointer"
   | otherwise = do
-      _ptr <- do
-        ptr' <- cs_compress _ptr
-        if ptr' == nullPtr
-           then return _ptr
-          else do
-            cs <- peek _ptr
-            free (p cs) >> free (i cs) >> free (x cs) >> free _ptr
-            return ptr'
-      duplStatus <- cs_dupl _ptr
-      unless (duplStatus > 0) $ errorWithStackTrace "fromCs: deduplication failed"
       Cs{..} <- peek _ptr
-      let nRows = fromIntegral m
-          nColumns = fromIntegral n
+      let nr = fromIntegral m
+          nc = fromIntegral n
           nzmax_ = fromIntegral nzmax
-      columnPointers <- mkVector p (nColumns + 1)
-      rowIndices <- mkVector i nzmax_
-      values <- mkVector x nzmax_
+          mkVector ptr len =
+            MV.unsafeFromForeignPtr0
+            <$> newForeignPtr finalizerFree ptr
+            <*> pure len
+      rows <- mkVector i nzmax_
+      vals <- mkVector x nzmax_
+      mat <- if nz < 0
+                then do
+                  cols <- V.unsafeFromForeignPtr0
+                          <$> newForeignPtr finalizerFree p
+                          <*> pure (nc + 1)
+                  deduplicate nr nc cols rows vals
+             else do
+                  cols <- mkVector p nzmax_
+                  compress nr nc rows cols vals
       free _ptr
-      return Matrix{..}
-  where
-    mkVector ptr len =
-      V.unsafeFromForeignPtr0 <$> newForeignPtr finalizerFree ptr <*> pure len
+      return mat
 
 toColumns :: Storable a => Matrix a -> [SpV.Vector a]
 toColumns = \Matrix{..} ->
@@ -119,7 +199,11 @@ toColumns = \Matrix{..} ->
       ends = map fromIntegral $ V.toList $ V.tail columnPointers
       lens = zipWith (-) ends starts
       chop :: Storable b => Vector b -> [Vector b]
-      chop v = zipWith (\n len -> V.slice n len v) starts lens
+      chop v = zipWith chop_go starts lens
+        where
+          chop_go n len
+            | len > 0 = V.slice n len v
+            | otherwise = V.empty
   in do
     (inds, vals) <- zip (chop rowIndices) (chop values)
     return SpV.Vector
@@ -129,10 +213,14 @@ toColumns = \Matrix{..} ->
       }
 
 nondecreasing :: (Ord a, Storable a) => Vector a -> Bool
-nondecreasing vec = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
+nondecreasing vec
+  | V.null vec = True
+  | otherwise = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
 
 increasing :: (Ord a, Storable a) => Vector a -> Bool
-increasing vec = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
+increasing vec
+  | V.null vec = True
+  | otherwise = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
 
 assertValid :: Storable a => Matrix a -> Matrix a
 assertValid mat@Matrix{..}

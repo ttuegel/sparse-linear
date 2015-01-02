@@ -17,6 +17,8 @@ library
     Data.Cs
     Data.Matrix
     Data.Matrix.Sparse
+    Data.Pairs
+    Data.Triples
     Data.Vector.Sparse
     Numeric.LinearAlgebra.Feast
     Numeric.LinearAlgebra.Sparse
@@ -27,6 +29,7 @@ library
     , global-lock >=0.1 && <1
     , loops >=0.3 && <1
     , mono-traversable >=0.6 && <1
+    , primitive >=0.5 && <1
     , storable-complex >=0.2 && <1
     , vector >=0.10 && <1
     , vector-algorithms >=0.6 && <1

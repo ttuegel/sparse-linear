@@ -23,6 +23,7 @@ data Vector a = Vector
   , indices :: !(V.Vector CInt)
   , values :: !(V.Vector a)
   }
+  deriving (Eq, Show)
 
 fromPairs :: (Storable a, Unbox a) => Int -> U.Vector (Int, a) -> Vector a
 {-# INLINE fromPairs #-}

@@ -3,12 +3,9 @@
 
 module Test.LinearAlgebra where
 
-import Control.Applicative
 import Data.Traversable
 import Data.Vector.Storable (Storable, Vector)
 import qualified Data.Vector.Storable as V
-import Data.Vector.Unboxed (Unbox)
-import qualified Data.Vector.Unboxed as U
 import Test.QuickCheck
 
 import Data.Matrix.Sparse
@@ -18,22 +15,26 @@ import Numeric.LinearAlgebra.Sparse
 instance (Arbitrary a, Storable a) => Arbitrary (Vector a) where
     arbitrary = fmap V.fromList $ suchThat arbitrary $ \v -> length v > 0
 
-instance (Arbitrary a, CxSparse a, Storable a, Unbox a) => Arbitrary (Matrix a) where
+instance (Arbitrary a, CxSparse a) => Arbitrary (Matrix a) where
     arbitrary = do
       nr <- arbitrary `suchThat` (> 0)
       let nc = nr
-          ixs = do
-            r <- [0..(nr - 1)]
-            c <- [0..(nc - 1)]
-            return (r, c)
-      xs <- forM ixs $ \(r, c) -> (,,) r c <$> arbitrary
-      return $ compress nr nc $ U.fromList xs
+      triples <- forM [0..(nr * nr `div` 4)] $ \_ -> do
+        r <- arbitrary `suchThat` (\r -> r >= 0 && r < nr)
+        c <- arbitrary `suchThat` (\c -> c >= 0 && c < nc)
+        x <- arbitrary
+        return (r, c, x)
+      return $ fromTriples nr nc triples
 
 nondecreasing :: (Ord a, Storable a) => Vector a -> Bool
-nondecreasing vec = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
+nondecreasing vec
+  | V.null vec = True
+  | otherwise = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
 
 increasing :: (Ord a, Storable a) => Vector a -> Bool
-increasing vec = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
+increasing vec
+  | V.null vec = True
+  | otherwise = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
 
 prop_columnPointersNondecreasing :: Matrix a -> Bool
 prop_columnPointersNondecreasing Matrix{..} = nondecreasing columnPointers
@@ -47,3 +48,10 @@ prop_valuesLength Matrix{..} =
 
 prop_rowIndicesIncreasing :: Storable a => Matrix a -> Bool
 prop_rowIndicesIncreasing mat = all (increasing . SpV.indices) (toColumns mat)
+
+prop_rowIndicesNonNegative :: Storable a => Matrix a -> Bool
+prop_rowIndicesNonNegative mat = V.all (>= 0) (rowIndices mat)
+
+prop_rowIndicesInRange :: Storable a => Matrix a -> Bool
+prop_rowIndicesInRange mat = V.all (< nr) (rowIndices mat)
+  where nr = fromIntegral $ nRows mat

@@ -5,6 +5,7 @@
 module Data.Cs (Cs(..), CInt(..), Ptr, CxSparse(..)) where
 
 import Control.Applicative
+import Data.Vector.Unboxed (Unbox)
 import Foreign.C.Types (CInt(..))
 import Foreign.Ptr (Ptr)
 import Foreign.Storable
@@ -85,7 +86,7 @@ type CsMultiply a = Ptr (Cs a) -> Ptr (Cs a) -> IO (Ptr (Cs a))
 type CsAdd a = Ptr (Cs a) -> Ptr (Cs a) -> Ptr a -> Ptr a -> IO (Ptr (Cs a))
 type CsDiag a = Ptr (Cs a) -> IO (Ptr a)
 
-class (Storable a, Storable (Cs a)) => CxSparse a where
+class (Num a, Storable a, Storable (Cs a), Unbox a) => CxSparse a where
   cs_dupl :: CsDupl a
   cs_gaxpy :: CsGaxpy a
   cs_compress :: CsCompress a

@@ -12,6 +12,14 @@ import Test.LinearAlgebra
 main :: IO ()
 main = hspec $ do
   describe "Numeric.LinearAlgebra.Sparse" $ do
+    describe "fromTriples" $ do
+      it "row indices non-negative" $ property (prop_rowIndicesNonNegative :: Matrix (Complex Double) -> Bool)
+      it "row indices in range" $ property (prop_rowIndicesInRange :: Matrix (Complex Double) -> Bool)
+      it "row indices increasing" $ property (prop_rowIndicesIncreasing :: Matrix (Complex Double) -> Bool)
+      it "values length" $ property (prop_valuesLength :: Matrix (Complex Double) -> Bool)
+      it "column pointers length" $ property (prop_columnPointersLength :: Matrix (Complex Double) -> Bool)
+      it "column pointers nondecreasing" $ property (prop_columnPointersNondecreasing :: Matrix (Complex Double) -> Bool)
+
     describe "kronecker" $ do
       it "assembles identity matrices" $ property prop_kroneckerIdent
       it "row indices increasing" $ property prop_kroneckerRowIndicesIncreasing
@@ -41,6 +49,11 @@ main = hspec $ do
 
     describe "ctrans" $ do
       it "self-inverse" $ property prop_ctransId
+      it "preserves diagonal of real matrices" $ property prop_ctransDiag
+      it "preserves hermitian matrices" $ do
+          let m :: Matrix (Complex Double)
+              m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
+          m `shouldBe` ctrans m
 
     describe "mul" $ do
       it "identity on matrices" $ property prop_mulId
@@ -86,8 +99,10 @@ prop_kroneckerColumnPointersLength a b =
   prop_columnPointersLength $ kronecker a b
 
 prop_kroneckerValuesLength
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_kroneckerValuesLength a b = prop_valuesLength $ kronecker a b
+  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Property
+prop_kroneckerValuesLength a b =
+  let k = kronecker a b
+  in counterexample (show k) $ prop_valuesLength k
 
 prop_takeDiag :: Vector (Complex Double) -> Bool
 prop_takeDiag v = takeDiag (diag v) == v
@@ -97,9 +112,10 @@ prop_identMulV v = mulV identM v == v
   where
     identM = ident (V.length v)
 
-prop_addInv :: Matrix (Complex Double) -> Bool
-prop_addInv m = lin 1 m (-1) m == m0
+prop_addInv :: Matrix (Complex Double) -> Property
+prop_addInv m = counterexample (show subtracted) (subtracted == m0)
   where
+    subtracted = lin 1 m (-1) m
     m0 = omap (const 0) m
 
 prop_addId :: Matrix (Complex Double) -> Bool
@@ -136,6 +152,11 @@ prop_transposeDiag v = m == transpose m
 
 prop_ctransId :: Matrix (Complex Double) -> Bool
 prop_ctransId m = ctrans (ctrans m) == m
+
+prop_ctransDiag :: Vector Double -> Bool
+prop_ctransDiag v = m == ctrans m
+  where
+    m = diag v
 
 prop_mulId :: Matrix (Complex Double) -> Bool
 prop_mulId m = m `mul` (ident $ nColumns m) == m

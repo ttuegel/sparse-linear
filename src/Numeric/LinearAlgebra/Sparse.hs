@@ -28,8 +28,6 @@ import Data.Foldable
 import qualified Data.List as List
 import Data.Maybe
 import Data.MonoTraversable
-import Data.Vector.Unboxed (Unbox)
-import qualified Data.Vector.Unboxed as U
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable.Mutable (IOVector)
@@ -48,7 +46,7 @@ import Data.Complex.Enhanced
 import Data.Matrix.Sparse
 import qualified Data.Vector.Sparse as SpV
 
-instance (CxSparse a, Num a) => Num (Matrix a) where
+instance CxSparse a => Num (Matrix a) where
   {-# SPECIALIZE instance Num (Matrix Double) #-}
   {-# SPECIALIZE instance Num (Matrix (Complex Double)) #-}
   (+) = add
@@ -68,22 +66,15 @@ mul = mul_go where
     withConstCs _b $ \_b ->
       cs_multiply _a _b >>= fromCs
 
-compress
-  :: (CxSparse a, Unbox a) => Int -> Int -> U.Vector (Int, Int, a) -> Matrix a
-compress = compress_go where
-  {-# NOINLINE compress_go #-}
-  compress_go nr nc (U.unzip3 -> (rs, cs, xs)) =
-    unsafePerformIO $
-    withConstTriples nr nc (V.convert rs) (V.convert cs) (V.convert xs) $ \pcs ->
-      cs_compress pcs >>= fromCs
-
 fromTriples :: CxSparse a => Int -> Int -> [(Int, Int, a)] -> Matrix a
 fromTriples = fromTriples_go where
   {-# NOINLINE fromTriples_go #-}
-  fromTriples_go nr nc (unzip3 -> (rs, cs, xs)) =
-    unsafePerformIO $
-    withConstTriples nr nc (V.fromList rs) (V.fromList cs) (V.fromList xs)
-      $ \ptr -> cs_compress ptr >>= fromCs
+  fromTriples_go nr nc (unzip3 -> (_rs, _cs, _xs)) =
+    unsafePerformIO $ do
+      _rs <- V.unsafeThaw $ V.fromList $ map fromIntegral _rs
+      _cs <- V.unsafeThaw $ V.fromList $ map fromIntegral _cs
+      _xs <- V.unsafeThaw $ V.fromList _xs
+      compress nr nc _rs _cs _xs
 
 (><) :: CxSparse a => Int -> Int -> [(Int, Int, a)] -> Matrix a
 (><) = fromTriples
@@ -130,10 +121,10 @@ lin = lin_go where
     with _beta $ \_beta ->
       cs_add _a _b _alpha _beta >>= fromCs
 
-add :: (CxSparse a, Num a) => Matrix a -> Matrix a -> Matrix a
+add :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 add a b = lin 1 a 1 b
 
-gaxpy_ :: (CxSparse a) => Matrix a -> IOVector a -> IOVector a -> IO ()
+gaxpy_ :: CxSparse a => Matrix a -> IOVector a -> IOVector a -> IO ()
 gaxpy_ _a _x _y =
   withConstCs _a $ \_a ->
   MV.unsafeWith _x $ \_x ->
@@ -150,7 +141,7 @@ gaxpy = gaxpy_go where
       gaxpy_ a _x _y
       V.unsafeFreeze _y
 
-mulV :: (CxSparse a, Num a) => Matrix a -> Vector a -> Vector a
+mulV :: CxSparse a => Matrix a -> Vector a -> Vector a
 mulV = mulV_go where
   {-# NOINLINE mulV_go #-}
   mulV_go a _x =
@@ -175,12 +166,12 @@ hcat a b
     nc = nColumns a + nColumns b
     nza = V.last $ columnPointers a
 
-vcat :: (CxSparse a, Storable a) => Matrix a -> Matrix a -> Matrix a
+vcat :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 vcat a b
   | nColumns a /= nColumns b = errorWithStackTrace "column dimension mismatch"
   | otherwise = transpose $ hcat (transpose a) (transpose b)
 
-fromBlocks :: (CxSparse a, Storable a) => [[Maybe (Matrix a)]] -> Matrix a
+fromBlocks :: CxSparse a => [[Maybe (Matrix a)]] -> Matrix a
 fromBlocks = foldl1 vcat . map (foldl1 hcat) . fixDimsByRow
 
 fixDimsByRow :: Storable a => [[Maybe (Matrix a)]] -> [[Matrix a]]
@@ -210,7 +201,7 @@ fixDimsByRow rows = do
           errorWithStackTrace "fixDimsByRow: incompatible widths"
       | otherwise = V.fromList $ map head widthSpecs
 
-fromBlocksDiag :: (CxSparse a, Storable a) => [[Maybe (Matrix a)]] -> Matrix a
+fromBlocksDiag :: CxSparse a => [[Maybe (Matrix a)]] -> Matrix a
 fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . List.transpose where
   rejoin = \n mats -> let (rs, ls) = splitAt n mats in ls ++ rs
 
