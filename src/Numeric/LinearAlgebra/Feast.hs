@@ -86,8 +86,8 @@ geigSH
   -> Sparse.Matrix a -> Sparse.Matrix a
   -> (Vector (RealOf a), Dense.Matrix a)
 geigSH !m0 (!_emin, !_emax) !matA !matB
-  | not (assertEq matA matA') = errorWithStackTrace "matrix A must be hermitian"
-  | not (assertEq matB matB') = errorWithStackTrace "matrix B must be hermitian"
+  | matA /= matA' = errorWithStackTrace "matrix A must be hermitian"
+  | matB /= matB' = errorWithStackTrace "matrix B must be hermitian"
   | nRows matA /= nRows matB =
       errorWithStackTrace "matrices A and B must be the same size"
   | otherwise = geigH_go
