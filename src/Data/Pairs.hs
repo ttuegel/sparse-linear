@@ -7,20 +7,20 @@
 module Data.Pairs where
 
 import Control.Monad (liftM2)
+import Data.Vector.Generic (Mutable, Vector)
 import qualified Data.Vector.Generic as G
+import Data.Vector.Generic.Mutable (MVector)
 import qualified Data.Vector.Generic.Mutable as MG
-import Data.Vector.Storable (Storable, Vector)
-import Data.Vector.Storable.Mutable (MVector)
 
-data MPairs :: * -> * -> * where
-  MPairs :: !(MVector s a) -> !(MVector s b) -> MPairs s (a, b)
+data MPairs :: (* -> * -> *) -> * -> * -> * where
+  MPairs :: !(v s a) -> !(v s b) -> MPairs v s (a, b)
 
-data Pairs :: * -> * where
-  Pairs :: !(Vector a) -> !(Vector b) -> Pairs (a, b)
+data Pairs :: (* -> *) -> * -> * where
+  Pairs :: !(v a) -> !(v b) -> Pairs v (a, b)
 
-type instance G.Mutable Pairs = MPairs
+type instance Mutable (Pairs v) = MPairs (Mutable v)
 
-instance (Storable a, Storable b) => MG.MVector MPairs (a, b) where
+instance (MVector v a, MVector v b) => MVector (MPairs v) (a, b) where
   {-# INLINE basicLength #-}
   {-# INLINE basicUnsafeSlice #-}
   {-# INLINE basicOverlaps #-}
@@ -46,7 +46,7 @@ instance (Storable a, Storable b) => MG.MVector MPairs (a, b) where
     MG.basicUnsafeWrite rs ix r
     MG.basicUnsafeWrite xs ix x
 
-instance (Storable a, Storable b) => G.Vector Pairs (a, b) where
+instance (Vector v a, Vector v b) => Vector (Pairs v) (a, b) where
   {-# INLINE basicUnsafeFreeze #-}
   {-# INLINE basicUnsafeThaw #-}
   {-# INLINE basicLength #-}
