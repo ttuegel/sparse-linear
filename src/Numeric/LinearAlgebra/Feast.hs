@@ -185,10 +185,11 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                   gaxpy_ mat x dst
           geigSH_go
 
-          _eigenvalues <- V.unsafeFreeze _eigenvalues
-          _eigenvectors <- V.unsafeFreeze _eigenvectors
+          m <- fromIntegral <$> peek mode
+          _eigenvalues <- V.unsafeFreeze $ MV.slice 0 m _eigenvalues
+          _eigenvectors <- V.unsafeFreeze $ MV.slice 0 (m * n) _eigenvectors
 
-          return (_eigenvalues, Dense.fromVector m0 m0 _eigenvectors)
+          return (_eigenvalues, Dense.fromVector n m _eigenvectors)
 {-# INLINE geigSH #-}
 
 eigSH
