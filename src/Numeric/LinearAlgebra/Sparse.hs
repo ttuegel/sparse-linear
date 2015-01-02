@@ -64,7 +64,7 @@ mul = mul_go where
     unsafePerformIO $
     withConstCs _a $ \_a ->
     withConstCs _b $ \_b ->
-      cs_multiply _a _b >>= fromCs
+      cs_multiply _a _b >>= fromCs False
 
 fromTriples :: CxSparse a => Int -> Int -> [(Int, Int, a)] -> Matrix a
 fromTriples = fromTriples_go where
@@ -85,7 +85,7 @@ transpose = transpose_go where
   transpose_go mat =
     unsafePerformIO $
     withConstCs mat $ \cs ->
-      cs_transpose cs (V.length $ values mat) >>= fromCs
+      cs_transpose cs (V.length $ values mat) >>= fromCs False
 
 toRows :: CxSparse a => Matrix a -> [SpV.Vector a]
 toRows = toColumns . transpose
@@ -119,7 +119,7 @@ lin = lin_go where
     withConstCs _b $ \_b ->
     with _alpha $ \_alpha ->
     with _beta $ \_beta ->
-      cs_add _a _b _alpha _beta >>= fromCs
+      cs_add _a _b _alpha _beta >>= fromCs True
 
 add :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 add a b = lin 1 a 1 b
@@ -212,7 +212,7 @@ kronecker = kronecker_go where
     unsafePerformIO $
     withConstCs _a $ \_a ->
     withConstCs _b $ \_b ->
-      cs_kron _a _b >>= fromCs
+      cs_kron _a _b >>= fromCs False
 
 takeDiag :: CxSparse a => Matrix a -> Vector a
 takeDiag = takeDiag_go where

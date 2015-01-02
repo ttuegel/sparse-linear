@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
@@ -99,26 +100,23 @@ withConstTriples (fromIntegral -> m) (fromIntegral -> n) colps_ rowixs_ vals_ ac
 
 dedupCol
   :: (Num a, PrimMonad m, Storable a)
-  => MPairs (PrimState m) (CInt, a) -> m CInt
+  => MPairs MVector (PrimState m) (CInt, a) -> m CInt
 dedupCol pairs@(MPairs rows vals) = do
   Intro.sortBy (comparing fst) pairs
   dedupCol_go 0 1 0
   where
     len = MV.length rows
-    dedupCol_go ixW ixR nDel
+    dedupCol_go !ixW !ixR !nDel
       | ixR < len = do
           rW <- MV.unsafeRead rows ixW
           rR <- MV.unsafeRead rows ixR
-          xR <- MV.unsafeRead vals ixR
-          MV.unsafeWrite rows ixR (-1)
           if rW /= rR
-            then do
-              MV.unsafeWrite rows (ixW + 1) rR
-              MV.unsafeWrite vals (ixW + 1) xR
-              dedupCol_go (ixW + 1) (ixR + 1) nDel
+            then dedupCol_go ixR (ixR + 1) nDel
             else do
+              xR <- MV.unsafeRead vals ixR
               xW <- MV.unsafeRead vals ixW
               MV.unsafeWrite vals ixW $! xW + xR
+              MV.unsafeWrite rows ixR (-1)
               dedupCol_go ixW (ixR + 1) (nDel + 1)
       | otherwise = return nDel
 
@@ -132,8 +130,7 @@ compress
   -> m (Matrix a)
 compress nr nc _rows _cols _vals = do
   let comparingCol (c, _, _) (c', _, _) = compare c c'
-      triples = MTriples _cols _rows _vals
-  Intro.sortBy comparingCol triples
+  Intro.sortBy comparingCol $ MTriples _cols _rows _vals
   colPtrs <- computePtrs nc _cols
   deduplicate nr nc colPtrs _rows _vals
 
@@ -167,8 +164,8 @@ deduplicate nRows nColumns _cols _rows _vals = do
   case G.filter ((>= 0) . fst) (Pairs _rows _vals) of
    Pairs rowIndices values -> return Matrix{..}
 
-fromCs :: CxSparse a => Ptr (Cs a) -> IO (Matrix a)
-fromCs _ptr
+fromCs :: CxSparse a => Bool -> Ptr (Cs a) -> IO (Matrix a)
+fromCs doDedup _ptr
   | _ptr == nullPtr = errorWithStackTrace "fromCs: null pointer"
   | otherwise = do
       Cs{..} <- peek _ptr
@@ -179,17 +176,28 @@ fromCs _ptr
             MV.unsafeFromForeignPtr0
             <$> newForeignPtr finalizerFree ptr
             <*> pure len
-      rows <- mkVector i nzmax_
-      vals <- mkVector x nzmax_
+      _rows <- mkVector i nzmax_
+      _vals <- mkVector x nzmax_
       mat <- if nz < 0
                 then do
                   cols <- V.unsafeFromForeignPtr0
                           <$> newForeignPtr finalizerFree p
                           <*> pure (nc + 1)
-                  deduplicate nr nc cols rows vals
+                  if doDedup
+                    then deduplicate nr nc cols _rows _vals
+                    else do
+                      _rows <- V.unsafeFreeze _rows
+                      _vals <- V.unsafeFreeze _vals
+                      return Matrix
+                        { nRows = nr
+                        , nColumns = nc
+                        , columnPointers = cols
+                        , rowIndices = _rows
+                        , values = _vals
+                        }
              else do
                   cols <- mkVector p nzmax_
-                  compress nr nc rows cols vals
+                  compress nr nc _rows cols _vals
       free _ptr
       return mat
 
