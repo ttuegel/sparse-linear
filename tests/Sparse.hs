@@ -51,9 +51,17 @@ main = hspec $ do
       it "self-inverse" $ property prop_ctransId
       it "preserves diagonal of real matrices" $ property prop_ctransDiag
       it "preserves hermitian matrices" $ do
-          let m :: Matrix (Complex Double)
-              m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
-          m `shouldBe` ctrans m
+        let m :: Matrix (Complex Double)
+            m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
+        m `shouldBe` ctrans m
+      it "preserves sigma_x" $ do
+        let m :: Matrix (Complex Double)
+            m = fromTriples 2 2 [(0, 1, 1), (1, 0, 1)]
+        m `shouldBe` ctrans m
+      it "preserves sigma_y" $ do
+        let m :: Matrix (Complex Double)
+            m = fromTriples 2 2 [(0, 1, 0 :+ (-1)), (1, 0, 0 :+ 1)]
+        m `shouldBe` ctrans m
 
     describe "mul" $ do
       it "identity on matrices" $ property prop_mulId
@@ -221,6 +229,7 @@ prop_fromBlocksDiagValuesLength x y =
   prop_valuesLength
   $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
 
+{-
 prop_fromBlocksDiagHermitian :: [Vector (Complex Double)] -> Property
 prop_fromBlocksDiagHermitian diags =
   (n >= 2) ==> hermitian superm
@@ -235,3 +244,8 @@ prop_fromBlocksDiagHermitian diags =
         , replicate (n - 2) (replicate (n + 1) Nothing)
         , [[Nothing] ++ map Just mats']
         ]
+-}
+
+prop_fromBlocksDiagHermitian :: Matrix (Complex Double) -> Bool
+prop_fromBlocksDiagHermitian a =
+  hermitian $ fromBlocksDiag [[Nothing, Nothing], [Just a, Just $ ctrans a]]
