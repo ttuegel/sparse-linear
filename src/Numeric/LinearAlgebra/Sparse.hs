@@ -15,7 +15,7 @@ module Numeric.LinearAlgebra.Sparse
     , lin
     , add
     , gaxpy, gaxpy_, mulV
-    , hcat, vcat, fromBlocks, fromBlocksDiag
+    , hjoin, vjoin, hcat, vcat, fromBlocks, fromBlocksDiag
     , kronecker
     , takeDiag, diag, ident
     , zeros
@@ -23,7 +23,8 @@ module Numeric.LinearAlgebra.Sparse
     ) where
 
 import Control.Applicative
-import Control.Monad (void)
+import Control.Monad (void, zipWithM_)
+import Control.Monad.ST (runST)
 import Data.Foldable
 import qualified Data.List as List
 import Data.Maybe
@@ -37,7 +38,7 @@ import Foreign.Marshal.Alloc (finalizerFree)
 import Foreign.Marshal.Utils (with)
 import Foreign.Storable
 import GHC.Stack
-import Prelude hiding (any, foldl1)
+import Prelude hiding (any, foldl1, foldr1)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Debug.Trace (traceShow)
@@ -143,8 +144,8 @@ mulV = mulV_go where
       gaxpy_ a _x y
       V.unsafeFreeze y
 
-hcat :: Storable a => Matrix a -> Matrix a -> Matrix a
-hcat a b
+hjoin :: Storable a => Matrix a -> Matrix a -> Matrix a
+hjoin a b
   | nRows a /= nRows b = errorWithStackTrace "row dimension mismatch"
   | otherwise = Matrix
       { nRows = nRows a
@@ -158,13 +159,71 @@ hcat a b
     nc = nColumns a + nColumns b
     nza = V.last $ columnPointers a
 
-vcat :: CxSparse a => Matrix a -> Matrix a -> Matrix a
-vcat a b
+vjoin :: CxSparse a => Matrix a -> Matrix a -> Matrix a
+vjoin a b
   | nColumns a /= nColumns b = errorWithStackTrace "column dimension mismatch"
-  | otherwise = transpose $ hcat (transpose a) (transpose b)
+  | otherwise = transpose $ hjoin (transpose a) (transpose b)
+
+hcat :: Storable a => [Matrix a] -> Matrix a
+hcat matrices
+  | null matrices = errorWithStackTrace "hcat: empty list"
+  | any ((/= nr) . nRows) matrices =
+      errorWithStackTrace "hcat: row dimension mismatch"
+  | otherwise =
+      Matrix
+      { nRows = nr
+      , nColumns = foldl' (+) 0 $ map nColumns matrices
+      , columnPointers = V.scanl' (+) 0 $ V.concat $ map columnLengths matrices
+      , rowIndices = V.concat $ map rowIndices matrices
+      , values = V.concat $ map values matrices
+      }
+  where
+    nr = nRows $ head matrices
+
+vcat :: CxSparse a => [Matrix a] -> Matrix a
+vcat matrices
+  | null matrices = errorWithStackTrace "vcat: empty list"
+  | any ((/= nc) . nColumns) matrices =
+      errorWithStackTrace "vcat: column dimension mismatch"
+  | otherwise = runST $ do
+      let colPtrs =
+            V.scanl' (+) 0  -- prefix sum to compute result column pointers
+            $ foldl1 (V.zipWith (+))  -- lengths of columns in result
+            $ map columnLengths matrices  -- lengths of columns in each matrix
+
+      rows <- MV.new nz
+      vals <- MV.new nz
+      offs <- V.thaw $ V.map fromIntegral $ V.slice 0 nc colPtrs
+
+      let copyMat mat roff = do
+            let rs = V.map (+ roff) $ rowIndices mat
+                xs = values mat
+                ptrs = columnPointers mat
+            V.forM_ (V.enumFromN 0 nc) $ \c -> do
+              off <- MV.unsafeRead offs c
+              start <- fromIntegral <$> V.unsafeIndexM ptrs c
+              end <- fromIntegral <$> V.unsafeIndexM ptrs (c + 1)
+              let len = end - start
+              V.copy (MV.slice off len rows) (V.slice start len rs)
+              V.copy (MV.slice off len vals) (V.slice start len xs)
+              MV.unsafeWrite offs c $! off + len
+      zipWithM_ copyMat matrices roffs
+
+      let nRows = nr
+          nColumns = nc
+          columnPointers = colPtrs
+      values <- V.unsafeFreeze vals
+      rowIndices <- V.unsafeFreeze rows
+
+      return Matrix {..}
+  where
+    nr = foldl' (+) 0 $ map nRows matrices
+    roffs = scanl (+) 0 $ map (fromIntegral . nRows) matrices
+    nc = nColumns $ head matrices
+    nz = foldl' (+) 0 $ map (V.length . values) matrices
 
 fromBlocks :: CxSparse a => [[Maybe (Matrix a)]] -> Matrix a
-fromBlocks = foldl1 vcat . map (foldl1 hcat) . fixDimsByRow
+fromBlocks = vcat . map hcat . fixDimsByRow
 
 fixDimsByRow :: Storable a => [[Maybe (Matrix a)]] -> [[Matrix a]]
 fixDimsByRow rows = do
