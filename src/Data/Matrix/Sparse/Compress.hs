@@ -8,8 +8,8 @@ module Data.Matrix.Sparse.Compress
        , transpose
        ) where
 
-import Control.Monad (liftM, zipWithM_)
 import Control.Applicative
+import Control.Monad (liftM, void)
 import Control.Monad.ST (runST)
 import Data.Ord (comparing)
 import Control.Monad.Primitive (PrimMonad, PrimState)
@@ -100,14 +100,11 @@ decompress Matrix{..} = do
   rows <- V.thaw rowIndices
   vals <- V.thaw values
   cols <- MV.new $ MV.length rows
-  let decompressCols (start, end) c = do
-        let sl = MV.slice start (end - start) cols
-        MV.set sl c
-  zipWithM_ decompressCols extents [0..]
+  V.forM_ (V.enumFromN 0 nColumns) $ \c -> do
+    start <- liftM fromIntegral $ V.unsafeIndexM columnPointers c
+    end <- liftM fromIntegral $ V.unsafeIndexM columnPointers (c + 1)
+    MV.set (MV.slice start (end - start) cols) $ fromIntegral c
   return (nRows, nColumns, rows, cols, vals)
-  where
-    extents = zip ps $ tail ps
-      where ps = map fromIntegral $ V.toList columnPointers
 
 transpose :: (Num a, Storable a) => Matrix a -> Matrix a
 transpose Matrix{..} = runST $ do
