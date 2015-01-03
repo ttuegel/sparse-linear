@@ -53,7 +53,7 @@ withConstCs Matrix{..} act = do
         m = fromIntegral $ nRows
         n = fromIntegral $ nColumns
         nz = -1
-    V.unsafeWith (V.map fromIntegral columnPointers) $ \p ->
-      V.unsafeWith (V.map fromIntegral rowIndices) $ \i ->
+    V.unsafeWith columnPointers $ \p ->
+      V.unsafeWith rowIndices $ \i ->
       V.unsafeWith values $ \x ->
       with Cs{..} act
