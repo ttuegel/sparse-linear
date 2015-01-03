@@ -8,7 +8,7 @@
 
 module Data.Matrix.Sparse
     ( Matrix(..), cmap
-    , compress, decompress, deduplicate
+    , compress, decompress
     , transpose
     , toColumns, assertValid
     , module Data.Cs, fromCs, withConstCs

@@ -71,10 +71,10 @@ fromTriples = fromTriples_go where
   {-# NOINLINE fromTriples_go #-}
   fromTriples_go nr nc (unzip3 -> (_rs, _cs, _xs)) =
     unsafePerformIO $ do
-      _rs <- V.unsafeThaw $ V.fromList $ map fromIntegral _rs
-      _cs <- V.unsafeThaw $ V.fromList $ map fromIntegral _cs
-      _xs <- V.unsafeThaw $ V.fromList _xs
-      compress nr nc _rs _cs _xs
+      _rs <- return $ V.fromList $ map fromIntegral _rs
+      _cs <- return $ V.fromList $ map fromIntegral _cs
+      _xs <- return $ V.fromList _xs
+      return $ compress nr nc _rs _cs _xs
 
 (><) :: CxSparse a => Int -> Int -> [(Int, Int, a)] -> Matrix a
 (><) = fromTriples

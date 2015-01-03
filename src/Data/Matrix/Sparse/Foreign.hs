@@ -28,31 +28,23 @@ fromCs doDedup _ptr
           nc = fromIntegral n
           nzmax_ = fromIntegral nzmax
           mkVector ptr len =
-            MV.unsafeFromForeignPtr0
+            V.unsafeFromForeignPtr0
             <$> newForeignPtr finalizerFree ptr
             <*> pure len
       _rows <- mkVector i nzmax_
       _vals <- mkVector x nzmax_
+      _cols <- mkVector p (if nz < 0 then nc + 1 else nzmax_)
       mat <- if nz < 0
-                then do
-                  cols <- V.unsafeFromForeignPtr0
-                          <$> newForeignPtr finalizerFree p
-                          <*> pure (nc + 1)
-                  if doDedup
-                    then deduplicate nr nc cols _rows _vals
-                    else do
-                      _rows <- V.unsafeFreeze _rows
-                      _vals <- V.unsafeFreeze _vals
-                      return Matrix
-                        { nRows = nr
-                        , nColumns = nc
-                        , columnPointers = cols
-                        , rowIndices = _rows
-                        , values = _vals
-                        }
-             else do
-                  cols <- mkVector p nzmax_
-                  compress nr nc _rows cols _vals
+             then if doDedup
+                  then return $ compress nr nc _rows (decompress _cols) _vals
+                  else return Matrix
+                    { nRows = nr
+                    , nColumns = nc
+                    , columnPointers = _cols
+                    , rowIndices = _rows
+                    , values = _vals
+                    }
+             else return $ compress nr nc _rows _cols _vals
       free _ptr
       return mat
 
