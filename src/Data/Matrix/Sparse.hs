@@ -11,7 +11,6 @@ module Data.Matrix.Sparse
     , compress, decompress
     , transpose
     , toColumns, assertValid
-    , columnLengths
     , module Data.Cs, fromCs, withConstCs
     ) where
 
@@ -65,7 +64,3 @@ assertValid mat@Matrix{..}
   | any (not . increasing . SpV.indices) (toColumns mat) =
       errorWithStackTrace "row indices are not increasing"
   | otherwise = mat
-
-columnLengths :: Matrix a -> Vector CInt
-columnLengths Matrix{..} =
-  V.zipWith (-) (V.tail columnPointers) (V.init columnPointers)
