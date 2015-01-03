@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Data.Matrix.Sparse.Compress
        ( compress, decompress
@@ -9,12 +10,11 @@ module Data.Matrix.Sparse.Compress
        ) where
 
 import Control.Applicative
-import Control.Monad (liftM, void)
+import Control.Monad (liftM)
 import Control.Monad.ST (runST)
 import Data.Ord (comparing)
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import qualified Data.Vector.Algorithms.Intro as Intro
-import Data.Vector.Algorithms.Search (binarySearchL)
 import qualified Data.Vector.Generic as GV
 import qualified Data.Vector.Generic.Mutable as GMV
 import Data.Vector.Storable (Storable, Vector)
@@ -38,14 +38,19 @@ compress
 compress nr nc _rows _cols _vals = do
   let comparingCol (c, _, _) (c', _, _) = compare c c'
   Intro.sortBy comparingCol $ MTriples _cols _rows _vals
-  colPtrs <- computePtrs nc _cols
+  _cols <- V.unsafeFreeze _cols
+  let colPtrs = computePtrs nc _cols
   deduplicate nr nc colPtrs _rows _vals
 
-computePtrs
-  :: PrimMonad m => Int -> MVector (PrimState m) CInt -> m (Vector CInt)
-computePtrs nc cols =
-  V.generateM (nc + 1) $ \c ->
-    liftM fromIntegral $ binarySearchL cols (fromIntegral c)
+computePtrs :: Int -> Vector CInt -> Vector CInt
+computePtrs n indices = runST $ do
+  counts <- MV.replicate n 0
+  -- scan the indices once, counting the occurrences of each index
+  V.forM_ indices $ \(fromIntegral -> ix) -> do
+    count <- MV.unsafeRead counts ix
+    MV.unsafeWrite counts ix $! count + 1
+  -- compute the index pointers by prefix-summing the occurrence counts
+  V.scanl (+) 0 <$> V.unsafeFreeze counts
 
 deduplicate
   :: (Num a, PrimMonad m, Storable a)
@@ -108,11 +113,9 @@ decompress Matrix{..} = do
 
 transpose :: (Num a, Storable a) => Matrix a -> Matrix a
 transpose Matrix{..} = runST $ do
-  rowCount <- MV.replicate nRows 0
-  V.forM_ rowIndices $ void . preincrement rowCount . fromIntegral
-  rowPointers <- V.scanl (+) 0 <$> V.freeze rowCount
+  let rowPointers = computePtrs nRows rowIndices
   -- re-initialize row counts from row pointers
-  V.copy rowCount $ V.slice 0 nRows rowPointers
+  rowCount <- V.thaw $ V.slice 0 nRows rowPointers
 
   let nz = V.length values
   cols <- MV.new nz
