@@ -164,34 +164,34 @@ vcat a b
   | otherwise = transpose $ hcat (transpose a) (transpose b)
 
 fromBlocks :: CxSparse a => [[Maybe (Matrix a)]] -> Matrix a
-fromBlocks = foldl1 vcat . map (foldl1 hcat) . fixDimsByRow
-
-fixDimsByRow :: Storable a => [[Maybe (Matrix a)]] -> [[Matrix a]]
-fixDimsByRow rows = do
-  (r, row) <- zip [0..] rows
-  return $ do
-    (c, mat) <- zip [0..] row
-    return $ case mat of
-     Nothing -> zeros (heights V.! r) (widths V.! c)
-     Just x -> x
+fromBlocks = foldl1 vcat . map (foldl1 hcat) . adjustDims
   where
-    cols = List.transpose rows
-    incompatible = any (\xs -> let x = head xs in any (/= x) xs)
-    underspecified = any null
-    heightSpecs = map (map nRows . catMaybes) rows
-    widthSpecs = map (map nColumns . catMaybes) cols
-    heights
-      | underspecified heightSpecs =
-          errorWithStackTrace "fixDimsByRow: underspecified heights"
-      | incompatible heightSpecs =
-          errorWithStackTrace "fixDimsByRow: incompatible heights"
-      | otherwise = V.fromList $ map head heightSpecs
-    widths
-      | underspecified widthSpecs =
-          errorWithStackTrace "fixDimsByRow: underspecified widths"
-      | incompatible widthSpecs =
-          errorWithStackTrace "fixDimsByRow: incompatible widths"
-      | otherwise = V.fromList $ map head widthSpecs
+    adjustDims :: Storable a => [[Maybe (Matrix a)]] -> [[Matrix a]]
+    adjustDims rows = do
+      (r, row) <- zip [0..] rows
+      return $ do
+        (c, mat) <- zip [0..] row
+        return $ case mat of
+          Nothing -> zeros (heights V.! r) (widths V.! c)
+          Just x -> x
+      where
+        cols = List.transpose rows
+        incompatible = any (\xs -> let x = head xs in any (/= x) xs)
+        underspecified = any null
+        heightSpecs = map (map nRows . catMaybes) rows
+        widthSpecs = map (map nColumns . catMaybes) cols
+        heights
+          | underspecified heightSpecs =
+              errorWithStackTrace "fixDimsByRow: underspecified heights"
+          | incompatible heightSpecs =
+              errorWithStackTrace "fixDimsByRow: incompatible heights"
+          | otherwise = V.fromList $ map head heightSpecs
+        widths
+          | underspecified widthSpecs =
+              errorWithStackTrace "fixDimsByRow: underspecified widths"
+          | incompatible widthSpecs =
+              errorWithStackTrace "fixDimsByRow: incompatible widths"
+          | otherwise = V.fromList $ map head widthSpecs
 
 fromBlocksDiag :: CxSparse a => [[Maybe (Matrix a)]] -> Matrix a
 fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . List.transpose where
