@@ -7,7 +7,6 @@ module Data.Matrix.Sparse.Foreign
 
 import Control.Applicative
 import qualified Data.Vector.Storable as V
-import qualified Data.Vector.Storable.Mutable as MV
 import Foreign.ForeignPtr.Safe (newForeignPtr)
 import Foreign.Marshal.Alloc (free, finalizerFree)
 import Foreign.Marshal.Utils (with)
