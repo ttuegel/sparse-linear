@@ -5,9 +5,12 @@
 module Data.Matrix.Sparse.Compress
        ( compress, decompress
        , deduplicate
+       , transpose
        ) where
 
 import Control.Monad (liftM, zipWithM_)
+import Control.Applicative
+import Control.Monad.ST (runST)
 import Data.Ord (comparing)
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import qualified Data.Vector.Algorithms.Intro as Intro
@@ -105,3 +108,47 @@ decompress Matrix{..} = do
   where
     extents = zip ps $ tail ps
       where ps = map fromIntegral $ V.toList columnPointers
+
+transpose :: (Num a, Storable a) => Matrix a -> Matrix a
+transpose Matrix{..} = runST $ do
+  rowCount <- MV.replicate nRows 0
+  V.forM_ rowIndices $ void . preincrement rowCount . fromIntegral
+  rowPointers <- V.scanl (+) 0 <$> V.freeze rowCount
+  -- re-initialize row counts from row pointers
+  V.copy rowCount $ V.slice 0 nRows rowPointers
+
+  let nz = V.length values
+  cols <- MV.new nz
+  vals <- MV.new nz
+
+  let insertIntoRow r c x = do
+        ix <- fromIntegral <$> preincrement rowCount (fromIntegral r)
+        MV.unsafeWrite cols ix c
+        MV.unsafeWrite vals ix x
+
+  -- copy each column into place
+  V.forM_ (V.enumFromN 0 nColumns) $ \c -> do
+    start <- fromIntegral <$> V.unsafeIndexM columnPointers c
+    end <- fromIntegral <$> V.unsafeIndexM columnPointers (c + 1)
+    let rs = V.slice start (end - start) rowIndices
+        xs = V.slice start (end - start) values
+    V.zipWithM_ (\r x -> insertIntoRow r c x) rs xs
+
+  _values <- V.unsafeFreeze vals
+  _colIndices <- V.map fromIntegral <$> V.unsafeFreeze cols
+
+  return Matrix
+    { nRows = nColumns
+    , nColumns = nRows
+    , columnPointers = rowPointers
+    , rowIndices = _colIndices
+    , values = _values
+    }
+
+preincrement
+  :: (Num a, PrimMonad m, Storable a) => MVector (PrimState m) a -> Int -> m a
+{-# INLINE preincrement #-}
+preincrement = \v ix -> do
+  count <- MV.unsafeRead v ix
+  MV.unsafeWrite v ix $! count + 1
+  return count
