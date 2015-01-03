@@ -23,7 +23,8 @@ module Numeric.LinearAlgebra.Sparse
     ) where
 
 import Control.Applicative
-import Control.Monad (void)
+import Control.Monad (void, zipWithM_)
+import Control.Monad.ST (runST)
 import Data.Foldable
 import qualified Data.List as List
 import Data.Maybe
@@ -184,9 +185,42 @@ vcat matrices
   | null matrices = errorWithStackTrace "vcat: empty list"
   | any ((/= nc) . nColumns) matrices =
       errorWithStackTrace "vcat: column dimension mismatch"
-  | otherwise = transpose $ hcat $ map transpose matrices
+  | otherwise = runST $ do
+      let colPtrs =
+            V.scanl' (+) 0  -- prefix sum to compute result column pointers
+            $ foldl1 (V.zipWith (+))  -- lengths of columns in result
+            $ map columnLengths matrices  -- lengths of columns in each matrix
+
+      rows <- MV.new nz
+      vals <- MV.new nz
+      offs <- V.thaw $ V.map fromIntegral $ V.slice 0 nc colPtrs
+
+      let copyMat mat roff = do
+            let rs = V.map (+ roff) $ rowIndices mat
+                xs = values mat
+                ptrs = columnPointers mat
+            V.forM_ (V.enumFromN 0 nc) $ \c -> do
+              off <- MV.unsafeRead offs c
+              start <- fromIntegral <$> V.unsafeIndexM ptrs c
+              end <- fromIntegral <$> V.unsafeIndexM ptrs (c + 1)
+              let len = end - start
+              V.copy (MV.slice off len rows) (V.slice start len rs)
+              V.copy (MV.slice off len vals) (V.slice start len xs)
+              MV.unsafeWrite offs c $! off + len
+      zipWithM_ copyMat matrices roffs
+
+      let nRows = nr
+          nColumns = nc
+          columnPointers = colPtrs
+      values <- V.unsafeFreeze vals
+      rowIndices <- V.unsafeFreeze rows
+
+      return Matrix {..}
   where
+    nr = foldl' (+) 0 $ map nRows matrices
+    roffs = scanl (+) 0 $ map (fromIntegral . nRows) matrices
     nc = nColumns $ head matrices
+    nz = foldl' (+) 0 $ map (V.length . values) matrices
 
 fromBlocks :: CxSparse a => [[Maybe (Matrix a)]] -> Matrix a
 fromBlocks = vcat . map hcat . fixDimsByRow
