@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Data.Matrix.Sparse.Foreign
@@ -18,7 +19,7 @@ import Data.Cs
 import Data.Matrix.Sparse.Compress
 import Data.Matrix.Sparse.Type
 
-fromCs :: CxSparse a => Bool -> Ptr (Cs a) -> IO (Matrix a)
+fromCs :: CxSparse a => Bool -> Ptr (Cs a) -> IO (Matrix Col a)
 fromCs doDedup _ptr
   | _ptr == nullPtr = errorWithStackTrace "fromCs: null pointer"
   | otherwise = do
@@ -37,23 +38,23 @@ fromCs doDedup _ptr
              then if doDedup
                   then return $ compress nr nc _rows (decompress _cols) _vals
                   else return Matrix
-                    { nRows = nr
-                    , nColumns = nc
-                    , columnPointers = _cols
-                    , rowIndices = _rows
+                    { dimM = nc
+                    , dimN = nr
+                    , pointers = _cols
+                    , indices = _rows
                     , values = _vals
                     }
              else return $ compress nr nc _rows _cols _vals
       free _ptr
       return mat
 
-withConstCs :: CxSparse a => Matrix a -> (Ptr (Cs a) -> IO b) -> IO b
+withConstCs :: CxSparse a => Matrix Col a -> (Ptr (Cs a) -> IO b) -> IO b
 withConstCs Matrix{..} act = do
     let nzmax = fromIntegral $ V.length values
-        m = fromIntegral $ nRows
-        n = fromIntegral $ nColumns
+        m = fromIntegral dimN
+        n = fromIntegral dimM
         nz = -1
-    V.unsafeWith columnPointers $ \p ->
-      V.unsafeWith rowIndices $ \i ->
+    V.unsafeWith pointers $ \p ->
+      V.unsafeWith indices $ \i ->
       V.unsafeWith values $ \x ->
       with Cs{..} act

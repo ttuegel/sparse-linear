@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -6,12 +7,13 @@
 
 module Data.Matrix.Sparse.Compress
        ( compress, decompress
-       , transpose
+       , transpose, reorient
        ) where
 
 import Control.Applicative
 import Control.Monad (when)
 import Control.Monad.ST (runST)
+import Data.Function (fix)
 import Data.Vector.Algorithms.Search (binarySearchL)
 import Data.Vector.Storable (Storable, Vector)
 import qualified Data.Vector.Storable as V
@@ -25,69 +27,85 @@ import qualified Data.Vector.Sparse as S
 import Data.Vector.Util
 
 compress
-  :: (Num a, Storable a)
+  :: (Indices or, Num a, Storable a)
   => Int  -- ^ number of rows
   -> Int  -- ^ number of columns
   -> Vector CInt  -- ^ row indices
   -> Vector CInt  -- ^ column indices
   -> Vector a  -- ^ values
-  -> Matrix a
+  -> Matrix or a
 {-# SPECIALIZE
     compress
       :: Int -> Int
       -> Vector CInt -> Vector CInt
-      -> Vector Double -> Matrix Double
+      -> Vector Double -> Matrix Row Double
   #-}
 {-# SPECIALIZE
     compress
       :: Int -> Int
       -> Vector CInt -> Vector CInt
-      -> Vector (Complex Double) -> Matrix (Complex Double)
+      -> Vector (Complex Double) -> Matrix Row (Complex Double)
   #-}
-compress nRows nColumns rows cols vals = runST $ do
+{-# SPECIALIZE
+    compress
+      :: Int -> Int
+      -> Vector CInt -> Vector CInt
+      -> Vector Double -> Matrix Col Double
+  #-}
+{-# SPECIALIZE
+    compress
+      :: Int -> Int
+      -> Vector CInt -> Vector CInt
+      -> Vector (Complex Double) -> Matrix Col (Complex Double)
+  #-}
+compress nRows nColumns rows cols vals = fix $ \mat -> runST $ do
   let nz = V.length vals
-      ptrs = computePtrs nColumns cols
+      dimM = ixsM (orient mat) nRows nColumns
+      dimN = ixsN (orient mat) nRows nColumns
+      mixs = ixsM (orient mat) rows cols
+      nixs = ixsN (orient mat) rows cols
+      ptrs = computePtrs dimM mixs
 
-  rows' <- MV.replicate nz $ fromIntegral nRows
-  vals' <- MV.new nz
-  dels <- MV.replicate nColumns 0
+  ixs <- MV.replicate nz $ fromIntegral dimN
+  xs <- MV.new nz
+  dels <- MV.replicate dimM 0
 
-  let dedupInsert !r (fromIntegral -> !c) !x = do
-        start <- fromIntegral <$> V.unsafeIndexM ptrs c
-        end <- fromIntegral <$> V.unsafeIndexM ptrs (c + 1)
+  let dedupInsert !ixN (fromIntegral -> !ixM) !x = do
+        start <- fromIntegral <$> V.unsafeIndexM ptrs ixM
+        end <- fromIntegral <$> V.unsafeIndexM ptrs (ixM + 1)
         let len = end - start
-            rs = MV.slice start len rows'
-            xs = MV.slice start len vals'
-        ix <- binarySearchL rs r
-        r' <- MV.unsafeRead rs ix
-        if r == r'
+            ixs' = MV.slice start len ixs
+            xs' = MV.slice start len xs
+        ix <- binarySearchL ixs' ixN
+        ixN' <- MV.unsafeRead ixs' ix
+        if ixN == ixN'
           then do
-            _ <- preincrement dels c
-            x' <- MV.unsafeRead xs ix
-            MV.unsafeWrite xs ix $! x + x'
+            _ <- preincrement dels ixM
+            x' <- MV.unsafeRead xs' ix
+            MV.unsafeWrite xs' ix $! x + x'
           else do
-            shiftR rs ix 1
-            MV.unsafeWrite rs ix r
-            shiftR xs ix 1
-            MV.unsafeWrite xs ix x
-  zipWithM3_ dedupInsert rows cols vals
+            shiftR ixs' ix 1
+            MV.unsafeWrite ixs' ix ixN
+            shiftR xs' ix 1
+            MV.unsafeWrite xs' ix x
+  zipWithM3_ dedupInsert nixs mixs vals
   shifts <- V.scanl' (+) 0 <$> V.unsafeFreeze dels
 
-  let columnPointers = V.zipWith (-) ptrs shifts
-      nz' = fromIntegral $ V.last columnPointers
+  let pointers = V.zipWith (-) ptrs shifts
+      nz' = fromIntegral $ V.last pointers
 
-  U.forM_ (U.enumFromN 0 nColumns) $ \c -> do
-    shift <- fromIntegral <$> V.unsafeIndexM shifts c
+  U.forM_ (U.enumFromN 0 dimM) $ \ixM -> do
+    shift <- fromIntegral <$> V.unsafeIndexM shifts ixM
     when (shift > 0) $ do
-      start <- fromIntegral <$> V.unsafeIndexM ptrs c
-      end <- fromIntegral <$> V.unsafeIndexM ptrs (c + 1)
+      start <- fromIntegral <$> V.unsafeIndexM ptrs ixM
+      end <- fromIntegral <$> V.unsafeIndexM ptrs (ixM + 1)
       let len = end - start
           start' = start - shift
-      MV.move (MV.slice start' len rows') (MV.slice start len rows')
-      MV.move (MV.slice start' len vals') (MV.slice start len vals')
+      MV.move (MV.slice start' len ixs) (MV.slice start len ixs)
+      MV.move (MV.slice start' len xs) (MV.slice start len xs)
 
-  rowIndices <- V.unsafeFreeze $ MV.slice 0 nz' rows'
-  values <- V.unsafeFreeze $ MV.slice 0 nz' vals'
+  indices <- V.unsafeFreeze $ MV.slice 0 nz' ixs
+  values <- V.unsafeFreeze $ MV.slice 0 nz' xs
 
   return Matrix{..}
 
@@ -112,37 +130,36 @@ decompress = \ptrs -> V.create $ do
     MV.set (MV.slice start (end - start) indices) $ fromIntegral c
   return indices
 
-transpose :: Storable a => Matrix a -> Matrix a
-{-# SPECIALIZE transpose :: Matrix Double -> Matrix Double #-}
-{-# SPECIALIZE
-    transpose :: Matrix (Complex Double) -> Matrix (Complex Double)
-  #-}
-transpose mat@Matrix{..} = runST $ do
-  let rowPointers = computePtrs nRows rowIndices
+transpose :: Matrix or a -> Matrix (Trans or) a
+{-# INLINE transpose #-}
+transpose = \Matrix{..} -> Matrix {..}
+
+reorient :: Storable a => Matrix (Trans or) a -> Matrix or a
+{-# INLINE reorient #-}
+reorient mat@Matrix{..} = runST $ do
+  let ptrs' = computePtrs dimN indices
   -- re-initialize row counts from row pointers
-  rowCount <- V.thaw $ V.slice 0 nRows rowPointers
+  count <- V.thaw $ V.map fromIntegral $ V.slice 0 dimN ptrs'
 
   let nz = V.length values
-  cols <- MV.new nz
-  vals <- MV.new nz
+  _ixs <- MV.new nz
+  _xs <- MV.new nz
 
   -- copy each column into place
-  let insertIntoRow (fromIntegral -> !c) !r !x = do
-        ix <- fromIntegral <$> preincrement rowCount (fromIntegral r)
-        MV.unsafeWrite cols ix c
-        MV.unsafeWrite vals ix x
+  -- "major" and "minor" indices refer to the orientation of the original matrix
+  U.forM_ (U.enumFromN 0 dimM) $ \ !ixM -> do
+    S.iforM_ (slice mat ixM) $ \(fromIntegral -> !ixN) !x -> do
+      ix <- preincrement count ixN
+      MV.unsafeWrite _ixs ix $ fromIntegral ixM
+      MV.unsafeWrite _xs ix x
 
-  U.forM_ (U.enumFromN 0 nColumns) $ \c -> do
-    let col = column mat c
-    V.zipWithM_ (insertIntoRow c) (S.indices col) (S.values col)
-
-  _values <- V.unsafeFreeze vals
-  _colIndices <- V.unsafeFreeze cols
+  _ixs <- V.unsafeFreeze _ixs
+  _xs <- V.unsafeFreeze _xs
 
   return Matrix
-    { nRows = nColumns
-    , nColumns = nRows
-    , columnPointers = rowPointers
-    , rowIndices = _colIndices
-    , values = _values
+    { dimM = dimN
+    , dimN = dimM
+    , pointers = ptrs'
+    , indices = _ixs
+    , values = _xs
     }

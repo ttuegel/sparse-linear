@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 module Main where
 
 import qualified Data.Vector.Storable as V
@@ -10,7 +12,7 @@ main :: IO ()
 main = hspec $ do
   describe "Numeric.LinearAlgebra.Feast" $ do
     it "ident" $ do
-      let m :: Matrix (Complex Double)
+      let m :: Matrix Col (Complex Double)
           m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
           eigenvalues = fst $ eigSH 2 (-5, 5) m
           res = V.map abs $ V.zipWith (-) eigenvalues (V.fromList [1, 3])

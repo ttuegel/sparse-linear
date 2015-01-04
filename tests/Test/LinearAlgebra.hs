@@ -9,14 +9,14 @@ import Data.Vector.Storable (Storable, Vector)
 import Test.QuickCheck
 
 import Data.Matrix.Sparse
-import qualified Data.Vector.Sparse as SpV
+import qualified Data.Vector.Sparse as S
 import Data.Vector.Util (increasing, nondecreasing)
 import Numeric.LinearAlgebra.Sparse
 
 instance (Arbitrary a, Storable a) => Arbitrary (Vector a) where
     arbitrary = fmap V.fromList $ suchThat arbitrary $ \v -> length v > 0
 
-instance (Arbitrary a, CxSparse a) => Arbitrary (Matrix a) where
+instance (Arbitrary a, CxSparse a, Indices or) => Arbitrary (Matrix or a) where
     arbitrary = do
       nr <- arbitrary `suchThat` (> 0)
       let nc = nr
@@ -27,22 +27,22 @@ instance (Arbitrary a, CxSparse a) => Arbitrary (Matrix a) where
         return (r, c, x)
       return $ fromTriples nr nc triples
 
-prop_columnPointersNondecreasing :: Matrix a -> Bool
-prop_columnPointersNondecreasing Matrix{..} = nondecreasing columnPointers
+prop_pointersNondecreasing :: Matrix or a -> Bool
+prop_pointersNondecreasing Matrix{..} = nondecreasing pointers
 
-prop_columnPointersLength :: Matrix a -> Bool
-prop_columnPointersLength Matrix{..} = V.length columnPointers == nColumns + 1
+prop_pointersLength :: Matrix or a -> Bool
+prop_pointersLength Matrix{..} = V.length pointers == dimM + 1
 
-prop_valuesLength :: Storable a => Matrix a -> Bool
+prop_valuesLength :: Storable a => Matrix or a -> Bool
 prop_valuesLength Matrix{..} =
-  V.length values == (fromIntegral $ V.last columnPointers)
+  V.length values == (fromIntegral $ V.last pointers)
 
-prop_rowIndicesIncreasing :: Storable a => Matrix a -> Bool
-prop_rowIndicesIncreasing mat = V.all (increasing . SpV.indices) (toColumns mat)
+prop_indicesIncreasing :: Storable a => Matrix or a -> Bool
+prop_indicesIncreasing mat = V.all (increasing . S.indices) (slices mat)
 
-prop_rowIndicesNonNegative :: Storable a => Matrix a -> Bool
-prop_rowIndicesNonNegative mat = V.all (>= 0) (rowIndices mat)
+prop_indicesNonNegative :: Storable a => Matrix or a -> Bool
+prop_indicesNonNegative mat = V.all (>= 0) (indices mat)
 
-prop_rowIndicesInRange :: Storable a => Matrix a -> Bool
-prop_rowIndicesInRange mat = V.all (< nr) (rowIndices mat)
-  where nr = fromIntegral $ nRows mat
+prop_indicesInRange :: Storable a => Matrix or a -> Bool
+prop_indicesInRange mat = V.all (< dn) (indices mat)
+  where dn = fromIntegral $ dimN mat

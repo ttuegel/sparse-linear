@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 module Main where
 
 import Data.MonoTraversable
@@ -13,20 +15,30 @@ main :: IO ()
 main = hspec $ do
   describe "Numeric.LinearAlgebra.Sparse" $ do
     describe "fromTriples" $ do
-      it "row indices non-negative" $ property (prop_rowIndicesNonNegative :: Matrix (Complex Double) -> Bool)
-      it "row indices in range" $ property (prop_rowIndicesInRange :: Matrix (Complex Double) -> Bool)
-      it "row indices increasing" $ property (prop_rowIndicesIncreasing :: Matrix (Complex Double) -> Bool)
-      it "values length" $ property (prop_valuesLength :: Matrix (Complex Double) -> Bool)
-      it "column pointers length" $ property (prop_columnPointersLength :: Matrix (Complex Double) -> Bool)
-      it "column pointers nondecreasing" $ property (prop_columnPointersNondecreasing :: Matrix (Complex Double) -> Bool)
+      it "row indices non-negative" $
+        property (prop_indicesNonNegative :: Matrix Col (Complex Double) -> Bool)
+      it "row indices in range" $
+        property (prop_indicesInRange :: Matrix Col (Complex Double) -> Bool)
+      it "row indices increasing" $
+        property (prop_indicesIncreasing :: Matrix Col (Complex Double) -> Bool)
+      it "values length" $
+        property (prop_valuesLength :: Matrix Col (Complex Double) -> Bool)
+      it "column pointers length" $
+        property (prop_pointersLength :: Matrix Col (Complex Double) -> Bool)
+      it "column pointers nondecreasing" $
+        property (prop_pointersNondecreasing :: Matrix Col (Complex Double) -> Bool)
 
     describe "kronecker" $ do
-      it "assembles identity matrices" $ property prop_kroneckerIdent
-      it "row indices increasing" $ property prop_kroneckerRowIndicesIncreasing
-      it "column pointers nondecreasing"
-        $ property prop_kroneckerColumnPointersNondecreasing
-      it "column pointers length" $ property prop_kroneckerColumnPointersLength
-      it "values length" $ property prop_kroneckerValuesLength
+      it "assembles identity matrices" $
+        property prop_kroneckerIdent
+      it "row indices increasing" $
+        property prop_kroneckerIndicesIncreasing
+      it "column pointers nondecreasing" $
+        property prop_kroneckerPointersNondecreasing
+      it "column pointers length" $
+        property prop_kroneckerPointersLength
+      it "values length" $
+        property prop_kroneckerValuesLength
 
     describe "takeDiag" $ do
       it "returns what diag is given" $ property prop_takeDiag
@@ -35,13 +47,18 @@ main = hspec $ do
       it "identity" $ property prop_identMulV
 
     describe "lin" $ do
-      it "additive inverse" $ property prop_addInv
-      it "additive identity" $ property prop_addId
-      it "row indices increasing" $ property prop_linRowIndicesIncreasing
-      it "column pointers nondecreasing"
-        $ property prop_linColumnPointersNondecreasing
-      it "column pointers length" $ property prop_linColumnPointersLength
-      it "values length" $ property prop_linValuesLength
+      it "additive inverse" $
+        property prop_addInv
+      it "additive identity" $
+        property prop_addId
+      it "row indices increasing" $
+        property prop_linIndicesIncreasing
+      it "column pointers nondecreasing" $
+        property prop_linPointersNondecreasing
+      it "column pointers length" $
+        property prop_linPointersLength
+      it "values length" $
+        property prop_linValuesLength
 
     describe "transpose" $ do
       it "self-inverse" $ property prop_transposeId
@@ -51,64 +68,71 @@ main = hspec $ do
       it "self-inverse" $ property prop_ctransId
       it "preserves diagonal of real matrices" $ property prop_ctransDiag
       it "preserves hermitian matrices" $ do
-        let m :: Matrix (Complex Double)
+        let m :: Matrix Col (Complex Double)
             m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
-        m `shouldBe` ctrans m
+        m `shouldBe` reorient (ctrans m)
       it "preserves sigma_x" $ do
-        let m :: Matrix (Complex Double)
+        let m :: Matrix Col (Complex Double)
             m = fromTriples 2 2 [(0, 1, 1), (1, 0, 1)]
-        m `shouldBe` ctrans m
+        m `shouldBe` reorient (ctrans m)
       it "preserves sigma_y" $ do
-        let m :: Matrix (Complex Double)
+        let m :: Matrix Col (Complex Double)
             m = fromTriples 2 2 [(0, 1, 0 :+ (-1)), (1, 0, 0 :+ 1)]
-        m `shouldBe` ctrans m
+        m `shouldBe` reorient (ctrans m)
 
     describe "mul" $ do
       it "identity on matrices" $ property prop_mulId
 
     describe "fromBlocks" $ do
-      it "assembles identity matrices" $ property prop_fromBlocksId
-      it "row indices increasing" $ property prop_fromBlocksRowIndicesIncreasing
+      it "assembles identity matrices" $
+        property prop_fromBlocksId
+      it "row indices increasing" $
+        property prop_fromBlocksIndicesIncreasing
       it "column pointers nondecreasing"
-        $ property prop_fromBlocksColumnPointersNondecreasing
-      it "column pointers length" $ property prop_fromBlocksColumnPointersLength
-      it "values length" $ property prop_fromBlocksValuesLength
+        $ property prop_fromBlocksPointersNondecreasing
+      it "column pointers length" $
+        property prop_fromBlocksPointersLength
+      it "values length" $
+        property prop_fromBlocksValuesLength
 
     describe "fromBlocksDiag" $ do
-      it "assembles identity matrices" $ property prop_fromBlocksDiagId
-      it "row indices increasing"
-        $ property prop_fromBlocksDiagRowIndicesIncreasing
-      it "column pointers nondecreasing"
-        $ property prop_fromBlocksDiagColumnPointersNondecreasing
-      it "column pointers length"
-        $ property prop_fromBlocksDiagColumnPointersLength
-      it "values length" $ property prop_fromBlocksDiagValuesLength
-      it "produces hermitian matrices" $ property prop_fromBlocksDiagHermitian
+      it "assembles identity matrices" $
+        property prop_fromBlocksDiagId
+      it "row indices increasing" $
+        property prop_fromBlocksDiagIndicesIncreasing
+      it "column pointers nondecreasing" $
+        property prop_fromBlocksDiagPointersNondecreasing
+      it "column pointers length" $
+        property prop_fromBlocksDiagPointersLength
+      it "values length" $
+        property prop_fromBlocksDiagValuesLength
+      it "produces hermitian matrices" $
+        property prop_fromBlocksDiagHermitian
 
 prop_kroneckerIdent :: Int -> Int -> Property
 prop_kroneckerIdent x y = (x > 0 && y > 0) ==> lhs == rhs
   where
-    lhs :: Matrix (Complex Double)
+    lhs :: Matrix Col (Complex Double)
     lhs = kronecker (ident x) (ident y)
     rhs = ident (x * y)
 
-prop_kroneckerRowIndicesIncreasing
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_kroneckerRowIndicesIncreasing a b =
-  prop_rowIndicesIncreasing $ kronecker a b
+prop_kroneckerIndicesIncreasing
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_kroneckerIndicesIncreasing a b =
+  prop_indicesIncreasing $ kronecker a b
 
-prop_kroneckerColumnPointersNondecreasing
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_kroneckerColumnPointersNondecreasing a b =
-  prop_columnPointersNondecreasing $ kronecker a b
+prop_kroneckerPointersNondecreasing
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_kroneckerPointersNondecreasing a b =
+  prop_pointersNondecreasing $ kronecker a b
 
-prop_kroneckerColumnPointersLength
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_kroneckerColumnPointersLength a b =
-  prop_columnPointersLength $ kronecker a b
+prop_kroneckerPointersLength
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_kroneckerPointersLength a b =
+  prop_pointersLength $ kronecker a b
 
 prop_kroneckerValuesLength
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Property
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Property
 prop_kroneckerValuesLength a b =
   let k = kronecker a b
   in counterexample (show k) $ prop_valuesLength k
@@ -119,39 +143,40 @@ prop_takeDiag v = takeDiag (diag v) == v
 prop_identMulV :: Vector (Complex Double) -> Bool
 prop_identMulV v = mulV identM v == v
   where
+    identM :: Matrix Row (Complex Double)
     identM = ident (V.length v)
 
-prop_addInv :: Matrix (Complex Double) -> Property
+prop_addInv :: Matrix Col (Complex Double) -> Property
 prop_addInv m = counterexample (show subtracted) (subtracted == m0)
   where
     subtracted = lin 1 m (-1) m
     m0 = omap (const 0) m
 
-prop_addId :: Matrix (Complex Double) -> Bool
-prop_addId m = add m (zeros (nRows m) (nColumns m)) == m
+prop_addId :: Matrix Col (Complex Double) -> Bool
+prop_addId m = add m (zeros (dimN m) (dimM m)) == m
 
-prop_linRowIndicesIncreasing
-  :: Complex Double -> Matrix (Complex Double) -> Bool
-prop_linRowIndicesIncreasing c mat =
-  prop_rowIndicesIncreasing
+prop_linIndicesIncreasing
+  :: Complex Double -> Matrix Col (Complex Double) -> Bool
+prop_linIndicesIncreasing c mat =
+  prop_indicesIncreasing
   $ lin c mat (0.5683358478038576 :+ 1.9175490512894502) mat
 
-prop_linColumnPointersNondecreasing
-  :: Complex Double -> Matrix (Complex Double) -> Bool
-prop_linColumnPointersNondecreasing c mat =
-  prop_columnPointersNondecreasing $ lin c mat (-1) mat
+prop_linPointersNondecreasing
+  :: Complex Double -> Matrix Col (Complex Double) -> Bool
+prop_linPointersNondecreasing c mat =
+  prop_pointersNondecreasing $ lin c mat (-1) mat
 
-prop_linColumnPointersLength
-  :: Complex Double -> Matrix (Complex Double) -> Bool
-prop_linColumnPointersLength c mat =
-  prop_columnPointersLength $ lin c mat (-1) mat
+prop_linPointersLength
+  :: Complex Double -> Matrix Col (Complex Double) -> Bool
+prop_linPointersLength c mat =
+  prop_pointersLength $ lin c mat (-1) mat
 
 prop_linValuesLength
-  :: Complex Double -> Matrix (Complex Double) -> Bool
+  :: Complex Double -> Matrix Col (Complex Double) -> Bool
 prop_linValuesLength c mat =
   prop_valuesLength $ lin c mat (-1) mat
 
-prop_transposeId :: Matrix (Complex Double) -> Bool
+prop_transposeId :: Matrix Col (Complex Double) -> Bool
 prop_transposeId m = transpose (transpose m) == m
 
 prop_transposeDiag :: Vector Double -> Bool
@@ -159,7 +184,7 @@ prop_transposeDiag v = m == transpose m
   where
     m = diag v
 
-prop_ctransId :: Matrix (Complex Double) -> Bool
+prop_ctransId :: Matrix Col (Complex Double) -> Bool
 prop_ctransId m = ctrans (ctrans m) == m
 
 prop_ctransDiag :: Vector Double -> Bool
@@ -167,34 +192,34 @@ prop_ctransDiag v = m == ctrans m
   where
     m = diag v
 
-prop_mulId :: Matrix (Complex Double) -> Bool
-prop_mulId m = m `mul` (ident $ nColumns m) == m
+prop_mulId :: Matrix Col (Complex Double) -> Bool
+prop_mulId m = m `mul` (ident $ dimM m) == m
 
 prop_fromBlocksId :: Int -> Int -> Property
 prop_fromBlocksId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
   where
-    lhs :: Matrix (Complex Double)
+    lhs :: Matrix Row (Complex Double)
     lhs = fromBlocks [[Just (ident x), Nothing], [Nothing, Just (ident y)]]
 
-prop_fromBlocksRowIndicesIncreasing
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_fromBlocksRowIndicesIncreasing x y =
-  prop_rowIndicesIncreasing $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
+prop_fromBlocksIndicesIncreasing
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_fromBlocksIndicesIncreasing x y =
+  prop_indicesIncreasing $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
 
-prop_fromBlocksColumnPointersNondecreasing
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_fromBlocksColumnPointersNondecreasing x y =
-  prop_columnPointersNondecreasing
+prop_fromBlocksPointersNondecreasing
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_fromBlocksPointersNondecreasing x y =
+  prop_pointersNondecreasing
   $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
 
-prop_fromBlocksColumnPointersLength
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_fromBlocksColumnPointersLength x y =
-  prop_columnPointersLength
+prop_fromBlocksPointersLength
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_fromBlocksPointersLength x y =
+  prop_pointersLength
   $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
 
 prop_fromBlocksValuesLength
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
 prop_fromBlocksValuesLength x y =
   prop_valuesLength
   $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
@@ -202,50 +227,33 @@ prop_fromBlocksValuesLength x y =
 prop_fromBlocksDiagId :: Int -> Int -> Property
 prop_fromBlocksDiagId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
   where
-    lhs :: Matrix (Complex Double)
+    lhs :: Matrix Row (Complex Double)
     lhs = fromBlocksDiag [[Just (ident x), Just (ident y)], [Nothing, Nothing]]
 
-prop_fromBlocksDiagRowIndicesIncreasing
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_fromBlocksDiagRowIndicesIncreasing x y =
-  prop_rowIndicesIncreasing
+prop_fromBlocksDiagIndicesIncreasing
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_fromBlocksDiagIndicesIncreasing x y =
+  prop_indicesIncreasing
   $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
 
-prop_fromBlocksDiagColumnPointersNondecreasing
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_fromBlocksDiagColumnPointersNondecreasing x y =
-  prop_columnPointersNondecreasing
+prop_fromBlocksDiagPointersNondecreasing
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_fromBlocksDiagPointersNondecreasing x y =
+  prop_pointersNondecreasing
   $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
 
-prop_fromBlocksDiagColumnPointersLength
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
-prop_fromBlocksDiagColumnPointersLength x y =
-  prop_columnPointersLength
+prop_fromBlocksDiagPointersLength
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
+prop_fromBlocksDiagPointersLength x y =
+  prop_pointersLength
   $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
 
 prop_fromBlocksDiagValuesLength
-  :: Matrix (Complex Double) -> Matrix (Complex Double) -> Bool
+  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
 prop_fromBlocksDiagValuesLength x y =
   prop_valuesLength
   $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
 
-{-
-prop_fromBlocksDiagHermitian :: [Vector (Complex Double)] -> Property
-prop_fromBlocksDiagHermitian diags =
-  (n >= 2) ==> hermitian superm
-  where
-    n = length mats
-    mats = map diag diags
-    mats' = reverse $ map ctrans mats
-    superm =
-      fromBlocksDiag $ concat
-        [ [replicate (n + 1) Nothing]
-        , [map Just mats ++ [Nothing]]
-        , replicate (n - 2) (replicate (n + 1) Nothing)
-        , [[Nothing] ++ map Just mats']
-        ]
--}
-
-prop_fromBlocksDiagHermitian :: Matrix (Complex Double) -> Bool
+prop_fromBlocksDiagHermitian :: Matrix Col (Complex Double) -> Bool
 prop_fromBlocksDiagHermitian a =
-  hermitian $ fromBlocksDiag [[Nothing, Nothing], [Just a, Just $ ctrans a]]
+  hermitian $ fromBlocksDiag [[Nothing, Nothing], [Just a, Just $ reorient $ ctrans a]]

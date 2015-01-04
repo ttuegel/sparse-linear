@@ -8,9 +8,10 @@
 
 module Data.Matrix.Sparse
     ( Matrix(..), cmap, nonZero
+    , Orient(..), Trans, Indices(..), orient
     , compress, decompress
-    , transpose
-    , toColumns, fromColumns, column
+    , transpose, reorient
+    , slices, fromSlices, slice
     , assertValid
     , module Data.Cs, fromCs, withConstCs
     ) where
@@ -26,14 +27,14 @@ import Data.Matrix.Sparse.Type
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util (increasing, nondecreasing)
 
-assertValid :: Storable a => Matrix a -> Matrix a
+assertValid :: Storable a => Matrix or a -> Matrix or a
 assertValid mat@Matrix{..}
-  | not (nondecreasing columnPointers) =
-      errorWithStackTrace "column pointers are not nondecreasing"
-  | V.length columnPointers /= nColumns + 1 =
-      errorWithStackTrace "wrong number of column pointers"
-  | V.length values /= (fromIntegral $ V.last columnPointers) =
+  | not (nondecreasing pointers) =
+      errorWithStackTrace "pointers are not nondecreasing"
+  | V.length pointers /= dimM + 1 =
+      errorWithStackTrace "wrong number of pointers"
+  | V.length values /= (fromIntegral $ V.last pointers) =
       errorWithStackTrace "length values is wrong"
-  | V.any (not . increasing . S.indices) (toColumns mat) =
-      errorWithStackTrace "row indices are not increasing"
+  | V.any (not . increasing . S.indices) (slices mat) =
+      errorWithStackTrace "indices are not increasing"
   | otherwise = mat

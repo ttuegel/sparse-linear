@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -18,12 +19,22 @@ import GHC.Stack (errorWithStackTrace)
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
 
+import Data.Complex.Enhanced
 import Data.Matrix.Sparse
 import Numeric.LinearAlgebra.Umfpack.Internal
 
 linearSolve_
   :: (CxSparse a, Num a, Umfpack a)
-  => Matrix a -> [IOVector a] -> IO [IOVector a]
+  => Matrix Col a -> [IOVector a] -> IO [IOVector a]
+{-# SPECIALIZE
+    linearSolve_
+      :: Matrix Col Double -> [IOVector Double] -> IO [IOVector Double]
+  #-}
+{-# SPECIALIZE
+    linearSolve_
+      :: Matrix Col (Complex Double) -> [IOVector (Complex Double)]
+      -> IO [IOVector (Complex Double)]
+  #-}
 linearSolve_ mat@Matrix{..} bs =
   withConstCs mat $ \cs -> do
     psym <- malloc
@@ -40,7 +51,7 @@ linearSolve_ mat@Matrix{..} bs =
 
     num <- peek pnum
     xs <- forM bs $ \_b -> do
-      _x <- MV.replicate nColumns 0
+      _x <- MV.replicate dimM 0
       _ <- MV.unsafeWith _b $ \_b -> MV.unsafeWith _x $ \_x -> do
         _stat <- umfpack_solve cs _x _b num nullPtr nullPtr
         umfpack_report_status cs nullPtr _stat
@@ -48,11 +59,11 @@ linearSolve_ mat@Matrix{..} bs =
       return _x
     umfpack_free_numeric pnum
     return xs
-{-# INLINE linearSolve_ #-}
 
 linearSolve
   :: (CxSparse a, Num a, Umfpack a)
-  => Matrix a -> [Vector a] -> [Vector a]
+  => Matrix Col a -> [Vector a] -> [Vector a]
+{-# INLINE linearSolve #-}
 linearSolve = linearSolve_go where
   {-# NOINLINE linearSolve_go #-}
   linearSolve_go mat@Matrix{..} _bs =
@@ -60,8 +71,7 @@ linearSolve = linearSolve_go where
       _bs <- mapM V.unsafeThaw _bs
       _xs <- linearSolve_ mat _bs
       mapM V.unsafeFreeze _xs
-{-# INLINE linearSolve #-}
 
-(<\>) :: (CxSparse a, Num a, Umfpack a) => Matrix a -> Vector a -> Vector a
-(<\>) mat b = head $ linearSolve mat [b]
+(<\>) :: (CxSparse a, Num a, Umfpack a) => Matrix Col a -> Vector a -> Vector a
 {-# INLINE (<\>) #-}
+(<\>) mat b = head $ linearSolve mat [b]

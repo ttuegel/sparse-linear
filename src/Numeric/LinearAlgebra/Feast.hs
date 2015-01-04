@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -22,7 +23,7 @@ import Foreign.Marshal.Array (withArray)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
-import GHC.Stack
+import GHC.Stack (errorWithStackTrace)
 import System.GlobalLock (lock)
 import System.IO.Unsafe
 
@@ -83,18 +84,18 @@ type EigSH a =
 geigSH
   :: (EigSH a)
   => Int -> (RealOf a, RealOf a)
-  -> Sparse.Matrix a -> Sparse.Matrix a
+  -> Sparse.Matrix Sparse.Col a -> Sparse.Matrix Sparse.Col a
   -> (Vector (RealOf a), Dense.Matrix a)
 geigSH !m0 (!_emin, !_emax) !matA !matB
   | matA /= matA' = errorWithStackTrace "matrix A must be hermitian"
   | matB /= matB' = errorWithStackTrace "matrix B must be hermitian"
-  | nRows matA /= nRows matB =
+  | Sparse.dimM matA /= Sparse.dimM matB =
       errorWithStackTrace "matrices A and B must be the same size"
   | otherwise = geigH_go
   where
-    n = nColumns matA
-    matA' = ctrans matA
-    matB' = ctrans matB
+    n = Sparse.dimM matA
+    matA' = Sparse.reorient $ ctrans matA
+    matB' = Sparse.reorient $ ctrans matB
 
     {-# NOINLINE geigH_go #-}
     geigH_go =
@@ -196,7 +197,7 @@ eigSH
   :: (EigSH a)
   => Int
   -> (RealOf a, RealOf a)
-  -> Sparse.Matrix a
+  -> Sparse.Matrix Sparse.Col a
   -> (Vector (RealOf a), Dense.Matrix a)
-eigSH = \m0 bounds matA -> geigSH m0 bounds matA $ ident $ nColumns matA
+eigSH = \m0 bounds matA -> geigSH m0 bounds matA $ ident $ Sparse.dimM matA
 {-# INLINE eigSH #-}
