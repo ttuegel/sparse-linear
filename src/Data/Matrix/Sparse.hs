@@ -22,26 +22,7 @@ import Data.Cs
 import Data.Matrix.Sparse.Compress
 import Data.Matrix.Sparse.Foreign
 import Data.Matrix.Sparse.Type
-import qualified Data.Vector.Sparse as SpV
-
-toColumns :: Storable a => Matrix a -> [SpV.Vector a]
-toColumns = \Matrix{..} ->
-  let starts = map fromIntegral $ V.toList $ V.init columnPointers
-      ends = map fromIntegral $ V.toList $ V.tail columnPointers
-      lens = zipWith (-) ends starts
-      chop :: Storable b => Vector b -> [Vector b]
-      chop v = zipWith chop_go starts lens
-        where
-          chop_go n len
-            | len > 0 = V.slice n len v
-            | otherwise = V.empty
-  in do
-    (inds, vals) <- zip (chop rowIndices) (chop values)
-    return SpV.Vector
-      { SpV.dim = nRows
-      , SpV.indices = inds
-      , SpV.values = vals
-      }
+import qualified Data.Vector.Sparse as S
 
 nondecreasing :: (Ord a, Storable a) => Vector a -> Bool
 nondecreasing vec
@@ -61,6 +42,6 @@ assertValid mat@Matrix{..}
       errorWithStackTrace "wrong number of column pointers"
   | V.length values /= (fromIntegral $ V.last columnPointers) =
       errorWithStackTrace "length values is wrong"
-  | any (not . increasing . SpV.indices) (toColumns mat) =
+  | any (not . increasing . S.indices) (toColumns mat) =
       errorWithStackTrace "row indices are not increasing"
   | otherwise = mat

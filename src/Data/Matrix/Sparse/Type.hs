@@ -4,13 +4,16 @@
 module Data.Matrix.Sparse.Type
        ( Matrix(..)
        , cmap
+       , toColumns
        ) where
 
+import Control.Applicative
 import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable (Storable, Vector)
 
 import Data.Cs
+import qualified Data.Vector.Sparse as S
 
 -- | Matrix in compressed sparse column (CSC) format.
 data Matrix a = Matrix
@@ -47,3 +50,16 @@ instance Storable a => MonoFoldable (Matrix a) where
 cmap :: (Storable a, Storable b) => (a -> b) -> Matrix a -> Matrix b
 {-# INLINE cmap #-}
 cmap = \f m -> m { values = V.map f $ values m }
+
+toColumns :: Storable a => Matrix a -> [S.Vector a]
+{-# INLINE toColumns #-}
+toColumns = \Matrix{..} -> do
+  c <- [0..(nColumns - 1)]
+  start <- fromIntegral <$> V.unsafeIndexM columnPointers c
+  end <- fromIntegral <$> V.unsafeIndexM columnPointers (c + 1)
+  let len = end - start
+  return S.Vector
+    { S.dim = nRows
+    , S.indices = V.slice start len rowIndices
+    , S.values = V.slice start len values
+    }

@@ -5,8 +5,10 @@ module Data.Vector.Util
        ( zipWithM3_
        , shiftR
        , preincrement
+       , forSlicesM2_
        ) where
 
+import Control.Monad (liftM)
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import Data.Vector.Generic (Vector)
 import qualified Data.Vector.Generic as V
@@ -52,3 +54,15 @@ preincrement = \v ix -> do
   count <- MV.unsafeRead v ix
   MV.unsafeWrite v ix $! count + 1
   return count
+
+forSlicesM2_
+  :: (Integral i, Monad m, Vector u i, Vector v a, Vector w b)
+  => u i -> v a -> w b -> (Int -> v a -> w b -> m c) -> m ()
+{-# INLINE forSlicesM2_ #-}
+forSlicesM2_ = \ptrs as bs f -> do
+  U.forM_ (U.enumFromN 0 $ V.length ptrs - 1) $ \c -> do
+    start <- liftM fromIntegral $ V.unsafeIndexM ptrs c
+    end <- liftM fromIntegral $ V.unsafeIndexM ptrs (c + 1)
+    let as' = V.slice start (end - start) as
+        bs' = V.slice start (end - start) bs
+    f c as' bs'

@@ -10,6 +10,7 @@ module Data.Matrix.Sparse.Compress
        ) where
 
 import Control.Applicative
+import Control.Monad (zipWithM_)
 import Control.Monad.ST (runST)
 import Data.Vector.Algorithms.Search (binarySearchL)
 import Data.Vector.Storable (Storable, Vector)
@@ -18,6 +19,7 @@ import qualified Data.Vector.Storable.Mutable as MV
 
 import Data.Cs
 import Data.Matrix.Sparse.Type
+import qualified Data.Vector.Sparse as S
 import Data.Vector.Util
 
 compress
@@ -95,7 +97,7 @@ decompress = \ptrs -> V.create $ do
   return indices
 
 transpose :: (Num a, Storable a) => Matrix a -> Matrix a
-transpose Matrix{..} = runST $ do
+transpose mat@Matrix{..} = runST $ do
   let rowPointers = computePtrs nRows rowIndices
   -- re-initialize row counts from row pointers
   rowCount <- V.thaw $ V.slice 0 nRows rowPointers
@@ -104,21 +106,19 @@ transpose Matrix{..} = runST $ do
   cols <- MV.new nz
   vals <- MV.new nz
 
-  let insertIntoRow r c x = do
+  -- copy each column into place
+  let insertIntoRow c r x = do
         ix <- fromIntegral <$> preincrement rowCount (fromIntegral r)
         MV.unsafeWrite cols ix c
         MV.unsafeWrite vals ix x
 
-  -- copy each column into place
-  V.forM_ (V.enumFromN 0 nColumns) $ \c -> do
-    start <- fromIntegral <$> V.unsafeIndexM columnPointers c
-    end <- fromIntegral <$> V.unsafeIndexM columnPointers (c + 1)
-    let rs = V.slice start (end - start) rowIndices
-        xs = V.slice start (end - start) values
-    V.zipWithM_ (\r x -> insertIntoRow r c x) rs xs
+      copyCol c col =
+        V.zipWithM_ (insertIntoRow c) (S.indices col) (S.values col)
+
+  zipWithM_ copyCol [0..] (toColumns mat)
 
   _values <- V.unsafeFreeze vals
-  _colIndices <- V.map fromIntegral <$> V.unsafeFreeze cols
+  _colIndices <- V.unsafeFreeze cols
 
   return Matrix
     { nRows = nColumns
