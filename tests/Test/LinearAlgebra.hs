@@ -10,6 +10,7 @@ import Test.QuickCheck
 
 import Data.Matrix.Sparse
 import qualified Data.Vector.Sparse as SpV
+import Data.Vector.Util (increasing, nondecreasing)
 import Numeric.LinearAlgebra.Sparse
 
 instance (Arbitrary a, Storable a) => Arbitrary (Vector a) where
@@ -25,16 +26,6 @@ instance (Arbitrary a, CxSparse a) => Arbitrary (Matrix a) where
         x <- arbitrary
         return (r, c, x)
       return $ fromTriples nr nc triples
-
-nondecreasing :: (Ord a, Storable a) => Vector a -> Bool
-nondecreasing vec
-  | V.null vec = True
-  | otherwise = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
-
-increasing :: (Ord a, Storable a) => Vector a -> Bool
-increasing vec
-  | V.null vec = True
-  | otherwise = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
 
 prop_columnPointersNondecreasing :: Matrix a -> Bool
 prop_columnPointersNondecreasing Matrix{..} = nondecreasing columnPointers

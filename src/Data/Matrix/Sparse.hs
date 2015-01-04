@@ -14,7 +14,7 @@ module Data.Matrix.Sparse
     , module Data.Cs, fromCs, withConstCs
     ) where
 
-import Data.Vector.Storable (Storable, Vector)
+import Data.Vector.Storable (Storable)
 import qualified Data.Vector.Storable as V
 import GHC.Stack (errorWithStackTrace)
 
@@ -23,16 +23,7 @@ import Data.Matrix.Sparse.Compress
 import Data.Matrix.Sparse.Foreign
 import Data.Matrix.Sparse.Type
 import qualified Data.Vector.Sparse as S
-
-nondecreasing :: (Ord a, Storable a) => Vector a -> Bool
-nondecreasing vec
-  | V.null vec = True
-  | otherwise = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
-
-increasing :: (Ord a, Storable a) => Vector a -> Bool
-increasing vec
-  | V.null vec = True
-  | otherwise = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
+import Data.Vector.Util (increasing, nondecreasing)
 
 assertValid :: Storable a => Matrix a -> Matrix a
 assertValid mat@Matrix{..}

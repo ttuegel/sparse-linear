@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Data.Vector.Util
@@ -6,6 +7,7 @@ module Data.Vector.Util
        , shiftR
        , preincrement
        , forSlicesM2_
+       , increasing, nondecreasing
        ) where
 
 import Control.Monad (liftM)
@@ -66,3 +68,13 @@ forSlicesM2_ = \ptrs as bs f -> do
     let as' = V.slice start (end - start) as
         bs' = V.slice start (end - start) bs
     f c as' bs'
+
+nondecreasing :: (Ord a, Vector v Bool, Vector v a) => v a -> Bool
+nondecreasing vec
+  | V.null vec = True
+  | otherwise = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
+
+increasing :: (Ord a, Vector v Bool, Vector v a) => v a -> Bool
+increasing vec
+  | V.null vec = True
+  | otherwise = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
