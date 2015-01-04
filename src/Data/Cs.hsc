@@ -79,30 +79,20 @@ instance Storable (Cs Double) where
   {-# INLINE poke #-}
 
 type CsMultiply a = Ptr (Cs a) -> Ptr (Cs a) -> IO (Ptr (Cs a))
-type CsAdd a = Ptr (Cs a) -> Ptr (Cs a) -> Ptr a -> Ptr a -> IO (Ptr (Cs a))
 
 class (Num a, Storable a, Storable (Cs a), Unbox a) => CxSparse a where
   cs_multiply :: CsMultiply a
-  cs_add :: CsAdd a
 
 foreign import ccall "cs.h cs_ci_multiply"
   cs_ci_multiply :: CsMultiply (Complex Double)
-foreign import ccall "cs_ci_add_ptrs"
-  cs_ci_add :: CsAdd (Complex Double)
 
 instance CxSparse (Complex Double) where
   {-# INLINE cs_multiply #-}
-  {-# INLINE cs_add #-}
   cs_multiply = cs_ci_multiply
-  cs_add = cs_ci_add
 
 foreign import ccall "cs.h cs_di_multiply"
   cs_di_multiply :: CsMultiply Double
-foreign import ccall "cs_di_add_ptrs"
-  cs_di_add :: CsAdd Double
 
 instance CxSparse Double where
   {-# INLINE cs_multiply #-}
-  {-# INLINE cs_add #-}
   cs_multiply = cs_di_multiply
-  cs_add = cs_di_add
