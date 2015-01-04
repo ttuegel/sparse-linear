@@ -21,6 +21,7 @@ library
     Data.Matrix.Sparse.Foreign
     Data.Matrix.Sparse.Type
     Data.Vector.Sparse
+    Data.Vector.Util
     Numeric.LinearAlgebra.Feast
     Numeric.LinearAlgebra.Sparse
     Numeric.LinearAlgebra.Umfpack

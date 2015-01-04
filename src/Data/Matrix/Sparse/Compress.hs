@@ -20,32 +20,7 @@ import qualified Data.Vector.Storable.Mutable as MV
 
 import Data.Cs
 import Data.Matrix.Sparse.Type
-
-zipWithM3_
-  :: (Monad m, Storable a, Storable b, Storable c)
-  => (a -> b -> c -> m d) -> Vector a -> Vector b -> Vector c -> m ()
-{-# INLINE zipWithM3_ #-}
-zipWithM3_ f as bs cs = do
-  let len = minimum [V.length as, V.length bs, V.length cs]
-  V.forM_ (V.enumFromN 0 len) $ \ix -> do
-    a <- V.unsafeIndexM as ix
-    b <- V.unsafeIndexM bs ix
-    c <- V.unsafeIndexM cs ix
-    f a b c
-
-shiftR :: (PrimMonad m, Storable a) => MVector (PrimState m) a -> Int -> m ()
-shiftR = \v ix -> do
-  let len' = MV.length v - ix - 1
-      src = MV.slice ix len' v
-      dst = MV.slice (ix + 1) len' v
-  MV.move dst src
-
-shiftL :: (PrimMonad m, Storable a) => MVector (PrimState m) a -> Int -> m ()
-shiftL = \v ix -> do
-  let len' = MV.length v - ix - 1
-      dst = MV.slice ix len' v
-      src = MV.slice (ix + 1) len' v
-  MV.move dst src
+import Data.Vector.Util
 
 compress
   :: (Num a, Storable a)
@@ -63,7 +38,6 @@ compress nRows nColumns rows cols vals = runST $ do
   vals' <- MV.new nz
   dels <- MV.replicate nColumns 0
 
-  -- TODO: deduplication counts!
   let dedupInsert r (fromIntegral -> c) x = do
         start <- fromIntegral <$> V.unsafeIndexM _ptrs c
         end <- fromIntegral <$> V.unsafeIndexM _ptrs (c + 1)
@@ -78,9 +52,9 @@ compress nRows nColumns rows cols vals = runST $ do
             x' <- MV.unsafeRead xs ix
             MV.unsafeWrite xs ix $! x + x'
           else do
-            shiftR rs ix
+            shiftR rs ix 1
             MV.unsafeWrite rs ix r
-            shiftR xs ix
+            shiftR xs ix 1
             MV.unsafeWrite xs ix x
   zipWithM3_ dedupInsert rows cols vals
   _ptrs <- V.zipWith (-) _ptrs . V.scanl (+) 0 <$> V.unsafeFreeze dels
@@ -92,8 +66,8 @@ compress nRows nColumns rows cols vals = runST $ do
         | ix < nz' = do
             r <- MV.unsafeRead rows' ix
             if fromIntegral r < nRows then dedupFilter (ix + 1) else do
-              shiftL rows' ix
-              shiftL vals' ix
+              shiftR rows' ix (-1)
+              shiftR vals' ix (-1)
               dedupFilter ix
         | otherwise = return ()
   dedupFilter 0
