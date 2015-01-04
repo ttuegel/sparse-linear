@@ -245,26 +245,6 @@ kronecker matA matB = runST $ do
     , rowIndices = _ixs
     , values = _vals
     }
-{-
-  fromColumns $ do
-    cA <- Box.enumFromN 0 (nColumns matA)
-    cB <- Box.enumFromN 0 (nColumns matB)
-    let colA = column matA cA
-        colB = column matB cB
-    return $
-      S.Vector
-      { S.dim = S.dim colA * S.dim colB
-      , S.indices =
-          V.concat $ do
-            rA <- V.toList $ S.indices colA
-            let rOff = rA * fromIntegral (S.dim colB)
-            return $ V.map (+ rOff) $ S.indices colB
-      , S.values =
-          V.concat $ do
-            a <- V.toList $ S.values colA
-            return $ V.map (* a) $ S.values colB
-      }
--}
 
 takeDiag :: CxSparse a => Matrix a -> Vector a
 {-# INLINE takeDiag #-}
