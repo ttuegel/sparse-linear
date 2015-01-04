@@ -87,7 +87,6 @@ class (Num a, Storable a, Storable (Cs a), Unbox a) => CxSparse a where
   cs_gaxpy :: CsGaxpy a
   cs_multiply :: CsMultiply a
   cs_add :: CsAdd a
-  cs_kron :: CsMultiply a
   cs_diag :: CsDiag a
 
 foreign import ccall "cs.h cs_ci_gaxpy"
@@ -96,8 +95,6 @@ foreign import ccall "cs.h cs_ci_multiply"
   cs_ci_multiply :: CsMultiply (Complex Double)
 foreign import ccall "cs_ci_add_ptrs"
   cs_ci_add :: CsAdd (Complex Double)
-foreign import ccall "cs_ci_kron"
-  cs_ci_kron :: CsMultiply (Complex Double)
 foreign import ccall "cs_ci_diag"
   cs_ci_diag :: CsDiag (Complex Double)
 
@@ -105,12 +102,10 @@ instance CxSparse (Complex Double) where
   {-# INLINE cs_gaxpy #-}
   {-# INLINE cs_multiply #-}
   {-# INLINE cs_add #-}
-  {-# INLINE cs_kron #-}
   {-# INLINE cs_diag #-}
   cs_gaxpy = cs_ci_gaxpy
   cs_multiply = cs_ci_multiply
   cs_add = cs_ci_add
-  cs_kron = cs_ci_kron
   cs_diag = cs_ci_diag
 
 foreign import ccall "cs.h cs_di_gaxpy"
@@ -119,8 +114,6 @@ foreign import ccall "cs.h cs_di_multiply"
   cs_di_multiply :: CsMultiply Double
 foreign import ccall "cs_di_add_ptrs"
   cs_di_add :: CsAdd Double
-foreign import ccall "cs_di_kron"
-  cs_di_kron :: CsMultiply Double
 foreign import ccall "cs_di_diag"
   cs_di_diag :: CsDiag Double
 
@@ -128,10 +121,8 @@ instance CxSparse Double where
   {-# INLINE cs_gaxpy #-}
   {-# INLINE cs_multiply #-}
   {-# INLINE cs_add #-}
-  {-# INLINE cs_kron #-}
   {-# INLINE cs_diag #-}
   cs_gaxpy = cs_di_gaxpy
   cs_multiply = cs_di_multiply
   cs_add = cs_di_add
-  cs_kron = cs_di_kron
   cs_diag = cs_di_diag

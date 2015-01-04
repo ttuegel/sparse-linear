@@ -10,12 +10,12 @@ module Data.Matrix.Sparse.Compress
        ) where
 
 import Control.Applicative
-import Control.Monad (zipWithM_)
 import Control.Monad.ST (runST)
 import Data.Vector.Algorithms.Search (binarySearchL)
+import qualified Data.Vector.Generic as V
 import Data.Vector.Storable (Storable, Vector)
-import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
+import qualified Data.Vector.Unboxed as U
 
 import Data.Cs
 import Data.Matrix.Sparse.Type
@@ -90,7 +90,7 @@ computePtrs n indices = runST $ do
 decompress :: Vector CInt -> Vector CInt
 decompress = \ptrs -> V.create $ do
   indices <- MV.new $ fromIntegral $ V.last ptrs
-  V.forM_ (V.enumFromN 0 $ V.length ptrs - 1) $ \c -> do
+  U.forM_ (U.enumFromN 0 $ V.length ptrs - 1) $ \c -> do
     start <- fromIntegral <$> V.unsafeIndexM ptrs c
     end <- fromIntegral <$> V.unsafeIndexM ptrs (c + 1)
     MV.set (MV.slice start (end - start) indices) $ fromIntegral c
@@ -115,7 +115,7 @@ transpose mat@Matrix{..} = runST $ do
       copyCol c col =
         V.zipWithM_ (insertIntoRow c) (S.indices col) (S.values col)
 
-  zipWithM_ copyCol [0..] (toColumns mat)
+  V.zipWithM_ copyCol (V.enumFromN 0 nColumns) (toColumns mat)
 
   _values <- V.unsafeFreeze vals
   _colIndices <- V.unsafeFreeze cols

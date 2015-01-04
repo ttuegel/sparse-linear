@@ -7,15 +7,16 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.Matrix.Sparse
-    ( Matrix(..), cmap
+    ( Matrix(..), cmap, nonZero
     , compress, decompress
     , transpose
-    , toColumns, assertValid
+    , toColumns, fromColumns
+    , assertValid
     , module Data.Cs, fromCs, withConstCs
     ) where
 
+import qualified Data.Vector.Generic as V
 import Data.Vector.Storable (Storable)
-import qualified Data.Vector.Storable as V
 import GHC.Stack (errorWithStackTrace)
 
 import Data.Cs
@@ -33,6 +34,6 @@ assertValid mat@Matrix{..}
       errorWithStackTrace "wrong number of column pointers"
   | V.length values /= (fromIntegral $ V.last columnPointers) =
       errorWithStackTrace "length values is wrong"
-  | any (not . increasing . S.indices) (toColumns mat) =
+  | V.any (not . increasing . S.indices) (toColumns mat) =
       errorWithStackTrace "row indices are not increasing"
   | otherwise = mat

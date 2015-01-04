@@ -56,7 +56,6 @@ library
     amd
   c-sources:
     cbits/cs_add_ptrs.c
-    cbits/cs_kron.c
     cbits/cs_diag.c
     cbits/umfpack_cs.c
   cc-options: -O3

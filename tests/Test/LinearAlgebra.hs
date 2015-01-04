@@ -4,8 +4,8 @@
 module Test.LinearAlgebra where
 
 import Data.Traversable
+import qualified Data.Vector.Generic as V
 import Data.Vector.Storable (Storable, Vector)
-import qualified Data.Vector.Storable as V
 import Test.QuickCheck
 
 import Data.Matrix.Sparse
@@ -38,7 +38,7 @@ prop_valuesLength Matrix{..} =
   V.length values == (fromIntegral $ V.last columnPointers)
 
 prop_rowIndicesIncreasing :: Storable a => Matrix a -> Bool
-prop_rowIndicesIncreasing mat = all (increasing . SpV.indices) (toColumns mat)
+prop_rowIndicesIncreasing mat = V.all (increasing . SpV.indices) (toColumns mat)
 
 prop_rowIndicesNonNegative :: Storable a => Matrix a -> Bool
 prop_rowIndicesNonNegative mat = V.all (>= 0) (rowIndices mat)

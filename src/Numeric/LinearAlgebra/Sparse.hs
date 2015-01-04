@@ -28,6 +28,7 @@ import Data.Foldable
 import qualified Data.List as List
 import Data.Maybe
 import Data.MonoTraversable
+import qualified Data.Vector as Box
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable.Mutable (IOVector)
@@ -44,7 +45,7 @@ import Debug.Trace (traceShow)
 
 import Data.Complex.Enhanced
 import Data.Matrix.Sparse
-import qualified Data.Vector.Sparse as SpV
+import qualified Data.Vector.Sparse as S
 
 instance CxSparse a => Num (Matrix a) where
   {-# SPECIALIZE instance Num (Matrix Double) #-}
@@ -79,7 +80,7 @@ fromTriples = fromTriples_go where
 (><) :: CxSparse a => Int -> Int -> [(Int, Int, a)] -> Matrix a
 (><) = fromTriples
 
-toRows :: CxSparse a => Matrix a -> [SpV.Vector a]
+toRows :: CxSparse a => Matrix a -> Box.Vector (S.Vector a)
 toRows = toColumns . transpose
 
 ctrans :: (Num a, IsReal a, Storable a) => Matrix a -> Matrix a
@@ -197,14 +198,25 @@ fromBlocksDiag :: CxSparse a => [[Maybe (Matrix a)]] -> Matrix a
 fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . List.transpose where
   rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
 
-kronecker :: CxSparse a => Matrix a -> Matrix a -> Matrix a
-kronecker = kronecker_go where
-  {-# NOINLINE kronecker_go #-}
-  kronecker_go _a _b =
-    unsafePerformIO $
-    withConstCs _a $ \_a ->
-    withConstCs _b $ \_b ->
-      cs_kron _a _b >>= fromCs False
+kronecker :: (Num a, Storable a) => Matrix a -> Matrix a -> Matrix a
+{-# INLINE kronecker #-}
+kronecker matA matB =
+  fromColumns $ do
+    colA <- toColumns matA
+    colB <- toColumns matB
+    return $
+      S.Vector
+      { S.dim = S.dim colA * S.dim colB
+      , S.indices =
+          V.concat $ do
+            rA <- V.toList $ S.indices colA
+            let rOff = rA * fromIntegral (S.dim colB)
+            return $ V.map (+ rOff) $ S.indices colB
+      , S.values =
+          V.concat $ do
+            a <- V.toList $ S.values colA
+            return $ V.map (* a) $ S.values colB
+      }
 
 takeDiag :: CxSparse a => Matrix a -> Vector a
 takeDiag = takeDiag_go where
