@@ -22,6 +22,8 @@ module Numeric.LinearAlgebra.Sparse
     , module Data.Complex.Enhanced
     ) where
 
+import Control.Applicative
+import Control.Monad.ST (runST)
 import Data.Foldable
 import qualified Data.List as List
 import Data.Maybe
@@ -200,7 +202,50 @@ fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . List.transpose where
 
 kronecker :: (Num a, Storable a) => Matrix a -> Matrix a -> Matrix a
 {-# INLINE kronecker #-}
-kronecker matA matB =
+kronecker matA matB = runST $ do
+  let nr = nRows matA * nRows matB
+      nc = nColumns matA * nColumns matB
+      nz = nonZero matA * nonZero matB
+
+  _ptrs <- MV.new (nc + 1)
+  MV.unsafeWrite _ptrs 0 0
+
+  _vals <- MV.new nz
+  _ixs <- MV.new nz
+
+  V.forM_ (V.enumFromN 0 $ nColumns matA) $ \cA -> do
+    V.forM_ (V.enumFromN 0 $ nColumns matB) $ \cB -> do
+
+      let colA = column matA cA
+          colB = column matB cB
+          len = V.length $ S.values colB
+          c = cA * nColumns matB + cB
+
+      MV.unsafeRead _ptrs c >>= MV.unsafeWrite _ptrs (c + 1)
+
+      S.iforM_ colA $ \rA a -> do
+        let rOff = rA * fromIntegral (nRows matB)
+            ixs = V.map (+ rOff) $ S.indices colB
+            vals = V.map (* a) $ S.values colB
+
+        off <- fromIntegral <$> MV.unsafeRead _ptrs (c + 1)
+
+        V.copy (MV.slice off len _ixs) ixs
+        V.copy (MV.slice off len _vals) vals
+
+        MV.unsafeWrite _ptrs (c + 1) $! fromIntegral $ off + len
+
+  _ptrs <- V.unsafeFreeze _ptrs
+  _vals <- V.unsafeFreeze _vals
+  _ixs <- V.unsafeFreeze _ixs
+  return Matrix
+    { nRows = nr
+    , nColumns = nc
+    , columnPointers = _ptrs
+    , rowIndices = _ixs
+    , values = _vals
+    }
+{-
   fromColumns $ do
     cA <- Box.enumFromN 0 (nColumns matA)
     cB <- Box.enumFromN 0 (nColumns matB)
@@ -219,6 +264,7 @@ kronecker matA matB =
             a <- V.toList $ S.values colA
             return $ V.map (* a) $ S.values colB
       }
+-}
 
 takeDiag :: CxSparse a => Matrix a -> Vector a
 {-# INLINE takeDiag #-}
