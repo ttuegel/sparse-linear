@@ -117,15 +117,16 @@ add :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 add a b = lin 1 a 1 b
 
 gaxpy_ :: CxSparse a => Matrix a -> IOVector a -> IOVector a -> IO ()
-gaxpy_ matA _x _y = do
-  let gaxpy_go c col = do
-        x <- MV.unsafeRead _x c
-        S.iforM_ col $ \(fromIntegral -> r) a -> do
-          y <- MV.unsafeRead _y r
-          MV.unsafeWrite _y r $! y + a * x
-  Box.zipWithM_ gaxpy_go (Box.enumFromN 0 $ nColumns matA) (toColumns matA)
+{-# INLINE gaxpy_ #-}
+gaxpy_ mat@Matrix{..} xs ys =
+  V.forM_ (V.enumFromN 0 nColumns) $ \c -> do
+    x <- MV.unsafeRead xs c
+    S.iforM_ (column mat c) $ \(fromIntegral -> r) a -> do
+      y <- MV.unsafeRead ys r
+      MV.unsafeWrite ys r $! y + a * x
 
 gaxpy :: CxSparse a => Matrix a -> Vector a -> Vector a -> Vector a
+{-# INLINE gaxpy #-}
 gaxpy = gaxpy_go where
   {-# NOINLINE gaxpy_go #-}
   gaxpy_go a _x _y =
@@ -136,6 +137,7 @@ gaxpy = gaxpy_go where
       V.unsafeFreeze _y
 
 mulV :: CxSparse a => Matrix a -> Vector a -> Vector a
+{-# INLINE mulV #-}
 mulV = mulV_go where
   {-# NOINLINE mulV_go #-}
   mulV_go a _x =
@@ -203,8 +205,10 @@ kronecker :: (Num a, Storable a) => Matrix a -> Matrix a -> Matrix a
 {-# INLINE kronecker #-}
 kronecker matA matB =
   fromColumns $ do
-    colA <- toColumns matA
-    colB <- toColumns matB
+    cA <- Box.enumFromN 0 (nColumns matA)
+    cB <- Box.enumFromN 0 (nColumns matB)
+    let colA = column matA cA
+        colB = column matB cB
     return $
       S.Vector
       { S.dim = S.dim colA * S.dim colB

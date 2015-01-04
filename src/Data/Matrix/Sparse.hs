@@ -10,7 +10,7 @@ module Data.Matrix.Sparse
     ( Matrix(..), cmap, nonZero
     , compress, decompress
     , transpose
-    , toColumns, fromColumns
+    , toColumns, fromColumns, column
     , assertValid
     , module Data.Cs, fromCs, withConstCs
     ) where

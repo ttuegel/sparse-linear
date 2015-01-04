@@ -3,7 +3,7 @@
 
 module Data.Matrix.Sparse.Type
        ( Matrix(..), nonZero
-       , fromColumns, toColumns
+       , fromColumns, toColumns, column
        , cmap
        ) where
 
@@ -59,16 +59,7 @@ cmap = \f m -> m { values = V.map f $ values m }
 
 toColumns :: Storable a => Matrix a -> Box.Vector (S.Vector a)
 {-# INLINE toColumns #-}
-toColumns = \Matrix{..} -> do
-  c <- V.enumFromN 0 nColumns
-  start <- fromIntegral <$> V.unsafeIndexM columnPointers c
-  end <- fromIntegral <$> V.unsafeIndexM columnPointers (c + 1)
-  let len = end - start
-  return S.Vector
-    { S.dim = nRows
-    , S.indices = V.slice start len rowIndices
-    , S.values = V.slice start len values
-    }
+toColumns = \mat@Matrix{..} -> V.map (column mat) $ V.enumFromN 0 nColumns
 
 fromColumns :: Storable a => Box.Vector (S.Vector a) -> Matrix a
 {-# INLINE fromColumns #-}
@@ -88,3 +79,15 @@ fromColumns columns
       }
   where
     nr = S.dim $ V.head columns
+
+column :: Storable a => Matrix a -> Int -> S.Vector a
+{-# INLINE column #-}
+column = \Matrix{..} c ->
+  let start = fromIntegral $ columnPointers V.! c
+      end = fromIntegral $ columnPointers V.! (c + 1)
+      len = end - start
+  in S.Vector
+    { S.dim = nRows
+    , S.indices = V.slice start len rowIndices
+    , S.values = V.slice start len values
+    }
