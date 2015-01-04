@@ -19,6 +19,7 @@ import qualified Data.Vector.Storable.Mutable as MV
 import qualified Data.Vector.Unboxed as U
 
 import Data.Cs
+import Data.Complex.Enhanced
 import Data.Matrix.Sparse.Type
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util
@@ -31,6 +32,18 @@ compress
   -> Vector CInt  -- ^ column indices
   -> Vector a  -- ^ values
   -> Matrix a
+{-# SPECIALIZE
+    compress
+      :: Int -> Int
+      -> Vector CInt -> Vector CInt
+      -> Vector Double -> Matrix Double
+  #-}
+{-# SPECIALIZE
+    compress
+      :: Int -> Int
+      -> Vector CInt -> Vector CInt
+      -> Vector (Complex Double) -> Matrix (Complex Double)
+  #-}
 compress nRows nColumns rows cols vals = runST $ do
   let nz = V.length vals
       ptrs = computePtrs nColumns cols
@@ -79,6 +92,7 @@ compress nRows nColumns rows cols vals = runST $ do
   return Matrix{..}
 
 computePtrs :: Int -> Vector CInt -> Vector CInt
+{-# INLINE computePtrs #-}
 computePtrs n indices = runST $ do
   counts <- MV.replicate n 0
   -- scan the indices once, counting the occurrences of each index
@@ -89,6 +103,7 @@ computePtrs n indices = runST $ do
   V.scanl (+) 0 <$> V.unsafeFreeze counts
 
 decompress :: Vector CInt -> Vector CInt
+{-# INLINE decompress #-}
 decompress = \ptrs -> V.create $ do
   indices <- MV.new $ fromIntegral $ V.last ptrs
   U.forM_ (U.enumFromN 0 $ V.length ptrs - 1) $ \c -> do
@@ -97,7 +112,11 @@ decompress = \ptrs -> V.create $ do
     MV.set (MV.slice start (end - start) indices) $ fromIntegral c
   return indices
 
-transpose :: (Num a, Storable a) => Matrix a -> Matrix a
+transpose :: Storable a => Matrix a -> Matrix a
+{-# SPECIALIZE transpose :: Matrix Double -> Matrix Double #-}
+{-# SPECIALIZE
+    transpose :: Matrix (Complex Double) -> Matrix (Complex Double)
+  #-}
 transpose mat@Matrix{..} = runST $ do
   let rowPointers = computePtrs nRows rowIndices
   -- re-initialize row counts from row pointers

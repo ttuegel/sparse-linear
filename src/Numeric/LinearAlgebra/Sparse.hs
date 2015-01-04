@@ -45,8 +45,12 @@ import Data.Matrix.Sparse
 import qualified Data.Vector.Sparse as S
 
 instance CxSparse a => Num (Matrix a) where
-  {-# SPECIALIZE instance Num (Matrix Double) #-}
-  {-# SPECIALIZE instance Num (Matrix (Complex Double)) #-}
+  {-# INLINE (+) #-}
+  {-# INLINE (-) #-}
+  {-# INLINE (*) #-}
+  {-# INLINE negate #-}
+  {-# INLINE abs #-}
+  {-# INLINE signum #-}
   (+) = add
   (-) = \a b -> lin 1 a (-1) b
   (*) = mul
@@ -101,7 +105,15 @@ assertEq a b
   | otherwise = True
 
 lin :: (Num a, Storable a) => a -> Matrix a -> a -> Matrix a -> Matrix a
-{-# INLINE lin #-}
+{-# SPECIALIZE
+    lin :: Double -> Matrix Double -> Double -> Matrix Double -> Matrix Double
+  #-}
+{-# SPECIALIZE
+    lin
+      :: Complex Double -> Matrix (Complex Double)
+      -> Complex Double -> Matrix (Complex Double)
+      -> Matrix (Complex Double)
+  #-}
 lin a matA b matB
   | nRows matA /= nRows matB =
       errorWithStackTrace "lin: row dimensions differ"
@@ -210,6 +222,7 @@ mulV = mulV_go where
       V.unsafeFreeze y
 
 hcat :: Storable a => Matrix a -> Matrix a -> Matrix a
+{-# INLINE hcat #-}
 hcat a b
   | nRows a /= nRows b = errorWithStackTrace "row dimension mismatch"
   | otherwise = Matrix
@@ -225,11 +238,17 @@ hcat a b
     nza = V.last $ columnPointers a
 
 vcat :: (Num a, Storable a) => Matrix a -> Matrix a -> Matrix a
+{-# INLINE vcat #-}
 vcat a b
   | nColumns a /= nColumns b = errorWithStackTrace "column dimension mismatch"
   | otherwise = transpose $ hcat (transpose a) (transpose b)
 
 fromBlocks :: (Num a, Storable a) => [[Maybe (Matrix a)]] -> Matrix a
+{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Double)]] -> Matrix Double #-}
+{-# SPECIALIZE
+    fromBlocks
+      :: [[Maybe (Matrix (Complex Double))]] -> Matrix (Complex Double)
+  #-}
 fromBlocks = foldl1 vcat . map (foldl1 hcat) . adjustDims
   where
     adjustDims :: Storable a => [[Maybe (Matrix a)]] -> [[Matrix a]]
@@ -260,11 +279,17 @@ fromBlocks = foldl1 vcat . map (foldl1 hcat) . adjustDims
           | otherwise = V.fromList $ map head widthSpecs
 
 fromBlocksDiag :: (Num a, Storable a) => [[Maybe (Matrix a)]] -> Matrix a
+{-# INLINE fromBlocksDiag #-}
 fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . List.transpose where
   rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
 
 kronecker :: (Num a, Storable a) => Matrix a -> Matrix a -> Matrix a
-{-# INLINE kronecker #-}
+{-# SPECIALIZE kronecker :: Matrix Double -> Matrix Double -> Matrix Double #-}
+{-# SPECIALIZE
+    kronecker
+      :: Matrix (Complex Double) -> Matrix (Complex Double)
+      -> Matrix (Complex Double)
+  #-}
 kronecker matA matB = runST $ do
   let nr = nRows matA * nRows matB
       nc = nColumns matA * nColumns matB
@@ -319,6 +344,7 @@ takeDiag = \mat@Matrix{..} ->
       Just ix -> S.values col V.! ix
 
 diag :: Storable a => Vector a -> Matrix a
+{-# INLINE diag #-}
 diag values = Matrix{..}
   where
     nColumns = V.length values
@@ -327,9 +353,11 @@ diag values = Matrix{..}
     rowIndices = V.iterateN nColumns (+1) 0
 
 ident :: (Num a, Storable a) => Int -> Matrix a
+{-# INLINE ident #-}
 ident n = diag $ V.replicate n 1
 
 zeros :: Storable a => Int -> Int -> Matrix a
+{-# INLINE zeros #-}
 zeros nRows nColumns = Matrix{..}
   where
     columnPointers = V.replicate (nColumns + 1) 0
