@@ -10,10 +10,11 @@ module Data.Matrix.Sparse.Compress
        ) where
 
 import Control.Applicative
+import Control.Monad (when)
 import Control.Monad.ST (runST)
 import Data.Vector.Algorithms.Search (binarySearchL)
-import qualified Data.Vector.Generic as V
 import Data.Vector.Storable (Storable, Vector)
+import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import qualified Data.Vector.Unboxed as U
 
@@ -32,15 +33,15 @@ compress
   -> Matrix a
 compress nRows nColumns rows cols vals = runST $ do
   let nz = V.length vals
-      _ptrs = computePtrs nColumns cols
+      ptrs = computePtrs nColumns cols
 
   rows' <- MV.replicate nz $ fromIntegral nRows
   vals' <- MV.new nz
   dels <- MV.replicate nColumns 0
 
-  let dedupInsert r (fromIntegral -> c) x = do
-        start <- fromIntegral <$> V.unsafeIndexM _ptrs c
-        end <- fromIntegral <$> V.unsafeIndexM _ptrs (c + 1)
+  let dedupInsert !r (fromIntegral -> !c) !x = do
+        start <- fromIntegral <$> V.unsafeIndexM ptrs c
+        end <- fromIntegral <$> V.unsafeIndexM ptrs (c + 1)
         let len = end - start
             rs = MV.slice start len rows'
             xs = MV.slice start len vals'
@@ -57,20 +58,20 @@ compress nRows nColumns rows cols vals = runST $ do
             shiftR xs ix 1
             MV.unsafeWrite xs ix x
   zipWithM3_ dedupInsert rows cols vals
-  _ptrs <- V.zipWith (-) _ptrs . V.scanl (+) 0 <$> V.unsafeFreeze dels
+  shifts <- V.scanl' (+) 0 <$> V.unsafeFreeze dels
 
-  let columnPointers = _ptrs
+  let columnPointers = V.zipWith (-) ptrs shifts
       nz' = fromIntegral $ V.last columnPointers
 
-  let dedupFilter !ix
-        | ix < nz' = do
-            r <- MV.unsafeRead rows' ix
-            if fromIntegral r < nRows then dedupFilter (ix + 1) else do
-              shiftR rows' ix (-1)
-              shiftR vals' ix (-1)
-              dedupFilter ix
-        | otherwise = return ()
-  dedupFilter 0
+  U.forM_ (U.enumFromN 0 nColumns) $ \c -> do
+    shift <- fromIntegral <$> V.unsafeIndexM shifts c
+    when (shift > 0) $ do
+      start <- fromIntegral <$> V.unsafeIndexM ptrs c
+      end <- fromIntegral <$> V.unsafeIndexM ptrs (c + 1)
+      let len = end - start
+          start' = start - shift
+      MV.move (MV.slice start' len rows') (MV.slice start len rows')
+      MV.move (MV.slice start' len vals') (MV.slice start len vals')
 
   rowIndices <- V.unsafeFreeze $ MV.slice 0 nz' rows'
   values <- V.unsafeFreeze $ MV.slice 0 nz' vals'
@@ -107,15 +108,14 @@ transpose mat@Matrix{..} = runST $ do
   vals <- MV.new nz
 
   -- copy each column into place
-  let insertIntoRow c r x = do
+  let insertIntoRow (fromIntegral -> !c) !r !x = do
         ix <- fromIntegral <$> preincrement rowCount (fromIntegral r)
         MV.unsafeWrite cols ix c
         MV.unsafeWrite vals ix x
 
-      copyCol c col =
-        V.zipWithM_ (insertIntoRow c) (S.indices col) (S.values col)
-
-  V.zipWithM_ copyCol (V.enumFromN 0 nColumns) (toColumns mat)
+  U.forM_ (U.enumFromN 0 nColumns) $ \c -> do
+    let col = column mat c
+    V.zipWithM_ (insertIntoRow c) (S.indices col) (S.values col)
 
   _values <- V.unsafeFreeze vals
   _colIndices <- V.unsafeFreeze cols
