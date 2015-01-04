@@ -3,14 +3,15 @@
 
 module Data.Matrix.Sparse.Type
        ( Matrix(..)
+       , fromColumns, toColumns
        , cmap
-       , toColumns
        ) where
 
 import Control.Applicative
 import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable (Storable, Vector)
+import GHC.Stack (errorWithStackTrace)
 
 import Data.Cs
 import qualified Data.Vector.Sparse as S
@@ -63,3 +64,22 @@ toColumns = \Matrix{..} -> do
     , S.indices = V.slice start len rowIndices
     , S.values = V.slice start len values
     }
+
+fromColumns :: Storable a => [S.Vector a] -> Matrix a
+{-# INLINE fromColumns #-}
+fromColumns columns
+  | null columns = errorWithStackTrace "fromColumns: empty list"
+  | any ((/= nr) . S.dim) columns =
+      errorWithStackTrace "fromColumns: row dimensions do not match"
+  | otherwise =
+      Matrix
+      { nRows = nr
+      , nColumns = length columns
+      , columnPointers =
+          V.scanl' (+) 0 $ V.fromList
+          $ map (fromIntegral . V.length . S.values) columns
+      , rowIndices = V.concat $ map S.indices columns
+      , values = V.concat $ map S.values columns
+      }
+  where
+    nr = S.dim $ head columns
