@@ -11,11 +11,9 @@ module Data.Matrix.Sparse.Compress
 
 import Control.Applicative
 import Control.Monad.ST (runST)
-import Control.Monad.Primitive (PrimMonad, PrimState)
 import Data.Vector.Algorithms.Search (binarySearchL)
 import Data.Vector.Storable (Storable, Vector)
 import qualified Data.Vector.Storable as V
-import Data.Vector.Storable.Mutable (MVector)
 import qualified Data.Vector.Storable.Mutable as MV
 
 import Data.Cs
@@ -129,11 +127,3 @@ transpose Matrix{..} = runST $ do
     , rowIndices = _colIndices
     , values = _values
     }
-
-preincrement
-  :: (Num a, PrimMonad m, Storable a) => MVector (PrimState m) a -> Int -> m a
-{-# INLINE preincrement #-}
-preincrement = \v ix -> do
-  count <- MV.unsafeRead v ix
-  MV.unsafeWrite v ix $! count + 1
-  return count

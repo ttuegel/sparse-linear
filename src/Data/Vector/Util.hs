@@ -4,6 +4,7 @@
 module Data.Vector.Util
        ( zipWithM3_
        , shiftR
+       , preincrement
        ) where
 
 import Control.Monad.Primitive (PrimMonad, PrimState)
@@ -43,3 +44,11 @@ shiftR = \v ix off -> do
         | off >= 0 = MV.slice (ix + abs off) len' v
         | otherwise = MV.slice ix len' v
   MV.move dst src
+
+preincrement
+  :: (Num a, PrimMonad m, MVector v a) => v (PrimState m) a -> Int -> m a
+{-# INLINE preincrement #-}
+preincrement = \v ix -> do
+  count <- MV.unsafeRead v ix
+  MV.unsafeWrite v ix $! count + 1
+  return count
