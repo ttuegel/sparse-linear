@@ -78,19 +78,15 @@ instance Storable (Cs Double) where
   {-# INLINE peek #-}
   {-# INLINE poke #-}
 
-type CsGaxpy a = Ptr (Cs a) -> Ptr a -> Ptr a -> IO CInt
 type CsMultiply a = Ptr (Cs a) -> Ptr (Cs a) -> IO (Ptr (Cs a))
 type CsAdd a = Ptr (Cs a) -> Ptr (Cs a) -> Ptr a -> Ptr a -> IO (Ptr (Cs a))
 type CsDiag a = Ptr (Cs a) -> IO (Ptr a)
 
 class (Num a, Storable a, Storable (Cs a), Unbox a) => CxSparse a where
-  cs_gaxpy :: CsGaxpy a
   cs_multiply :: CsMultiply a
   cs_add :: CsAdd a
   cs_diag :: CsDiag a
 
-foreign import ccall "cs.h cs_ci_gaxpy"
-  cs_ci_gaxpy :: CsGaxpy (Complex Double)
 foreign import ccall "cs.h cs_ci_multiply"
   cs_ci_multiply :: CsMultiply (Complex Double)
 foreign import ccall "cs_ci_add_ptrs"
@@ -99,17 +95,13 @@ foreign import ccall "cs_ci_diag"
   cs_ci_diag :: CsDiag (Complex Double)
 
 instance CxSparse (Complex Double) where
-  {-# INLINE cs_gaxpy #-}
   {-# INLINE cs_multiply #-}
   {-# INLINE cs_add #-}
   {-# INLINE cs_diag #-}
-  cs_gaxpy = cs_ci_gaxpy
   cs_multiply = cs_ci_multiply
   cs_add = cs_ci_add
   cs_diag = cs_ci_diag
 
-foreign import ccall "cs.h cs_di_gaxpy"
-  cs_di_gaxpy :: CsGaxpy Double
 foreign import ccall "cs.h cs_di_multiply"
   cs_di_multiply :: CsMultiply Double
 foreign import ccall "cs_di_add_ptrs"
@@ -118,11 +110,9 @@ foreign import ccall "cs_di_diag"
   cs_di_diag :: CsDiag Double
 
 instance CxSparse Double where
-  {-# INLINE cs_gaxpy #-}
   {-# INLINE cs_multiply #-}
   {-# INLINE cs_add #-}
   {-# INLINE cs_diag #-}
-  cs_gaxpy = cs_di_gaxpy
   cs_multiply = cs_di_multiply
   cs_add = cs_di_add
   cs_diag = cs_di_diag

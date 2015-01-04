@@ -23,7 +23,6 @@ module Numeric.LinearAlgebra.Sparse
     ) where
 
 import Control.Applicative
-import Control.Monad (void)
 import Data.Foldable
 import qualified Data.List as List
 import Data.Maybe
@@ -118,11 +117,13 @@ add :: CxSparse a => Matrix a -> Matrix a -> Matrix a
 add a b = lin 1 a 1 b
 
 gaxpy_ :: CxSparse a => Matrix a -> IOVector a -> IOVector a -> IO ()
-gaxpy_ _a _x _y =
-  withConstCs _a $ \_a ->
-  MV.unsafeWith _x $ \_x ->
-  MV.unsafeWith _y $ \_y ->
-    void $ cs_gaxpy _a _x _y
+gaxpy_ matA _x _y = do
+  let gaxpy_go c col = do
+        x <- MV.unsafeRead _x c
+        S.iforM_ col $ \(fromIntegral -> r) a -> do
+          y <- MV.unsafeRead _y r
+          MV.unsafeWrite _y r $! y + a * x
+  Box.zipWithM_ gaxpy_go (Box.enumFromN 0 $ nColumns matA) (toColumns matA)
 
 gaxpy :: CxSparse a => Matrix a -> Vector a -> Vector a -> Vector a
 gaxpy = gaxpy_go where

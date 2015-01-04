@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -fsimpl-tick-factor=200 #-}
 
 module Data.Vector.Sparse
-       ( Vector(..), cmap
+       ( Vector(..), cmap, iforM_
        , fromPairs, (|>)
        ) where
 
@@ -60,3 +60,7 @@ instance Storable a => MonoFoldable (Vector a) where
 cmap :: (Storable a, Storable b) => (a -> b) -> Vector a -> Vector b
 {-# INLINE cmap #-}
 cmap = \f v -> v { values = V.map f $ values v }
+
+iforM_ :: (Monad m, Storable a) => Vector a -> (CInt -> a -> m b) -> m ()
+{-# INLINE iforM_ #-}
+iforM_ = \v f -> V.zipWithM_ f (indices v) (values v)
