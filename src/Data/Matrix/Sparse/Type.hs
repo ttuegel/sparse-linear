@@ -7,7 +7,6 @@ module Data.Matrix.Sparse.Type
        , cmap
        ) where
 
-import Control.Applicative
 import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import qualified Data.Vector as Box
 import qualified Data.Vector.Generic as V
