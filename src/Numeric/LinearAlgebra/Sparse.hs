@@ -22,7 +22,6 @@ module Numeric.LinearAlgebra.Sparse
     , module Data.Complex.Enhanced
     ) where
 
-import Control.Applicative
 import Data.Foldable
 import qualified Data.List as List
 import Data.Maybe
@@ -32,8 +31,6 @@ import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable.Mutable (IOVector)
 import qualified Data.Vector.Storable.Mutable as MV
-import Foreign.ForeignPtr.Safe (newForeignPtr)
-import Foreign.Marshal.Alloc (finalizerFree)
 import Foreign.Marshal.Utils (with)
 import Foreign.Storable
 import GHC.Stack
@@ -224,14 +221,13 @@ kronecker matA matB =
       }
 
 takeDiag :: CxSparse a => Matrix a -> Vector a
-takeDiag = takeDiag_go where
-  {-# NOINLINE takeDiag_go #-}
-  takeDiag_go _a@Matrix{..} =
-    unsafePerformIO $
-    withConstCs _a $ \_a ->
-      V.unsafeFromForeignPtr0
-      <$> (cs_diag _a >>= newForeignPtr finalizerFree)
-      <*> pure (min nRows nColumns)
+{-# INLINE takeDiag #-}
+takeDiag = \mat@Matrix{..} ->
+  flip V.map (V.enumFromN 0 $ min nRows nColumns) $ \c ->
+    let col = column mat c
+    in case V.elemIndex (fromIntegral c) (S.indices col) of
+      Nothing -> 0
+      Just ix -> S.values col V.! ix
 
 diag :: Storable a => Vector a -> Matrix a
 diag values = Matrix{..}
