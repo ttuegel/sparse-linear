@@ -11,7 +11,7 @@ module Numeric.LinearAlgebra.Sparse
     ( CxSparse()
     , Matrix(), cmap, orient, dimM, dimN
     , Orient(..), Trans, Indices(..), reorient
-    , mul
+    , outer, mul
     , compress, fromTriples, (><)
     , transpose, ctrans, hermitian, assertEq
     , lin
@@ -28,9 +28,11 @@ import Control.Applicative
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import Control.Monad.ST (runST)
 import Data.Foldable
+import Data.Function (fix)
 import qualified Data.List as List
 import Data.Maybe
 import Data.MonoTraversable
+import qualified Data.Vector as Box
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable.Mutable (MVector)
@@ -39,7 +41,6 @@ import qualified Data.Vector.Unboxed as U
 import Foreign.Storable
 import GHC.Stack (errorWithStackTrace)
 import Prelude hiding (any, foldl1)
-import System.IO.Unsafe (unsafePerformIO)
 
 import Data.Complex.Enhanced
 import Data.Matrix.Sparse
@@ -54,20 +55,56 @@ instance CxSparse a => Num (Matrix Col a) where
   {-# INLINE signum #-}
   (+) = add
   (-) = \a b -> lin 1 a (-1) b
-  (*) = mul
+  (*) = \matA matB -> matA `mul` reorient matB
   negate = omap negate
   abs = omap abs
   signum = omap signum
   fromInteger = errorWithStackTrace "fromInteger: not implemented"
 
-mul :: CxSparse a => Matrix Col a -> Matrix Col a -> Matrix Col a
-mul = mul_go where
-  {-# NOINLINE mul_go #-}
-  mul_go _a _b =
-    unsafePerformIO $
-    withConstCs _a $ \_a ->
-    withConstCs _b $ \_b ->
-      cs_multiply _a _b >>= fromCs False
+outer
+  :: (Indices or, Num a, Storable a)
+  => S.Vector a -- ^ sparse column vector
+  -> S.Vector a -- ^ sparse row vector
+  -> Matrix or a
+{-# INLINE outer #-}
+outer = \sliceC sliceR -> fix $ \mat ->
+  let -- indices of sliceM are outer (major) indices of result
+      sliceM = ixsM (orient mat) sliceC sliceR
+      -- indices of sliceN are inner (minor) indices of result
+      sliceN = ixsN (orient mat) sliceC sliceR
+      dimM = S.dim sliceM
+      dimN = S.dim sliceN
+      lenM = V.length $ S.values sliceM
+      lenN = V.length $ S.values sliceN
+      lengths = V.create $ do
+        lens <- MV.replicate (dimM + 1) 0
+        V.forM_ (S.indices sliceM) $ \(fromIntegral -> !ixM) ->
+          MV.unsafeWrite lens ixM $! fromIntegral lenN
+        return lens
+      pointers = V.scanl' (+) 0 lengths
+      indices = V.concat $ replicate lenM $ S.indices sliceN
+      values = V.create $ do
+        vals <- MV.new (lenM * lenN)
+        S.iforM_ sliceM $ \(fromIntegral -> !ix) !a -> do
+          start <- fromIntegral <$> V.unsafeIndexM pointers ix
+          end <- fromIntegral <$> V.unsafeIndexM pointers (ix + 1)
+          let len = end - start
+          V.copy (MV.slice start len vals) $ V.map (* a) $ S.values sliceN
+        return vals
+  in Matrix {..}
+
+mul
+  :: (Indices or, Num a, Storable a)
+  => Matrix Col a -> Matrix Row a -> Matrix or a
+{-# INLINE mul #-}
+mul = \matA matB ->
+  if dimM matA /= dimM matB
+    then errorWithStackTrace "mul: inner dimension mismatch"
+  else
+    let matZ = zeros (dimN matA) (dimN matB)
+    in Box.foldr add matZ $ do
+      n <- Box.enumFromN 0 $ dimM matA
+      return $ outer (slice matA n) (slice matB n)
 
 fromTriples
   :: (Indices or, Num a, Storable a)
