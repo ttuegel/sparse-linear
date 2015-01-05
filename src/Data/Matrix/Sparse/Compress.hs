@@ -20,7 +20,6 @@ import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import qualified Data.Vector.Unboxed as U
 
-import Data.Cs
 import Data.Complex.Enhanced
 import Data.Matrix.Sparse.Type
 import qualified Data.Vector.Sparse as S

@@ -6,7 +6,7 @@ module Data.Matrix.Sparse.Type
        ( Orient(..), orient, Trans, Indices(..)
        , Matrix(..), nonZero
        , fromSlices, slices, slice
-       , cmap
+       , cmap, CInt
        ) where
 
 import Data.Proxy
@@ -14,9 +14,9 @@ import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import qualified Data.Vector as Box
 import qualified Data.Vector.Generic as V
 import Data.Vector.Storable (Storable, Vector)
+import Foreign.C.Types (CInt)
 import GHC.Stack (errorWithStackTrace)
 
-import Data.Cs
 import qualified Data.Vector.Sparse as S
 
 data Orient = Row | Col

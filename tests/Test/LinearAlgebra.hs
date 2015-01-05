@@ -16,7 +16,7 @@ import Numeric.LinearAlgebra.Sparse
 instance (Arbitrary a, Storable a) => Arbitrary (Vector a) where
     arbitrary = fmap V.fromList $ suchThat arbitrary $ \v -> length v > 0
 
-instance (Arbitrary a, CxSparse a, Indices or) => Arbitrary (Matrix or a) where
+instance (Arbitrary a, Indices or, Num a, Storable a) => Arbitrary (Matrix or a) where
     arbitrary = do
       nr <- arbitrary `suchThat` (> 0)
       let nc = nr

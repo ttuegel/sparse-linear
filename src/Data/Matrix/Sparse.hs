@@ -13,16 +13,13 @@ module Data.Matrix.Sparse
     , transpose, reorient
     , slices, fromSlices, slice
     , assertValid
-    , module Data.Cs, fromCs, withConstCs
     ) where
 
 import qualified Data.Vector.Generic as V
 import Data.Vector.Storable (Storable)
 import GHC.Stack (errorWithStackTrace)
 
-import Data.Cs
 import Data.Matrix.Sparse.Compress
-import Data.Matrix.Sparse.Foreign
 import Data.Matrix.Sparse.Type
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util (increasing, nondecreasing)

@@ -8,8 +8,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Numeric.LinearAlgebra.Sparse
-    ( CxSparse()
-    , Matrix(), cmap, orient, dimM, dimN
+    ( Matrix(), cmap, orient, dimM, dimN
     , Orient(..), Trans, Indices(..), reorient
     , outer, mul
     , compress, fromTriples, (><)
@@ -46,7 +45,7 @@ import Data.Complex.Enhanced
 import Data.Matrix.Sparse
 import qualified Data.Vector.Sparse as S
 
-instance CxSparse a => Num (Matrix Col a) where
+instance (Num a, Storable a) => Num (Matrix Col a) where
   {-# INLINE (+) #-}
   {-# INLINE (-) #-}
   {-# INLINE (*) #-}
