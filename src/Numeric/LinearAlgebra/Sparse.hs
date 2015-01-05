@@ -327,8 +327,13 @@ kronecker matA matB = runST $ do
       dm = dimM matA * dimM matB
       nz = nonZero matA * nonZero matB
 
-  _ptrs <- MV.new (dm + 1)
-  MV.unsafeWrite _ptrs 0 0
+      lengthsA = V.zipWith (-) (V.tail $ pointers matA) (pointers matA)
+      lengthsB = V.zipWith (-) (V.tail $ pointers matB) (pointers matB)
+
+  let ptrs = V.scanl' (+) 0
+             $ V.concat
+             $ map (\nzA -> V.map (* nzA) lengthsB)
+             $ V.toList lengthsA
 
   _ixs <- MV.new nz
   _xs <- MV.new nz
@@ -337,28 +342,47 @@ kronecker matA matB = runST $ do
     V.forM_ (V.enumFromN 0 $ dimM matB) $ \mB -> do
 
       let sliceA = slice matA mA
+          lenA = V.length $ S.values sliceA
           sliceB = slice matB mB
-          len = V.length $ S.values sliceB
+          lenB = V.length $ S.values sliceB
           m = mA * dimM matB + mB
 
-      MV.unsafeRead _ptrs m >>= MV.unsafeWrite _ptrs (m + 1)
+      let copyIxs !ixA !off
+            | ixA < lenA = do
+                nA <- V.unsafeIndexM (S.indices sliceA) ixA
+                let nOff = nA * fromIntegral (dimN matB)
+                V.copy (MV.slice off lenB _ixs)
+                  $ V.map (+ nOff) $ S.indices sliceB
+                copyIxs (ixA + 1) (off + lenB)
+            | otherwise = return ()
 
-      S.iforM_ sliceA $ \nA a -> do
-        off <- fromIntegral <$> MV.unsafeRead _ptrs (m + 1)
+      V.unsafeIndexM ptrs m >>= copyIxs 0 . fromIntegral
 
-        let nOff = nA * fromIntegral (dimN matB)
-        V.copy (MV.slice off len _ixs) $ V.map (+ nOff) $ S.indices sliceB
-        V.copy (MV.slice off len _xs) $ V.map (* a) $ S.values sliceB
+  V.forM_ (V.enumFromN 0 $ dimM matA) $ \mA -> do
+    V.forM_ (V.enumFromN 0 $ dimM matB) $ \mB -> do
 
-        MV.unsafeWrite _ptrs (m + 1) $! fromIntegral $ off + len
+      let sliceA = slice matA mA
+          lenA = V.length $ S.values sliceA
+          sliceB = slice matB mB
+          lenB = V.length $ S.values sliceB
+          m = mA * dimM matB + mB
 
-  _ptrs <- V.unsafeFreeze _ptrs
+      let copyXs !ixA !off
+            | ixA < lenA = do
+                a <- V.unsafeIndexM (S.values sliceA) ixA
+                V.copy (MV.slice off lenB _xs)
+                  $ V.map (* a) $ S.values sliceB
+                copyXs (ixA + 1) (off + lenB)
+            | otherwise = return ()
+
+      V.unsafeIndexM ptrs m >>= copyXs 0 . fromIntegral
+
   _ixs <- V.unsafeFreeze _ixs
   _xs <- V.unsafeFreeze _xs
   return Matrix
     { dimM = dm
     , dimN = dn
-    , pointers = _ptrs
+    , pointers = ptrs
     , indices = _ixs
     , values = _xs
     }
