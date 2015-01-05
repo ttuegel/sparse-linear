@@ -1,202 +1,106 @@
-name:                sparse-linear
-version:             0.1.0.0
--- synopsis:            
--- description:         
-license:             BSD3
-license-file:        LICENSE
-author:              Thomas Tuegel
-maintainer:          ttuegel@gmail.com
--- copyright:           
-category:            Math
-build-type:          Simple
--- extra-source-files:  
-cabal-version:       >=1.10
+name: sparse-linear
+version: 0.1.0.0
+synopsis: Sparse linear algebra primitives in Haskell
+license: BSD3
+license-file: LICENSE
+author: Thomas Tuegel
+maintainer: ttuegel@gmail.com
+copyright: (c) 2014 Thomas Tuegel
+category: Math
+build-type: Simple
+cabal-version: >=1.10
 
 library
   exposed-modules:
-    Data.Proxy.PolyKind
+    Data.Complex.Enhanced
+    Data.Cs
+    Data.Matrix
+    Data.Matrix.Sparse
+    Data.Matrix.Sparse.Compress
+    Data.Matrix.Sparse.Foreign
+    Data.Matrix.Sparse.Type
+    Data.Vector.Sparse
+    Data.Vector.Util
+    Numeric.LinearAlgebra.Feast
     Numeric.LinearAlgebra.Sparse
-  other-modules:       
-    Data.Vector.Algorithms.Search.Immutable
+    Numeric.LinearAlgebra.Umfpack
+    Numeric.LinearAlgebra.Umfpack.Internal
+  build-depends:
+      base >=4.7 && <4.8
+    , global-lock >=0.1 && <1
+    , mono-traversable >=0.6 && <1
+    , primitive >=0.5 && <1
+    , storable-complex >=0.2 && <1
+    , vector >=0.10 && <1
+    , vector-algorithms >=0.6 && <1
   hs-source-dirs: src
-  other-extensions:
-    DataKinds,
-    FlexibleInstances,
-    PolyKinds,
-    TypeFamilies
-  build-depends:
-    base,
-    lens ==4.1.*,
-    primitive ==0.5.*,
-    transformers ==0.3.*,
-    vector ==0.10.*,
-    vector-algorithms ==0.6.*
   default-language: Haskell2010
-  ghc-options: -Wall -rtsopts
+  ghc-options: -Wall
   ghc-prof-options: -fprof-auto
+  include-dirs:
+    cbits
+  extra-libraries:
+    -- The order of these libraries ABSOLUTELY MUST NOT EVER BE CHANGED!
+    feast
+    lapack
+    cxsparse
+    umfpack
+    ptcblas
+    ptf77blas
+    gfortran
+    atlas
+    suitesparseconfig
+    cholmod
+    colamd
+    amd
+  c-sources:
+    cbits/cs_add_ptrs.c
+    cbits/umfpack_cs.c
+  cc-options: -O3
 
-test-suite test-dims
+test-suite sparse
   type: exitcode-stdio-1.0
-  main-is: test-dims.hs
-  other-modules:  Numeric.LinearAlgebra.Sparse.QuickCheck
   hs-source-dirs: tests
+  main-is: Sparse.hs
+  other-modules:
+    Test.LinearAlgebra
   default-language: Haskell2010
-  ghc-options: -rtsopts
+  ghc-options: -Wall
   ghc-prof-options: -fprof-auto
   build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
+      base
+    , hspec >=2.1 && <3
+    , QuickCheck >=2.7 && <3
+    , mono-traversable >=0.6 && <1
+    , suitesparse
+    , vector >=0.10 && <1
 
-test-suite test-monoid
+test-suite umfpack
   type: exitcode-stdio-1.0
-  main-is: test-monoid.hs
-  other-modules:  Numeric.LinearAlgebra.Sparse.QuickCheck
   hs-source-dirs: tests
-  default-language: Haskell2010
-  ghc-options: -rtsopts -Wall
-  ghc-prof-options: -fprof-auto -Wall
-  build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
-
-test-suite test-eq
-  type: exitcode-stdio-1.0
-  main-is: test-eq.hs
+  main-is: Umfpack.hs
   other-modules:
-    Numeric.LinearAlgebra.Sparse.QuickCheck
-  hs-source-dirs: tests
+    Test.LinearAlgebra
   default-language: Haskell2010
-  ghc-options: -rtsopts -O2 -Wall
-  ghc-prof-options: -fprof-auto -Wall
+  ghc-options: -Wall
+  ghc-prof-options: -fprof-auto
   build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
+      base
+    , hspec >=2.1 && <3
+    , QuickCheck >=2.7 && <3
+    , suitesparse
+    , vector >=0.10 && <1
 
-test-suite test-fmt
+test-suite feast
   type: exitcode-stdio-1.0
-  main-is: test-fmt.hs
-  other-modules:
-    Data.MorallyEq
-    Numeric.LinearAlgebra.Sparse.QuickCheck
   hs-source-dirs: tests
+  main-is: Feast.hs
   default-language: Haskell2010
-  ghc-options: -rtsopts -O2 -Wall
-  ghc-prof-options: -fprof-auto -Wall
+  ghc-options: -Wall
+  ghc-prof-options: -fprof-auto
   build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
-
-test-suite test-add
-  type: exitcode-stdio-1.0
-  main-is: test-add.hs
-  other-modules:
-    Data.MorallyEq
-    Numeric.LinearAlgebra.Sparse.QuickCheck
-  hs-source-dirs: tests
-  default-language: Haskell2010
-  ghc-options: -rtsopts -O2 -Wall
-  ghc-prof-options: -fprof-auto -Wall
-  build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
-
-test-suite test-lens
-  type: exitcode-stdio-1.0
-  main-is: test-lens.hs
-  other-modules:
-    Data.MorallyEq
-    Numeric.LinearAlgebra.Sparse.QuickCheck
-  hs-source-dirs: tests
-  default-language: Haskell2010
-  ghc-options: -rtsopts -O2 -Wall
-  ghc-prof-options: -fprof-auto -Wall
-  build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
-
-test-suite test-mul
-  type: exitcode-stdio-1.0
-  main-is: test-mul.hs
-  other-modules:
-    Data.MorallyEq
-    Numeric.LinearAlgebra.Sparse.QuickCheck
-  hs-source-dirs: tests
-  default-language: Haskell2010
-  ghc-options: -rtsopts -O2 -Wall
-  ghc-prof-options: -fprof-auto -Wall
-  build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
-
-test-suite test-mulv
-  type: exitcode-stdio-1.0
-  main-is: test-mulv.hs
-  other-modules:
-    Data.MorallyEq
-    Numeric.LinearAlgebra.Sparse.QuickCheck
-  hs-source-dirs: tests
-  default-language: Haskell2010
-  ghc-options: -rtsopts -O2 -Wall
-  ghc-prof-options: -fprof-auto -Wall
-  build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
-
-test-suite test-invariant
-  type: exitcode-stdio-1.0
-  main-is: test-invariant.hs
-  other-modules:
-    Data.MorallyEq
-    Numeric.LinearAlgebra.Sparse.QuickCheck
-  hs-source-dirs: tests
-  default-language: Haskell2010
-  ghc-options: -rtsopts -O2 -Wall
-  ghc-prof-options: -fprof-auto -Wall
-  build-depends:
-    base,
-    lens ==4.1.*,
-    sparse-linear,
-    QuickCheck ==2.7.*,
-    tasty ==0.8.*,
-    tasty-quickcheck ==0.8.*,
-    vector
+      base
+    , hspec >=2.1 && <3
+    , QuickCheck >=2.7 && <3
+    , suitesparse
+    , vector >=0.10 && <1
