@@ -1,581 +1,458 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Numeric.LinearAlgebra.Sparse where
+module Numeric.LinearAlgebra.Sparse
+    ( CxSparse()
+    , Matrix(), cmap, orient, dimM, dimN
+    , Orient(..), Trans, Indices(..), reorient
+    , outer, mul
+    , compress, fromTriples, (><)
+    , transpose, ctrans, hermitian, assertEq
+    , lin
+    , add
+    , gaxpy, gaxpy_, mulV
+    , hcat, vcat, fromBlocks, fromBlocksDiag
+    , kronecker
+    , takeDiag, diag, ident
+    , zeros
+    , module Data.Complex.Enhanced
+    ) where
 
-import Control.Applicative hiding (empty)
-import Control.Lens
-import Control.Monad (liftM2, when)
-import Control.Monad.Primitive (PrimMonad(..))
+import Control.Applicative
+import Control.Monad.Primitive (PrimMonad, PrimState)
 import Control.Monad.ST (runST)
-import Data.Complex
-import Data.List (foldl')
-import Data.Maybe (fromMaybe)
-import Data.Monoid
-import Data.Ord (comparing)
-import qualified Data.Vector.Generic as V
-import qualified Data.Vector.Generic.Mutable as MV
-import Data.Vector.Unboxed (Unbox, Vector)
+import Data.Foldable
+import Data.Function (fix)
+import qualified Data.List as List
+import Data.Maybe
+import Data.MonoTraversable
+import qualified Data.Vector as Box
+import Data.Vector.Storable (Vector)
+import qualified Data.Vector.Storable as V
+import Data.Vector.Storable.Mutable (MVector)
+import qualified Data.Vector.Storable.Mutable as MV
 import qualified Data.Vector.Unboxed as U
-import Data.Vector.Unboxed.Mutable (MVector)
-import qualified Data.Vector.Unboxed.Mutable as MU
-import Data.Vector.Algorithms.Intro (sortBy)
-import qualified Data.Vector.Algorithms.Search as MA
-import Data.Vector.Algorithms.Search.Immutable (binarySearchL)
+import Foreign.Storable
+import GHC.Stack (errorWithStackTrace)
+import Prelude hiding (any, foldl1)
 
-import Data.Proxy.PolyKind
+import Data.Complex.Enhanced
+import Data.Matrix.Sparse
+import qualified Data.Vector.Sparse as S
 
--- | Matrix order
-data OrientK
-    = Row  -- ^ row-major
-    | Col -- ^ column-major
+instance CxSparse a => Num (Matrix Col a) where
+  {-# INLINE (+) #-}
+  {-# INLINE (-) #-}
+  {-# INLINE (*) #-}
+  {-# INLINE negate #-}
+  {-# INLINE abs #-}
+  {-# INLINE signum #-}
+  (+) = add
+  (-) = \a b -> lin 1 a (-1) b
+  (*) = \matA matB -> matA `mul` reorient matB
+  negate = omap negate
+  abs = omap abs
+  signum = omap signum
+  fromInteger = errorWithStackTrace "fromInteger: not implemented"
 
-class Orient (ord :: OrientK) where
-    -- | Operate on a (major, minor, ...) tuple as if it were in
-    -- (row, column, ...) order, or vice versa
-    reorient :: (Field1 s s a a, Field2 s s a a)
-             => Proxy ord -> s -> s
+outer
+  :: (Indices or, Num a, Storable a)
+  => S.Vector a -- ^ sparse column vector
+  -> S.Vector a -- ^ sparse row vector
+  -> Matrix or a
+{-# INLINE outer #-}
+outer = \sliceC sliceR -> fix $ \mat ->
+  let -- indices of sliceM are outer (major) indices of result
+      sliceM = ixsM (orient mat) sliceC sliceR
+      -- indices of sliceN are inner (minor) indices of result
+      sliceN = ixsN (orient mat) sliceC sliceR
+      dimM = S.dim sliceM
+      dimN = S.dim sliceN
+      lenM = V.length $ S.values sliceM
+      lenN = V.length $ S.values sliceN
+      lengths = V.create $ do
+        lens <- MV.replicate (dimM + 1) 0
+        V.forM_ (S.indices sliceM) $ \(fromIntegral -> !ixM) ->
+          MV.unsafeWrite lens ixM $! fromIntegral lenN
+        return lens
+      pointers = V.scanl' (+) 0 lengths
+      indices = V.concat $ replicate lenM $ S.indices sliceN
+      values = V.create $ do
+        vals <- MV.new (lenM * lenN)
+        S.iforM_ sliceM $ \(fromIntegral -> !ix) !a -> do
+          start <- fromIntegral <$> V.unsafeIndexM pointers ix
+          end <- fromIntegral <$> V.unsafeIndexM pointers (ix + 1)
+          let len = end - start
+          V.copy (MV.slice start len vals) $ V.map (* a) $ S.values sliceN
+        return vals
+  in Matrix {..}
 
-instance Orient Row where
-    reorient Proxy = id
-    {-# INLINE reorient #-}
+mul
+  :: (Indices or, Num a, Storable a)
+  => Matrix Col a -> Matrix Row a -> Matrix or a
+{-# INLINE mul #-}
+mul = \matA matB ->
+  if dimM matA /= dimM matB
+    then errorWithStackTrace "mul: inner dimension mismatch"
+  else
+    let matZ = zeros (dimN matA) (dimN matB)
+    in Box.foldr add matZ $ do
+      n <- Box.enumFromN 0 $ dimM matA
+      return $ outer (slice matA n) (slice matB n)
 
-instance Orient Col where
-    reorient Proxy x = x & _1 .~ (x ^. _2) & _2 .~ (x ^. _1)
-    {-# INLINE reorient #-}
+fromTriples
+  :: (Indices or, Num a, Storable a)
+  => Int -> Int -> [(Int, Int, a)] -> Matrix or a
+{-# INLINE fromTriples #-}
+fromTriples = \nr nc (unzip3 -> (rs, cs, xs)) ->
+  let rs' = V.fromList $ map fromIntegral rs
+      cs' = V.fromList $ map fromIntegral cs
+      xs' = V.fromList xs
+  in compress nr nc rs' cs' xs'
 
--- | Matrix formats
-data FormatK
-    = U -- ^ uncompressed
-    | C -- ^ compressed
+(><)
+  :: (Indices or, Num a, Storable a)
+  => Int -> Int -> [(Int, Int, a)] -> Matrix or a
+{-# INLINE (><) #-}
+(><) = fromTriples
 
--- | Compressed sparse format
-data Cx a = Cx !Int -- ^ minor dimension
-               !(Vector Int) -- ^ starting indices of each major slice
-               !(Vector (Int, a)) -- ^ (minor index, coefficient)
-  deriving (Show)
+ctrans :: (IsReal a, Num a, Storable a) => Matrix or a -> Matrix (Trans or) a
+{-# INLINE ctrans #-}
+ctrans = omap conj . transpose
 
-instance (Eq a, Unbox a) => Eq (Cx a) where
-    (==) (Cx minorA ixsA valsA) (Cx minorB ixsB valsB) =
-        minorA == minorB && ixsA == ixsB && valsA == valsB
-    {-# INLINE (==) #-} -- Just boilerplate
+hermitian :: (Eq a, IsReal a, Num a, Storable a) => Matrix or a -> Bool
+{-# INLINE hermitian #-}
+hermitian m = reorient (ctrans m) == m
 
--- | Uncompressed sparse format
-data Ux a = Ux !Int -- ^ row dimension
-               !Int -- ^ column dimension
-               !(Vector (Int, Int, a))
-               -- ^ (row index, column index, coefficient)
-  deriving (Show)
+assertEq :: (Eq a, Show a, Storable a) => Matrix or a -> Matrix or a -> Bool
+assertEq a b
+  | dimN a /= dimN b = errorWithStackTrace "assertEq: inner dimensions differ"
+  | dimM a /= dimM b = errorWithStackTrace "assertEq: outer dimensions differ"
+  | pointers a /= pointers b =
+      errorWithStackTrace "assertEq: pointers differ"
+  | indices a /= indices b =
+      errorWithStackTrace "assertEq: indices differ"
+  | values a /= values b =
+      errorWithStackTrace "assertEq: values differ"
+  | otherwise = True
 
-instance (Eq a, Unbox a) => Eq (Ux a) where
-    (==) (Ux nRowsA nColsA coeffsA) (Ux nRowsB nColsB coeffsB) =
-        nRowsA == nRowsB && nColsA == nColsB && coeffsA == coeffsB
-    {-# INLINE (==) #-} -- Just boilerplate
+lin :: (Num a, Storable a) => a -> Matrix or a -> a -> Matrix or a -> Matrix or a
+{-# SPECIALIZE
+    lin
+      :: Double -> Matrix Row Double
+      -> Double -> Matrix Row Double
+      -> Matrix Row Double
+  #-}
+{-# SPECIALIZE
+    lin
+      :: Double -> Matrix Col Double
+      -> Double -> Matrix Col Double
+      -> Matrix Col Double
+  #-}
+{-# SPECIALIZE
+    lin
+      :: (Complex Double) -> Matrix Row (Complex Double)
+      -> (Complex Double) -> Matrix Row (Complex Double)
+      -> Matrix Row (Complex Double)
+  #-}
+{-# SPECIALIZE
+    lin
+      :: (Complex Double) -> Matrix Col (Complex Double)
+      -> (Complex Double) -> Matrix Col (Complex Double)
+      -> Matrix Col (Complex Double)
+  #-}
+lin a matA b matB
+  | dimN matA /= dimN matB =
+      errorWithStackTrace "lin: inner dimensions differ"
+  | dimM matA /= dimM matB =
+      errorWithStackTrace "lin: outer dimensions differ"
+  | otherwise = runST $ do
+      let dm = dimM matA
+          dn = dimN matA
+      ptrs <- MV.new (dm + 1)
+      MV.unsafeWrite ptrs 0 0
 
-data family Matrix :: FormatK -> OrientK -> * -> *
-newtype instance Matrix C ord a = MatC (Tagged ord (Cx a))
-  deriving (Show)
-newtype instance Matrix U ord a = MatU (Tagged ord (Ux a))
-  deriving (Show)
+      let nz = nonZero matA + nonZero matB
+      ixs <- MV.new nz
+      xs <- MV.new nz
 
-type Slice a = Vector (Int, a)
+      U.forM_ (U.enumFromN 0 dm) $ \ixM -> do
+        let sliceA = slice matA ixM
+            sliceB = slice matB ixM
+            lenA = V.length $ S.values sliceA
+            lenB = V.length $ S.values sliceB
+            ixsA = S.indices sliceA
+            ixsB = S.indices sliceB
+            xsA = S.values sliceA
+            xsB = S.values sliceB
 
-class Format (fmt :: FormatK) where
-    -- | One ring to rule them all
-    --   One ring to find them
-    --   One ring to bring them all
-    --   And in the darkness bind them
-    --   In the land or Mordor, where the shadows lie.
-    formats :: (Functor f, Profunctor p, Profunctor q)
-            => Optical p q f (Matrix U or a) (Matrix U or b) c d
-            -> Optical p q f (Matrix C or a) (Matrix C or b) c d
-            -> Optical p q f (Matrix fmt or a) (Matrix fmt or b) c d
+            dedupCopy2 !ixA !ixB !ix =
+              if ixA < lenA
+                then if ixB < lenB
+                  then do
+                    rA <- V.unsafeIndexM ixsA ixA
+                    rB <- V.unsafeIndexM ixsB ixB
+                    case compare rA rB of
+                     LT -> do
+                       MV.unsafeWrite ixs ix rA
+                       x <- V.unsafeIndexM xsA ixA
+                       MV.unsafeWrite xs ix $! a * x
+                       dedupCopy2 (ixA + 1) ixB (ix + 1)
+                     EQ -> do
+                       MV.unsafeWrite ixs ix rA
+                       xA <- V.unsafeIndexM xsA ixA
+                       xB <- V.unsafeIndexM xsB ixB
+                       MV.unsafeWrite xs ix $! a * xA + b * xB
+                       dedupCopy2 (ixA + 1) (ixB + 1) (ix + 1)
+                     GT -> do
+                       MV.unsafeWrite ixs ix rB
+                       x <- V.unsafeIndexM xsB ixB
+                       MV.unsafeWrite xs ix $! b * x
+                       dedupCopy2 ixA (ixB + 1) (ix + 1)
+                else do
+                  let len' = lenA - ixA
+                  V.copy (MV.slice ix len' ixs) (V.slice ixA len' ixsA)
+                  V.copy (MV.slice ix len' xs) (V.slice ixA len' xsA)
+                  return $! ix + len'
+              else do
+                let len' = lenB - ixB
+                V.copy (MV.slice ix len' ixs) (V.slice ixB len' ixsB)
+                V.copy (MV.slice ix len' xs) (V.slice ixB len' xsB)
+                return $! ix + len'
 
-instance Format U where
-    formats f _ = f
-    {-# INLINE formats #-}
+        off <- fromIntegral <$> MV.unsafeRead ptrs ixM
+        off' <- fromIntegral <$> dedupCopy2 0 0 off
+        MV.unsafeWrite ptrs (ixM + 1) off'
 
-instance Format C where
-    formats _ f = f
-    {-# INLINE formats #-}
+      pointers <- V.unsafeFreeze ptrs
+      let nz' = fromIntegral $ V.last pointers
+          dimM = dm
+          dimN = dn
+      indices <- V.unsafeFreeze $ MV.slice 0 nz' ixs
+      values <- V.unsafeFreeze $ MV.slice 0 nz' xs
 
--- | Convert between uncompressed and compressed matrix formats.  The most
--- useful thing about this 'Iso' is that it's forgetful in reverse: if you
--- know you have an uncompressed matrix, you can still return a matrix of
--- *any* format. That sounds like you'll be doing a lot a extra
--- compression/decompression, but not if you use 'formats', which will
--- automatically select the side that won't do any work!
-uncompressed :: (Format fmt, Orient or, Unbox a)
-             => Iso' (Matrix fmt or a) (Matrix U or a)
-uncompressed = formats (iso id id) (from compress)
+      return Matrix {..}
 
--- | The other side of 'uncompressed'.
-compressed :: (Format fmt, Orient or, Unbox a)
-           => Iso' (Matrix fmt or a) (Matrix C or a)
-compressed = formats compress (iso id id)
+add :: (Num a, Storable a) => Matrix or a -> Matrix or a -> Matrix or a
+{-# INLINE add #-}
+add a b = lin 1 a 1 b
 
-compressed' :: (Format fmt, Orient or, Unbox a)
-            => Prism' (Matrix fmt or a) (Matrix C or a)
-compressed' = formats (prism' (view uncompressed) (const Nothing))
-                      (prism' id Just)
+gaxpy_
+  :: (Indices or, Num a, PrimMonad m, Storable a)
+  => Matrix or a -> MVector (PrimState m) a -> MVector (PrimState m) a -> m ()
+{-# INLINE gaxpy_ #-}
+gaxpy_ mat@Matrix{..} xs ys =
+  V.forM_ (V.enumFromN 0 dimM) $ \m -> do
+    S.iforM_ (slice mat m) $ \(fromIntegral -> n) a -> do
+      let r = ixsR (orient mat) m n
+          c = ixsC (orient mat) m n
+      x <- MV.unsafeRead xs c
+      y <- MV.unsafeRead ys r
+      MV.unsafeWrite ys r $! y + a * x
 
-uncompressed' :: (Format fmt, Orient or, Unbox a)
-              => Prism' (Matrix fmt or a) (Matrix U or a)
-uncompressed' = formats (prism' id Just)
-                        (prism' (view compressed) (const Nothing))
+gaxpy
+  :: (Indices or, Num a, Storable a)
+  => Matrix or a -> Vector a -> Vector a -> Vector a
+{-# INLINE gaxpy #-}
+gaxpy = \a _x _y -> runST $ do
+  _y <- V.thaw _y
+  _x <- V.unsafeThaw _x
+  gaxpy_ a _x _y
+  V.unsafeFreeze _y
 
-compress :: (Orient or, Unbox a) => Iso' (Matrix U or a) (Matrix C or a)
-compress = iso compressU decompressC
+mulV :: (Indices or, Num a, Storable a) => Matrix or a -> Vector a -> Vector a
+{-# INLINE mulV #-}
+mulV = \a _x -> runST $ do
+  _x <- V.unsafeThaw _x
+  y <- MV.replicate (MV.length _x) 0
+  gaxpy_ a _x y
+  V.unsafeFreeze y
+
+mcat :: Storable a => Matrix or a -> Matrix or a -> Matrix or a
+{-# INLINE mcat #-}
+mcat a b
+  | dimN a /= dimN b = errorWithStackTrace "inner dimension mismatch"
+  | otherwise = Matrix
+      { dimM = dm
+      , dimN = dimN a
+      , pointers = V.init (pointers a) V.++ (V.map (+ nza) $ pointers b)
+      , indices = indices a V.++ indices b
+      , values = values a V.++ values b
+      }
   where
-    compressU mat@(MatU ux) = MatC $ unproxy $ \witness ->
-      let (Ux _ _ vals) = proxy ux witness
-          (m, n) = mat ^. dimF
-          (majors, minors, coeffs) = reorient witness $ U.unzip3 vals
-          ixs = U.generate m $ binarySearchL majors
-      in Cx n ixs $ U.zip minors coeffs
-    decompressC mat@(MatC cx) = MatU $ unproxy $ \witness ->
-      let (Cx _ ixs vals) = proxy cx witness
-          (minors, coeffs) = U.unzip vals
-          nnz = U.length vals
-          lengths = flip U.imap ixs $ \m start ->
-              let next = fromMaybe nnz (ixs U.!? succ m)
-              in next - start
-          majors =
-              U.concatMap (\(r, len) -> U.replicate len r)
-              $ U.indexed lengths
-          (rows, cols) = reorient witness (majors, minors)
-          (nRows, nCols) = view dim mat
-      in Ux nRows nCols $ U.zip3 rows cols coeffs
+    dm = dimM a + dimM b
+    nza = fromIntegral $ nonZero a
 
-dim :: (Format fmt, Orient or, Unbox a) => Lens' (Matrix fmt or a) (Int, Int)
-dim = formats dimU dimC
+hcat :: Storable a => Matrix Col a -> Matrix Col a -> Matrix Col a
+{-# INLINE hcat #-}
+hcat = mcat
+
+vcat :: Storable a => Matrix Row a -> Matrix Row a -> Matrix Row a
+{-# INLINE vcat #-}
+vcat = mcat
+
+fromBlocks :: (Num a, Storable a) => [[Maybe (Matrix Col a)]] -> Matrix Row a
+{-# SPECIALIZE
+    fromBlocks
+      :: [[Maybe (Matrix Col Double)]] -> Matrix Row Double
+  #-}
+{-# SPECIALIZE
+    fromBlocks
+      :: [[Maybe (Matrix Col (Complex Double))]] -> Matrix Row (Complex Double)
+  #-}
+fromBlocks = foldl1 vcat . map (reorient . foldl1 hcat) . adjustDims
   where
-    dimU = lens getDimU setDimU
-    getDimU (MatU ux) = let Ux r c _ = untag ux in (r, c)
-    setDimU (MatU ux) (r', c') =
-        MatU $ unproxy $ \witness ->
-            let Ux r c vals = proxy ux witness
-                inBounds (i, j, _) = i < r' && j < c'
-                truncateOutOfBounds | r' < r || c' < c = U.filter inBounds
-                                    | otherwise = id
-            in Ux r' c' $ truncateOutOfBounds vals
-    dimC = lens getDimC setDimC
-    getDimC mat@(MatC cx) =
-        untag $ unproxy $ \witness ->
-            let _ = proxy cx witness
-            in reorient witness $ mat ^. dimF
-    setDimC mat@(MatC cx) dim' =
-        untag $ unproxy $ \witness ->
-            let _ = proxy cx witness
-            in mat & dimF .~ reorient witness dim'
-
-dimF :: (Format fmt, Orient or, Unbox a) => Lens' (Matrix fmt or a) (Int, Int)
-dimF = formats dimU dimC
-  where
-    dimU = lens getDimU setDimU
-    getDimU mat@(MatU ux) =
-        untag $ unproxy $ \witness ->
-            let _ = proxy ux witness
-            in reorient witness $ mat ^. dim
-    setDimU mat@(MatU ux) dim' =
-        untag $ unproxy $ \witness ->
-            let _ = proxy ux witness
-            in mat & dim .~ reorient witness dim'
-    dimC = lens getDimC setDimC
-    getDimC (MatC cx) =
-        untag $ unproxy $ \witness ->
-            let Cx minor ixs _ = proxy cx witness
-            in (U.length ixs, minor)
-    setDimC mat@(MatC cx) (major', minor') =
-        MatC $ unproxy $ \witness ->
-            let Cx _ ixs vals = proxy cx witness
-                (major, minor) = getDimC mat
-                nnz = U.length vals
-                truncateMinor
-                    | minor' < minor = U.filter (\(j, _) -> j < minor')
-                    | otherwise = id
-                truncateMajor
-                    | major' < major =
-                        U.take (fromMaybe nnz $ ixs U.!? succ major')
-                    | otherwise = id
-                vals' = truncateMinor $ truncateMajor vals
-                ixs' = fixIxs $ case compare major' major of
-                    EQ -> ixs
-                    LT -> U.take major' ixs
-                    GT -> ixs U.++ U.replicate (major' - major) nnz
-                fixIxs starts
-                    | minor' < minor = flip U.map starts $ \start ->
-                        let removed =
-                                U.length
-                                $ U.findIndices ((>= minor') . view _1)
-                                $ U.slice 0 start vals
-                        in start - removed
-                    | otherwise = starts
-            in Cx minor' ixs' vals'
-
-nonzero :: (Format fmt, Unbox a) => Getter (Matrix fmt or a) Int
-nonzero = formats (to nonzeroU) (to nonzeroC)
-  where
-    nonzeroU (MatU ux) = let Ux _ _ triples = untag ux in U.length triples
-    nonzeroC (MatC cx) = let Cx _ _ vals = untag cx in U.length vals
-
-reorder :: (Format fmt, Unbox a) => Iso' (Matrix fmt Col a) (Matrix fmt Row a)
-reorder = formats (reorderU . from uncompressed) (reorderC . from compressed)
---reorder = view $ formats (reorderU . from uncompressed) reorderC
-  where
-    reorderU_ (MatU ux) = MatU $ unproxy $ \witness ->
-        sortUx witness $ untag ux
-    reorderU :: Unbox a => Iso' (Matrix U Col a) (Matrix U Row a)
-    reorderU = iso reorderU_ reorderU_
-    reorderC :: Unbox a => Iso' (Matrix C Col a) (Matrix C Row a)
-    reorderC = from compress . reorderU . compress . from compressed
-
-transpose :: (Format fmt, Unbox a) => Iso' (Matrix fmt Row a) (Matrix fmt Col a)
-transpose = formats (iso transposeU transposeU . from uncompressed) (iso transposeC transposeC . from compressed)
-  where
-    transposeU :: Unbox a => Matrix U or a -> Matrix U or' a
-    transposeU (MatU ux) =
-        let Ux r c vals = untag ux
-            (rows, cols, coeffs) = U.unzip3 vals
-        in MatU $ tag Proxy $ Ux c r $ U.zip3 cols rows coeffs
-    transposeC :: Matrix C or a -> Matrix C or' a
-    transposeC (MatC cx) = MatC $ tag Proxy $ untag cx
-
-slice :: (Format fmt, Functor f, Orient or, Unbox a)
-      => Int -> LensLike' f (Matrix fmt or a) (Slice a)
-slice i = formats (lens sliceGU sliceSU) (lens sliceGC sliceSC)
-  where
-    outOfBounds :: String -> (Int, Int) -> String
-    outOfBounds prefix bnds =
-        prefix ++ " " ++ show i ++ " out of bounds " ++ show bnds
-
-    sliceGU mat@(MatU ux)
-        | i < view (dimF . _1) mat =
-            untag $ unproxy $ \witness ->
-                let Ux _ _ vals = proxy ux witness
-                    (start, end) = getSliceExtentsU mat
-                    (_, minors, coeffs) =
-                        reorient witness
-                        $ U.unzip3
-                        $ U.slice start (end - start) vals
-                in U.zip minors coeffs
-        | otherwise = error $ outOfBounds "sliceGU:" (mat ^. dimF)
-    sliceSU mat@(MatU ux) sl
-        | i < view (dimF . _1) mat =
-            MatU $ unproxy $ \witness ->
-                let Ux r c vals = proxy ux witness
-                    (start, end) = getSliceExtentsU mat
-                    (minors, coeffs) = U.unzip sl
-                    majors = U.replicate (U.length sl) i
-                    (rows, cols) = reorient witness (majors, minors)
-                    (prefix, _) = U.splitAt start vals
-                    (_, suffix) = U.splitAt end vals
-                in Ux r c $ prefix U.++ (U.zip3 rows cols coeffs) U.++ suffix
-        | otherwise = error $ outOfBounds "sliceSU:" (mat ^. dimF)
-    getSliceExtentsU (MatU ux) =
-        untag $ unproxy $ \witness ->
-            let Ux _ _ vals = proxy ux witness
-                (majors, _, _) = reorient witness $ U.unzip3 vals
-            in (binarySearchL majors i, binarySearchL majors (succ i))
-    sliceGC mat@(MatC cx)
-        | i < U.length starts = U.slice start (end - start) vals
-        | otherwise = error $ outOfBounds "sliceGC:" (mat ^. dimF)
+    adjustDims rows = do
+      (r, row) <- zip [0..] rows
+      return $ do
+        (c, mat) <- zip [0..] row
+        return $ case mat of
+          Nothing -> zeros (heights V.! r) (widths V.! c)
+          Just x -> x
       where
-        Cx _ starts vals = untag cx
-        start = starts U.! i
-        end = fromMaybe (U.length vals) $ starts U.!? succ i
-    sliceSC mat@(MatC cx) sl
-        | i < (mat ^. dimF . _1) =
-            MatC $ unproxy $ \witness ->
-                let Cx minor starts vals = proxy cx witness
-                    start = starts U.! i
-                    end = fromMaybe (U.length vals) $ starts U.!? succ i
-                    dLen = U.length sl - (end - start)
-                    starts' = flip U.imap starts $ \j x ->
-                        if j > i then (x + dLen) else x
-                    prefix = U.take start vals
-                    suffix = U.drop end vals
-                    vals' = prefix U.++ sl U.++ suffix
-                in Cx minor starts' vals'
-        | otherwise = error $ outOfBounds "sliceSC:" (mat ^. dimF)
+        cols = List.transpose rows
+        incompatible = any (\xs -> let x = head xs in any (/= x) xs)
+        underspecified = any null
+        heightSpecs = map (map dimN . catMaybes) rows
+        widthSpecs = map (map dimM . catMaybes) cols
+        heights
+          | underspecified heightSpecs =
+              errorWithStackTrace "fixDimsByRow: underspecified heights"
+          | incompatible heightSpecs =
+              errorWithStackTrace "fixDimsByRow: incompatible heights"
+          | otherwise = V.fromList $ map head heightSpecs
+        widths
+          | underspecified widthSpecs =
+              errorWithStackTrace "fixDimsByRow: underspecified widths"
+          | incompatible widthSpecs =
+              errorWithStackTrace "fixDimsByRow: incompatible widths"
+          | otherwise = V.fromList $ map head widthSpecs
 
-instance (Eq a, Format fmt, Orient or, Unbox a) => Eq (Matrix fmt or a) where
-    (==) = view $ formats (to goU) (to goC)
-      where
-        goU (MatU a) (view uncompressed -> MatU b) = untag a == untag b
-        goC (MatC a) (view compressed -> MatC b) = untag a == untag b
+fromBlocksDiag
+  :: (Num a, Storable a) => [[Maybe (Matrix Col a)]] -> Matrix Row a
+{-# INLINE fromBlocksDiag #-}
+fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . List.transpose where
+  rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
 
-generate :: Int -> (Int -> a) -> [a]
-generate len f = map f $ take len $ [0..]
+kronecker :: (Num a, Storable a) => Matrix or a -> Matrix or a -> Matrix or a
+{-# SPECIALIZE
+    kronecker
+      :: Matrix Row Double -> Matrix Row Double -> Matrix Row Double
+  #-}
+{-# SPECIALIZE
+    kronecker
+      :: Matrix Col Double -> Matrix Col Double -> Matrix Col Double
+  #-}
+{-# SPECIALIZE
+    kronecker
+      :: Matrix Row (Complex Double) -> Matrix Row (Complex Double)
+      -> Matrix Row (Complex Double)
+  #-}
+{-# SPECIALIZE
+    kronecker
+      :: Matrix Col (Complex Double) -> Matrix Col (Complex Double)
+      -> Matrix Col (Complex Double)
+  #-}
+kronecker matA matB = runST $ do
+  let dn = dimN matA * dimN matB
+      dm = dimM matA * dimM matB
+      nz = nonZero matA * nonZero matB
 
-empty :: (Format fmt, Orient or, Unbox a) => Matrix fmt or a
-empty = view (from uncompressed) $ pack 1 1 $ U.empty
+      lengthsA = V.zipWith (-) (V.tail $ pointers matA) (pointers matA)
+      lengthsB = V.zipWith (-) (V.tail $ pointers matB) (pointers matB)
 
-_rows :: (Format fmt, Unbox a, Unbox b)
-      => Traversal (Matrix fmt Row a) (Matrix fmt Row b) (Slice a) (Slice b)
-_rows = _slices
+  let ptrs = V.scanl' (+) 0
+             $ V.concat
+             $ map (\nzA -> V.map (* nzA) lengthsB)
+             $ V.toList lengthsA
 
-_cols :: (Format fmt, Unbox a, Unbox b)
-      => Traversal (Matrix fmt Col a) (Matrix fmt Col b) (Slice a) (Slice b)
-_cols = _slices
+  _ixs <- MV.new nz
+  _xs <- MV.new nz
 
-insertSlice :: (Format fmt, Orient or, Unbox a)
-            => Int -> Matrix fmt or a -> Slice a -> Matrix fmt or a
-insertSlice i mat sl = mat & dimF . _1 %~ (max (succ i))
-                           & dimF . _2 %~ (max (succ j))
-                           & slice i .~ sl
+  V.forM_ (V.enumFromN 0 $ dimM matA) $ \mA -> do
+    V.forM_ (V.enumFromN 0 $ dimM matB) $ \mB -> do
+
+      let sliceA = slice matA mA
+          lenA = V.length $ S.values sliceA
+          sliceB = slice matB mB
+          lenB = V.length $ S.values sliceB
+          m = mA * dimM matB + mB
+
+      let copyIxs !ixA !off
+            | ixA < lenA = do
+                nA <- V.unsafeIndexM (S.indices sliceA) ixA
+                let nOff = nA * fromIntegral (dimN matB)
+                V.copy (MV.slice off lenB _ixs)
+                  $ V.map (+ nOff) $ S.indices sliceB
+                copyIxs (ixA + 1) (off + lenB)
+            | otherwise = return ()
+
+      V.unsafeIndexM ptrs m >>= copyIxs 0 . fromIntegral
+
+  V.forM_ (V.enumFromN 0 $ dimM matA) $ \mA -> do
+    V.forM_ (V.enumFromN 0 $ dimM matB) $ \mB -> do
+
+      let sliceA = slice matA mA
+          lenA = V.length $ S.values sliceA
+          sliceB = slice matB mB
+          lenB = V.length $ S.values sliceB
+          m = mA * dimM matB + mB
+
+      let copyXs !ixA !off
+            | ixA < lenA = do
+                a <- V.unsafeIndexM (S.values sliceA) ixA
+                V.copy (MV.slice off lenB _xs)
+                  $ V.map (* a) $ S.values sliceB
+                copyXs (ixA + 1) (off + lenB)
+            | otherwise = return ()
+
+      V.unsafeIndexM ptrs m >>= copyXs 0 . fromIntegral
+
+  _ixs <- V.unsafeFreeze _ixs
+  _xs <- V.unsafeFreeze _xs
+  return Matrix
+    { dimM = dm
+    , dimN = dn
+    , pointers = ptrs
+    , indices = _ixs
+    , values = _xs
+    }
+
+takeDiag :: (Num a, Storable a) => Matrix or a -> Vector a
+{-# INLINE takeDiag #-}
+takeDiag = \mat@Matrix{..} ->
+  flip V.map (V.enumFromN 0 $ min dimM dimN) $ \m ->
+    let sl = slice mat m
+    in case V.elemIndex (fromIntegral m) (S.indices sl) of
+      Nothing -> 0
+      Just ix -> S.values sl V.! ix
+
+diag :: Storable a => Vector a -> Matrix or a
+{-# INLINE diag #-}
+diag values = Matrix{..}
   where
-    j = U.foldl' max 0 $ fst $ U.unzip sl
+    dimM = V.length values
+    dimN = dimM
+    pointers = V.iterateN (dimM + 1) (+1) 0
+    indices = V.iterateN dimM (+1) 0
 
-loop :: Int -> b -> (b -> Int -> b) -> b
-loop n acc f = foldl' f acc [0..(n - 1)]
+ident :: (Num a, Storable a) => Int -> Matrix or a
+{-# INLINE ident #-}
+ident n = diag $ V.replicate n 1
 
-_slices :: (Format fmt, Orient or, Unbox a, Unbox b)
-        => Traversal (Matrix fmt or a) (Matrix fmt or b) (Slice a) (Slice b)
-_slices f mat =
-    loop (mat ^. dimF . _1) (pure $ empty & dim .~ (mat ^. dim))
-    $ \acc i -> insertSlice i <$> acc <*> f (mat ^. slice i)
-
-sortUx :: (Orient or, Unbox a) => Proxy or -> Ux a -> Ux a
-sortUx witness (Ux nr nc triples) =
-    let (majors, minors, coeffs) = reorient witness $ U.unzip3 triples
-        (rows', cols', coeffs') =
-            reorient witness
-            $ U.unzip3
-            $ U.modify (sortBy comparator)
-            $ U.zip3 majors minors coeffs
-    in Ux nr nc $ U.zip3 rows' cols' coeffs'
+zeros :: (Indices or, Storable a) => Int -> Int -> Matrix or a
+{-# INLINE zeros #-}
+zeros nRows nColumns = mat
   where
-    comparator a b = comparing (view _1) a b <> comparing (view _2) a b
-
-pack :: (Format fmt, Orient or, Unbox a)
-     => Int -> Int -> Vector (Int, Int, a) -> Matrix fmt or a
-pack r c v
-    | not (r > 0) = error "pack: row dimension must be positive!"
-    | not (c > 0) = error "pack: column dimension must be positive!"
-    | U.any outOfBounds v = error "pack: Index out of bounds!"
-    | otherwise =
-        view (from uncompressed)
-        $ MatU $ unproxy $ \witness -> sortUx witness $ Ux r c v
-  where
-    outOfBounds (i, j, _) = i >= r || i < 0 || j >= c || j < 0
-
-diag :: (Format fmt, Orient or, Unbox a) => Vector a -> Matrix fmt or a
-diag v = pack len len $ U.zip3 ixs ixs v
-  where
-    len = U.length v
-    ixs = U.enumFromN 0 len
-
-ident :: (Format fmt, Num a, Orient or, Unbox a) => Int -> Matrix fmt or a
-ident i = diag $ U.replicate i 1
-
-mulV  :: (Num a, Unbox a, V.Vector v a) => Matrix C Row a -> v a -> v a
-mulV mat xs_
-    | c == U.length xs =
-        V.convert $ U.create $ do
-            ys <- MU.new r
-            iforMOf_ (indexing _rows) mat $ \ixR row -> do
-              let (cols, coeffs) = U.unzip row
-              MU.write ys ixR
-                $ U.sum $ U.zipWith (*) coeffs
-                $ U.backpermute xs cols
-            return ys
-    | otherwise = error $ "mulV: matrix width " ++ show c
-                        ++ " does not match vector length "
-                        ++ show (U.length xs)
-  where
-    xs = V.convert xs_
-    (r, c) = view dim mat
-
-mulVM :: (MV.MVector v a, Num a, PrimMonad m, Unbox a)
-      => Matrix C Row a -> v (PrimState m) a -> v (PrimState m) a -> m ()
-mulVM mat src dst
-    | c /= MV.length src =
-        error $ "mulVM: input vector length " ++ show (MV.length src)
-              ++ " does not match matrix width " ++ show c
-    | r /= MV.length dst =
-        error $ "mulVM: output vector length " ++ show (MV.length dst)
-              ++ " does not match matrix height " ++ show r
-    | otherwise =
-        iforMOf_ (indexing _rows) mat $ \i row -> do
-            let (cols, coeffs) = U.unzip row
-            x <- U.mapM (MV.read src) cols
-            MV.write dst i $ U.sum $ U.zipWith (*) coeffs x
-  where
-    (r, c) = view dim mat
-
-mul :: (Num a, Orient or, Show a, Unbox a)
-    => Matrix C Col a -> Matrix C Row a -> Matrix C or a
-mul a b
-    | inner == inner' =
-        -- deduplicate
-         foldl' mappend empty_
-        $ generate inner
-        $ \i -> expand (a ^. slice i) (b ^. slice i)
-    | otherwise = error "mul: matrix inner dimensions do not match!"
-  where
-    (inner, left) = view dimF a
-    (inner', right) = view dimF b
-    empty_ = set dim (left, right) empty
-    expand :: (Num a, Orient or, Unbox a)
-           => Vector (Int, a) -> Vector (Int, a) -> Matrix C or a
-    expand ls rs =
-        view (from uncompressed) $ MatU $ unproxy $ \witness ->
-            -- TODO: Expand directly into compressed matrix
-            let (ms, ns) = reorient witness (ls, rs) in
-            Ux left right
-            $ U.map (reorient witness)
-            $ flip U.concatMap ms -- (U.modify (sortBy $ comparing fst) ms)
-            $ \(m, x) -> flip U.map ns -- (U.modify (sortBy $ comparing fst) ns)
-            $ \(n, y) -> (m, n, x * y)
-
-add :: (Format fmt, Num a, Orient or, Unbox a)
-    => Matrix fmt or a -> Matrix fmt or a -> Matrix fmt or a
-add a b
-    | a ^. dim == b ^. dim = deduplicate $ mappend a b
-    | otherwise = error $ "add: matrix dimension " ++ show (a ^. dim)
-                        ++ " does not match " ++ show (b ^. dim)
-
--- This is spitting out a matrix whose dimensions don't match the input
-deduplicate :: (Format fmt, Num a, Orient or, Unbox a)
-            => Matrix fmt or a -> Matrix fmt or a
-deduplicate = view $ formats (to deduplicateU . from uncompressed) (to deduplicateC)
-  where
-    deduplicateC = view (uncompressed . to deduplicateU . from uncompressed)
-    deduplicateU (MatU ux) =
-        MatU $ unproxy $ \witness ->
-            let Ux nr nc triples = proxy ux witness
-            in Ux nr nc $ runST $ do
-                vals <- U.thaw triples
-                let nnz = MU.length vals
-                    accum update check
-                        | check < nnz = do
-                            (r, c, x) <- MU.read vals update
-                            (r', c', y) <- MU.read vals check
-                            if r == r' && c == c'
-                              then do
-                                  MU.write vals update (r, c, x + y)
-                                  MU.write vals check (-1, -1, 0)
-                                  accum update (succ check)
-                              else accum check (succ check)
-                        | otherwise = return ()
-                accum 0 1
-                U.filter ((>= 0) . view _1) <$> U.unsafeFreeze vals
-
-deduplicateSlice :: (Num a, Unbox a) => Vector (Int, a) -> Vector (Int, a)
-deduplicateSlice v_ = runST $ do
-    v <- U.thaw v_
-    len <- deduplicateSliceM v
-    U.freeze $ MU.slice 0 len v
-
-deduplicateSliceM :: (Monad m, Num a, PrimMonad m, Unbox a)
-                  => MVector (PrimState m) (Int, a) -> m Int
-deduplicateSliceM dst = do
-    let (ns, xs) = MU.unzip dst
-        len = MU.length dst
-        accumulate update check =
-          when (check < len) $ do
-            -- do the elements have the same minor dimension?
-            -- i.e., is one a duplicate?
-            dup <- liftM2 (==) (MU.read ns update) (MU.read ns check)
-            if dup
-              then do
-                -- add the duplicate coefficients
-                x <- liftM2 (+) (MU.read xs update) (MU.read xs check)
-                -- insert new coefficient in place of first duplicate
-                MU.write xs update x
-                -- mark second duplicate for removal
-                MU.write ns check (-1)
-                accumulate update (succ check)
-              else accumulate check (succ check)
-
-    sortBy (comparing fst) dst
-    accumulate 0 1
-    sortBy (comparing fst) dst
-    start <- MA.binarySearchL (fst $ MU.unzip dst) 0
-    let len' = len - start
-    when (start > 0) $ MU.move (MU.slice 0 len' dst) (MU.slice start len' dst)
-    return $ min len len'
-
-instance (Format fmt, Unbox a, Unbox b) =>
-    Each (Matrix fmt ord a) (Matrix fmt ord b) a b where
-    each = formats eachU eachC
-      where
-        eachU f (MatU ux) =
-            let Ux r c vals = untag ux
-            in (MatU . copyTag ux . Ux r c) <$> (each . _3) f vals
-        eachC f (MatC cx) =
-            let Cx mnr ixs vals = untag cx
-            in (MatC . copyTag cx . Cx mnr ixs) <$> (each . _2) f vals
-
-adjoint :: (Format fmt, RealFloat a, Unbox a)
-        => Iso' (Matrix fmt Row (Complex a)) (Matrix fmt Col (Complex a))
-adjoint = conjugate' . transpose
-  where
-    --conjugate' :: (FormatR fmt, RealFloat a, Unbox a) => Iso' (Matrix fmt Row (Complex a)) (Matrix fmt Row (Complex a))
-    conjugate' = iso (over each conjugate) (over each conjugate)
-
-unpack :: Matrix U or a -> Vector (Int, Int, a)
-unpack (MatU ux) = let Ux _ _ triples = untag ux in triples
-
--- | 'mempty' is just 'empty' and 'mappend' is enlarging, duplicating addition
-instance (Format fmt, Orient or, Unbox a) => Monoid (Matrix fmt or a) where
-
-    mempty = empty
-
-    mappend ma mb = runST $ do
-        -- Initialize work space
-        valsC <- MU.new nnzC
-        startsC <- MU.new mjrC
-        MU.set startsC nnzC
-
-        -- Copy the values into place
-        let copySlicesFrom i startC
-                | i < mjrC = do
-                    let sliceA | i < mjrA = ma ^. slice i
-                               | otherwise = U.empty
-                        lenA = U.length sliceA
-                        sliceB | i < mjrB = mb ^. slice i
-                               | otherwise = U.empty
-                        lenB = U.length sliceB
-                        sliceC = MU.slice startC (lenA + lenB) valsC
-                    sortInto sliceA sliceB sliceC
-                    MU.write startsC i startC
-                    copySlicesFrom (succ i) (startC + lenA + lenB)
-                | otherwise = return ()
-        copySlicesFrom 0 0
-
-        -- Freeze work space into new matrix
-        starts <- U.unsafeFreeze startsC
-        vals <- U.unsafeFreeze valsC
-        return $! view (from compressed) $ MatC $ tag Proxy $ Cx mnrC starts vals
-      where
-        (mjrA, mnrA) = ma ^. dimF
-        (mjrB, mnrB) = mb ^. dimF
-        mjrC = max mjrA mjrB
-        mnrC = max mnrA mnrB
-        nnzC = ma ^. nonzero + mb ^. nonzero
-
-sortInto :: (Monad m, PrimMonad m, Unbox a) => Slice a -> Slice a -> MVector (PrimState m) (Int, a) -> m ()
-sortInto a b dst = go 0 0 0
-  where
-    lenA = U.length a
-    lenB = U.length b
-    go i j k
-        | i >= lenA =
-            let rest = lenB - j
-            in U.copy (MU.slice k rest dst) (U.slice j rest b)
-        | j >= lenB =
-            let rest = lenA - i
-            in U.copy (MU.slice k rest dst) (U.slice i rest a)
-        | otherwise = do
-            (m, x) <- U.unsafeIndexM a i
-            (n, y) <- U.unsafeIndexM b j
-            if n < m
-              then MU.write dst k (n, y) >> go i (succ j) (succ k)
-              else MU.write dst k (m, x) >> go (succ i) j (succ k)
+    pointers = V.replicate (dimM + 1) 0
+    indices = V.empty
+    values = V.empty
+    dimM = ixsM (orient mat) nRows nColumns
+    dimN = ixsN (orient mat) nRows nColumns
+    mat = Matrix {..}
