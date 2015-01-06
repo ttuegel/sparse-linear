@@ -2,6 +2,4 @@
 
 with pkgs;
 
-haskellPackages.callPackage ./. {
-  globalLock = haskellPackages.callPackage ./global-lock.nix {};
-}
+haskellPackages.callPackage ./. {}

@@ -19,7 +19,6 @@ library
     Data.Vector.Util
   build-depends:
       base >=4.6 && <4.8
-    , global-lock >=0.1 && <1
     , mono-traversable >=0.6 && <1
     , primitive >=0.5 && <1
     , storable-complex >=0.2 && <1
