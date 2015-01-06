@@ -184,8 +184,7 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
               multiplyWork mat = do
                 i <- (+ (-1)) . fromIntegral <$> peekElemOff fpm 23
                 j <- fromIntegral <$> peekElemOff fpm 24
-                forM_ (take j $ drop (i - 1) $ zip _work1 _eigenvectors)
-                  $ \(dst, x) -> do
+                forM_ (take j $ drop i $ zip _work1 _eigenvectors) $ \(dst, x) -> do
                     MV.set dst 0
                     Sparse.gaxpy_ mat x dst
           geigSH_go
