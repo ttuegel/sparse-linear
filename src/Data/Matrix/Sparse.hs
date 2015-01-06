@@ -34,9 +34,10 @@ import Data.Function (fix)
 import qualified Data.List as List
 import Data.Maybe (catMaybes)
 import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
+import Data.Ord (comparing)
 import Data.Proxy
 import Data.Tuple (swap)
-import Data.Vector.Algorithms.Search (binarySearchL)
+import qualified Data.Vector.Algorithms.Intro as Intro
 import qualified Data.Vector as Box
 import Data.Vector.Unboxed (Vector, Unbox)
 import qualified Data.Vector.Unboxed as V
@@ -155,67 +156,33 @@ compress
   :: (Orient or, Num a, Unbox a)
   => Int  -- ^ number of rows
   -> Int  -- ^ number of columns
-  -> Vector Int  -- ^ row indices
-  -> Vector Int  -- ^ column indices
-  -> Vector a  -- ^ values
+  -> Vector (Int, Int, a)  -- ^ (row, column, value)
   -> Matrix or a
-{-# SPECIALIZE
-    compress
-      :: Int -> Int
-      -> Vector Int -> Vector Int
-      -> Vector Double -> Matrix Row Double
-  #-}
-{-# SPECIALIZE
-    compress
-      :: Int -> Int
-      -> Vector Int -> Vector Int
-      -> Vector (Complex Double) -> Matrix Row (Complex Double)
-  #-}
-{-# SPECIALIZE
-    compress
-      :: Int -> Int
-      -> Vector Int -> Vector Int
-      -> Vector Double -> Matrix Col Double
-  #-}
-{-# SPECIALIZE
-    compress
-      :: Int -> Int
-      -> Vector Int -> Vector Int
-      -> Vector (Complex Double) -> Matrix Col (Complex Double)
-  #-}
-compress nRows nColumns rows cols vals = fix $ \mat -> runST $ do
-  let nz = V.length vals
+{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Double) -> Matrix Row Double #-}
+{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Double) -> Matrix Col Double #-}
+{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Complex Double) -> Matrix Row (Complex Double) #-}
+{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Complex Double) -> Matrix Col (Complex Double) #-}
+compress nRows nColumns _triples = fix $ \mat -> runST $ do
+  let (_rows, _cols, _vals) = V.unzip3 _triples
       (majDim, minDim) = orientSwap (orient mat) (nRows, nColumns)
-      (mixs, nixs) = orientSwap (orient mat) (rows, cols)
-      ptrs = computePtrs majDim mixs
+      (_maj, _min) = orientSwap (orient mat) (_rows, _cols)
+      ptrs = computePtrs majDim _maj
 
-  ixs <- MV.replicate nz minDim
-  xs <- MV.new nz
-  dels <- MV.replicate majDim 0
+  _maj <- V.unsafeThaw _maj
+  _min <- V.unsafeThaw _min
+  _vals <- V.unsafeThaw _vals
+  let _entries = MV.zip _min _vals
 
-  let dedupInsert n m x = do
-        start <- V.unsafeIndexM ptrs m
-        end <- V.unsafeIndexM ptrs (m + 1)
-        let len = end - start
-            ixs' = MV.slice start len ixs
-            xs' = MV.slice start len xs
-        ix <- binarySearchL ixs' n
-        n' <- MV.unsafeRead ixs' ix
-        if n == n'
-          then do
-            _ <- preincrement dels m
-            x' <- MV.unsafeRead xs' ix
-            MV.unsafeWrite xs' ix $! x + x'
-          else do
-            shiftR ixs' ix 1
-            MV.unsafeWrite ixs' ix n
-            shiftR xs' ix 1
-            MV.unsafeWrite xs' ix x
-  zipWithM3_ dedupInsert nixs mixs vals
-  shifts <- V.scanl' (+) 0 <$> V.unsafeFreeze dels
+  Intro.sortBy (comparing fst) $ MV.zip _maj _entries
 
-  let pointers = V.zipWith (-) ptrs shifts
-      nz' = V.last pointers
+  dels <- V.forM (V.enumFromN 0 majDim) $ \m -> do
+    start <- V.unsafeIndexM ptrs m
+    end <- V.unsafeIndexM ptrs (m + 1)
+    let len = end - start
+    dedupInPlace minDim (MV.slice start len _entries)
+
+  let shifts = V.scanl' (+) 0 dels
+      pointers = V.zipWith (-) ptrs shifts
 
   V.forM_ (V.enumFromN 0 majDim) $ \m -> do
     shift <- V.unsafeIndexM shifts m
@@ -224,14 +191,37 @@ compress nRows nColumns rows cols vals = fix $ \mat -> runST $ do
       end <- V.unsafeIndexM ptrs (m + 1)
       let len = end - start
           start' = start - shift
-      MV.move (MV.slice start' len ixs) (MV.slice start len ixs)
-      MV.move (MV.slice start' len xs) (MV.slice start len xs)
+      MV.move (MV.slice start' len _entries) (MV.slice start len _entries)
 
-  indices <- V.unsafeFreeze $ MV.slice 0 nz' ixs
-  values <- V.unsafeFreeze $ MV.slice 0 nz' xs
-  let entries = V.zip indices values
+  let nz' = V.last pointers
+  entries <- V.unsafeFreeze $ MV.slice 0 nz' _entries
 
   return Matrix{..}
+
+dedupInPlace
+  :: (Num a, PrimMonad m, Unbox a)
+  => Int -> MVector (PrimState m) (Int, a) -> m Int
+{-# INLINE dedupInPlace #-}
+dedupInPlace minDim _entries = do
+  Intro.sortBy (comparing fst) _entries
+  let len = MV.length _entries
+      (ixs, xs) = MV.unzip _entries
+      dedup_go w r del
+        | r < len = do
+            ixr <- MV.unsafeRead ixs r
+            ixw <- MV.unsafeRead ixs w
+            if ixr == ixw
+              then do
+                MV.unsafeWrite ixs r minDim
+                x <- MV.unsafeRead xs r
+                x' <- MV.unsafeRead xs w
+                MV.unsafeWrite xs w $! x' + x
+                dedup_go w (r + 1) (del + 1)
+              else dedup_go r (r + 1) del
+        | otherwise = return del
+  del <- dedup_go 0 1 0
+  Intro.sortBy (comparing fst) _entries
+  return del
 
 computePtrs :: Int -> Vector Int -> Vector Int
 {-# INLINE computePtrs #-}
@@ -339,11 +329,7 @@ fromTriples
   :: (Orient or, Num a, Unbox a)
   => Int -> Int -> [(Int, Int, a)] -> Matrix or a
 {-# INLINE fromTriples #-}
-fromTriples = \nr nc (unzip3 -> (rs, cs, xs)) ->
-  let rs' = V.fromList rs
-      cs' = V.fromList cs
-      xs' = V.fromList xs
-  in compress nr nc rs' cs' xs'
+fromTriples = \nr nc -> compress nr nc . V.fromList
 
 (><)
   :: (Orient or, Num a, Unbox a)
@@ -362,30 +348,10 @@ hermitian :: (Eq a, IsReal a, Num a, Unbox a) => Matrix or a -> Bool
 hermitian m = reorient (ctrans m) == m
 
 lin :: (Num a, Unbox a) => a -> Matrix or a -> a -> Matrix or a -> Matrix or a
-{-# SPECIALIZE
-    lin
-      :: Double -> Matrix Row Double
-      -> Double -> Matrix Row Double
-      -> Matrix Row Double
-  #-}
-{-# SPECIALIZE
-    lin
-      :: Double -> Matrix Col Double
-      -> Double -> Matrix Col Double
-      -> Matrix Col Double
-  #-}
-{-# SPECIALIZE
-    lin
-      :: (Complex Double) -> Matrix Row (Complex Double)
-      -> (Complex Double) -> Matrix Row (Complex Double)
-      -> Matrix Row (Complex Double)
-  #-}
-{-# SPECIALIZE
-    lin
-      :: (Complex Double) -> Matrix Col (Complex Double)
-      -> (Complex Double) -> Matrix Col (Complex Double)
-      -> Matrix Col (Complex Double)
-  #-}
+{-# SPECIALIZE lin :: Double -> Matrix Row Double -> Double -> Matrix Row Double -> Matrix Row Double #-}
+{-# SPECIALIZE lin :: Double -> Matrix Col Double -> Double -> Matrix Col Double -> Matrix Col Double #-}
+{-# SPECIALIZE lin :: (Complex Double) -> Matrix Row (Complex Double) -> (Complex Double) -> Matrix Row (Complex Double) -> Matrix Row (Complex Double) #-}
+{-# SPECIALIZE lin :: (Complex Double) -> Matrix Col (Complex Double) -> (Complex Double) -> Matrix Col (Complex Double) -> Matrix Col (Complex Double) #-}
 lin a matA b matB
   | minDim matA /= minDim matB =
       errorWithStackTrace "lin: inner dimensions differ"
@@ -512,14 +478,8 @@ vcat :: Unbox a => Matrix Row a -> Matrix Row a -> Matrix Row a
 vcat = mcat
 
 fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix Col a)]] -> Matrix Row a
-{-# SPECIALIZE
-    fromBlocks
-      :: [[Maybe (Matrix Col Double)]] -> Matrix Row Double
-  #-}
-{-# SPECIALIZE
-    fromBlocks
-      :: [[Maybe (Matrix Col (Complex Double))]] -> Matrix Row (Complex Double)
-  #-}
+{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Col Double)]] -> Matrix Row Double #-}
+{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Col (Complex Double))]] -> Matrix Row (Complex Double) #-}
 fromBlocks = foldl1 vcat . map (reorient . foldl1 hcat) . adjustDims
   where
     adjustDims rows = do
@@ -555,24 +515,10 @@ fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . List.transpose where
   rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
 
 kronecker :: (Num a, Unbox a) => Matrix or a -> Matrix or a -> Matrix or a
-{-# SPECIALIZE
-    kronecker
-      :: Matrix Row Double -> Matrix Row Double -> Matrix Row Double
-  #-}
-{-# SPECIALIZE
-    kronecker
-      :: Matrix Col Double -> Matrix Col Double -> Matrix Col Double
-  #-}
-{-# SPECIALIZE
-    kronecker
-      :: Matrix Row (Complex Double) -> Matrix Row (Complex Double)
-      -> Matrix Row (Complex Double)
-  #-}
-{-# SPECIALIZE
-    kronecker
-      :: Matrix Col (Complex Double) -> Matrix Col (Complex Double)
-      -> Matrix Col (Complex Double)
-  #-}
+{-# SPECIALIZE kronecker :: Matrix Row Double -> Matrix Row Double -> Matrix Row Double #-}
+{-# SPECIALIZE kronecker :: Matrix Col Double -> Matrix Col Double -> Matrix Col Double #-}
+{-# SPECIALIZE kronecker :: Matrix Row (Complex Double) -> Matrix Row (Complex Double) -> Matrix Row (Complex Double) #-}
+{-# SPECIALIZE kronecker :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Matrix Col (Complex Double) #-}
 kronecker matA matB = runST $ do
   let dn = minDim matA * minDim matB
       dm = majDim matA * majDim matB
