@@ -1,0 +1,3 @@
+[submodule "sparse-linear"]
+	path = sparse-linear
+	url = git@github.com:ttuegel/sparse-linear.git
