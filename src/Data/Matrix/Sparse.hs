@@ -322,7 +322,7 @@ mul = \matA matB ->
     then errorWithStackTrace "mul: inner dimension mismatch"
   else
     let matZ = zeros (minDim matA) (minDim matB)
-    in Box.foldr add matZ $ do
+    in Box.foldl' add matZ $ do
       n <- Box.enumFromN 0 $ majDim matA
       return $ outer (slice matA n) (slice matB n)
 
