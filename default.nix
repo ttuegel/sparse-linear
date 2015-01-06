@@ -8,6 +8,7 @@ cabal.mkDerivation (self: {
   buildDepends = [ monoTraversable storableComplex tagged vector ];
   testDepends = [ hspec QuickCheck vector ];
   extraLibraries = [ ];
+  configureFlags = [ "-O2" ];
   meta = {
     description = "Sparse linear algebra primitives in Haskell";
     license = self.stdenv.lib.licenses.gpl2;
