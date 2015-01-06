@@ -2,11 +2,11 @@
 
 with pkgs;
 let
-  sparseLinear = haskellPackages.callPackage ../sparse-linear {};
+  sparseLinear = haskellPackages.callPackage ./sparse-linear {};
 in
 haskellPackages.callPackage ./. {
   inherit sparseLinear;
-  suitesparse = haskellPackages.callPackage ../suitesparse {
+  suitesparse = haskellPackages.callPackage ./suitesparse {
     inherit sparseLinear;
     suitesparse = suitesparse_4_4_1;
   };
