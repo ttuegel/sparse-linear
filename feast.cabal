@@ -33,7 +33,7 @@ library
 test-suite test-feast
   type: exitcode-stdio-1.0
   hs-source-dirs: tests
-  main-is: Feast.hs
+  main-is: test-feast.hs
   default-language: Haskell2010
   ghc-options: -Wall
   ghc-prof-options: -fprof-auto
