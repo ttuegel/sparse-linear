@@ -186,6 +186,22 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                     Sparse.gaxpy_ mat x dst
           geigSH_go
 
+          i <- peek info
+          case i of
+            (-3) -> errorWithStackTrace
+              "geigSH: internal error in reduced eigenvalue solver"
+            (-2) -> errorWithStackTrace
+              "geigSH: internal error in inner system solver"
+            (-1) -> errorWithStackTrace
+              "geigSH: internal error in memory allocation"
+            0 -> return ()
+            1 -> putStrLn "geigSH: no eigenvalues in search interval"
+            2 -> putStrLn "geigSH: no convergence"
+            3 -> putStrLn "geigSH: subspace too small"
+            4 -> putStrLn "geigSH: only subspace returned"
+            _ -> errorWithStackTrace
+                 $ "geigSH: error info = " ++ show i
+
           m <- fromIntegral <$> peek mode
           _eigenvalues <- V.unsafeFreeze $ MV.slice 0 m _eigenvalues
           _eigenvectors <- mapM V.unsafeFreeze $ take m _eigenvectors
