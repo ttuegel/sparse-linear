@@ -3,12 +3,14 @@
 module Main where
 
 import Data.MonoTraversable
-import Data.Vector.Unboxed (Vector)
+import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as V
+import System.IO.Unsafe (unsafePerformIO)
 import Test.Hspec
 import Test.QuickCheck
 
 import Data.Matrix.Sparse
+import Data.Matrix.Sparse.Foreign
 import Test.LinearAlgebra
 
 main :: IO ()
@@ -112,6 +114,12 @@ main = hspec $ do
         property prop_fromBlocksDiagValuesLength
       it "produces hermitian matrices" $
         property prop_fromBlocksDiagHermitian
+
+    describe "Data.Matrix.Sparse.Foreign" $ do
+      it "fromForeign . withConstMatrix == id (Double)"
+        $ property (prop_withConstFromForeign :: Matrix Col Double -> Bool)
+      it "fromForeign . withConstMatrix == id (Complex Double)"
+        $ property (prop_withConstFromForeign :: Matrix Col (Complex Double) -> Bool)
 
 prop_kroneckerIdent :: Int -> Int -> Property
 prop_kroneckerIdent x y = (x > 0 && y > 0) ==> lhs == rhs
@@ -262,3 +270,8 @@ prop_fromBlocksDiagValuesLength x y =
 prop_fromBlocksDiagHermitian :: Matrix Col (Complex Double) -> Bool
 prop_fromBlocksDiagHermitian a =
   hermitian $ fromBlocksDiag [[Nothing, Nothing], [Just a, Just $ reorient $ ctrans a]]
+
+prop_withConstFromForeign
+  :: (Eq a, Num a, Storable a, Unbox a) => Matrix Col a -> Bool
+prop_withConstFromForeign mat =
+  unsafePerformIO (withConstMatrix mat $ fromForeign True) == mat
