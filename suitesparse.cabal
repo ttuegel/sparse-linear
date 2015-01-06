@@ -34,10 +34,10 @@ library
     cholmod
     colamd
 
-test-suite umfpack
+test-suite test-umfpack
   type: exitcode-stdio-1.0
   hs-source-dirs: tests
-  main-is: Umfpack.hs
+  main-is: test-umfpack.hs
   other-modules:
     Test.LinearAlgebra
   default-language: Haskell2010
