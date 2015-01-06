@@ -14,6 +14,7 @@ library
   exposed-modules:
     Data.Complex.Enhanced
     Data.Matrix.Sparse
+    Data.Matrix.Sparse.Foreign
     Data.Vector.Sparse
     Data.Vector.Util
   build-depends:

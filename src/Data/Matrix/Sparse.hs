@@ -11,7 +11,7 @@
 module Data.Matrix.Sparse
        ( Matrix(..), cmap, nonZero, slice
        , OrientK(..), Orient(..), Transpose, orient
-       , compress, decompress
+       , compress, decompress, dedupInPlace
        , fromTriples, (><)
        , transpose, reorient
        , ctrans, hermitian
