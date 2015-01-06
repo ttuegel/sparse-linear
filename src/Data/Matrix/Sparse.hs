@@ -132,7 +132,7 @@ orient = \_ -> Proxy
 
 nonZero :: Storable a => Matrix or a -> Int
 {-# INLINE nonZero #-}
-nonZero = \Matrix{..} -> fromIntegral $ V.last pointers
+nonZero = \Matrix{..} -> V.last pointers
 
 cmap :: (Storable a, Storable b) => (a -> b) -> Matrix or a -> Matrix or b
 {-# INLINE cmap #-}
@@ -141,8 +141,8 @@ cmap = \f m -> m { values = V.map f $ values m }
 slice :: Storable a => Matrix or a -> Int -> S.Vector a
 {-# INLINE slice #-}
 slice = \Matrix{..} c ->
-  let start = fromIntegral $ pointers V.! c
-      end = fromIntegral $ pointers V.! (c + 1)
+  let start = pointers V.! c
+      end = pointers V.! (c + 1)
       len = end - start
   in S.Vector
   { S.dim = minDim
@@ -192,7 +192,7 @@ compress nRows nColumns rows cols vals = fix $ \mat -> runST $ do
   xs <- MV.new nz
   dels <- MV.replicate majDim 0
 
-  let dedupInsert !n (fromIntegral -> !m) !x = do
+  let dedupInsert n m x = do
         start <- V.unsafeIndexM ptrs m
         end <- V.unsafeIndexM ptrs (m + 1)
         let len = end - start
@@ -214,7 +214,7 @@ compress nRows nColumns rows cols vals = fix $ \mat -> runST $ do
   shifts <- V.scanl' (+) 0 <$> V.unsafeFreeze dels
 
   let pointers = V.zipWith (-) ptrs shifts
-      nz' = fromIntegral $ V.last pointers
+      nz' = V.last pointers
 
   U.forM_ (U.enumFromN 0 majDim) $ \m -> do
     shift <- V.unsafeIndexM shifts m
@@ -236,7 +236,7 @@ computePtrs :: Int -> Vector Int -> Vector Int
 computePtrs n indices = runST $ do
   counts <- MV.replicate n 0
   -- scan the indices once, counting the occurrences of each index
-  V.forM_ indices $ \(fromIntegral -> ix) -> do
+  V.forM_ indices $ \ix -> do
     count <- MV.unsafeRead counts ix
     MV.unsafeWrite counts ix $! count + 1
   -- compute the index pointers by prefix-summing the occurrence counts
@@ -245,11 +245,11 @@ computePtrs n indices = runST $ do
 decompress :: Vector Int -> Vector Int
 {-# INLINE decompress #-}
 decompress = \ptrs -> V.create $ do
-  indices <- MV.new $ fromIntegral $ V.last ptrs
+  indices <- MV.new $ V.last ptrs
   U.forM_ (U.enumFromN 0 $ V.length ptrs - 1) $ \c -> do
     start <- V.unsafeIndexM ptrs c
     end <- V.unsafeIndexM ptrs (c + 1)
-    MV.set (MV.slice start (end - start) indices) $ fromIntegral c
+    MV.set (MV.slice start (end - start) indices) c
   return indices
 
 transpose :: Matrix or a -> Matrix (Transpose or) a
@@ -261,7 +261,7 @@ reorient :: Storable a => Matrix (Transpose or) a -> Matrix or a
 reorient mat@Matrix{..} = runST $ do
   let ptrs = computePtrs minDim indices
   -- re-initialize row counts from row pointers
-  count <- V.thaw $ V.map fromIntegral $ V.slice 0 minDim ptrs
+  count <- V.thaw $ V.slice 0 minDim ptrs
 
   let nz = V.length values
   _ixs <- MV.new nz
@@ -269,8 +269,8 @@ reorient mat@Matrix{..} = runST $ do
 
   -- copy each column into place
   -- "major" and "minor" indices refer to the orientation of the original matrix
-  U.forM_ (U.enumFromN 0 majDim) $ \ !m -> do
-    S.iforM_ (slice mat m) $ \(fromIntegral -> !n) !x -> do
+  U.forM_ (U.enumFromN 0 majDim) $ \m -> do
+    S.iforM_ (slice mat m) $ \n x -> do
       ix <- preincrement count n
       MV.unsafeWrite _ixs ix m
       MV.unsafeWrite _xs ix x
@@ -302,16 +302,16 @@ outer = \sliceC sliceR -> fix $ \mat ->
       lenN = V.length $ S.values sliceN
       lengths = V.create $ do
         lens <- MV.replicate (majDim + 1) 0
-        V.forM_ (S.indices sliceM) $ \(fromIntegral -> !ixM) ->
-          MV.unsafeWrite lens ixM $! fromIntegral lenN
+        V.forM_ (S.indices sliceM) $ \m ->
+          MV.unsafeWrite lens m lenN
         return lens
       pointers = V.scanl' (+) 0 lengths
       indices = V.concat $ replicate lenM $ S.indices sliceN
       values = V.create $ do
         vals <- MV.new (lenM * lenN)
-        S.iforM_ sliceM $ \(fromIntegral -> !ix) !a -> do
-          start <- fromIntegral <$> V.unsafeIndexM pointers ix
-          end <- fromIntegral <$> V.unsafeIndexM pointers (ix + 1)
+        S.iforM_ sliceM $ \ix a -> do
+          start <- V.unsafeIndexM pointers ix
+          end <- V.unsafeIndexM pointers (ix + 1)
           let len = end - start
           V.copy (MV.slice start len vals) $ V.map (* a) $ S.values sliceN
         return vals
@@ -335,8 +335,8 @@ fromTriples
   => Int -> Int -> [(Int, Int, a)] -> Matrix or a
 {-# INLINE fromTriples #-}
 fromTriples = \nr nc (unzip3 -> (rs, cs, xs)) ->
-  let rs' = V.fromList $ map fromIntegral rs
-      cs' = V.fromList $ map fromIntegral cs
+  let rs' = V.fromList rs
+      cs' = V.fromList cs
       xs' = V.fromList xs
   in compress nr nc rs' cs' xs'
 
@@ -406,7 +406,7 @@ lin a matA b matB
             xsA = S.values sliceA
             xsB = S.values sliceB
 
-            dedupCopy2 !ixA !ixB !ix =
+            dedupCopy2 ixA ixB ix =
               if ixA < lenA
                 then if ixB < lenB
                   then do
@@ -440,12 +440,12 @@ lin a matA b matB
                 V.copy (MV.slice ix len' xs) (V.slice ixB len' xsB)
                 return $! ix + len'
 
-        off <- fromIntegral <$> MV.unsafeRead ptrs ixM
-        off' <- fromIntegral <$> dedupCopy2 0 0 off
+        off <- MV.unsafeRead ptrs ixM
+        off' <- dedupCopy2 0 0 off
         MV.unsafeWrite ptrs (ixM + 1) off'
 
       pointers <- V.unsafeFreeze ptrs
-      let nz' = fromIntegral $ V.last pointers
+      let nz' = V.last pointers
           majDim = dm
           minDim = dn
       indices <- V.unsafeFreeze $ MV.slice 0 nz' ixs
@@ -463,7 +463,7 @@ gaxpy_
 {-# INLINE gaxpy_ #-}
 gaxpy_ mat@Matrix{..} xs ys =
   U.forM_ (V.enumFromN 0 majDim) $ \m -> do
-    S.iforM_ (slice mat m) $ \(fromIntegral -> n) a -> do
+    S.iforM_ (slice mat m) $ \n a -> do
       let (r, c) = orientSwap (orient mat) (m, n)
       x <- MV.unsafeRead xs c
       y <- MV.unsafeRead ys r
@@ -500,7 +500,7 @@ mcat a b
       }
   where
     dm = majDim a + majDim b
-    nza = fromIntegral $ nonZero a
+    nza = nonZero a
 
 hcat :: Storable a => Matrix Col a -> Matrix Col a -> Matrix Col a
 {-# INLINE hcat #-}
@@ -597,16 +597,16 @@ kronecker matA matB = runST $ do
           lenB = V.length $ S.values sliceB
           m = mA * majDim matB + mB
 
-      let copyIxs !ixA !off
+      let copyIxs ixA off
             | ixA < lenA = do
                 nA <- V.unsafeIndexM (S.indices sliceA) ixA
-                let nOff = nA * fromIntegral (minDim matB)
+                let nOff = nA * minDim matB
                 V.copy (MV.slice off lenB _ixs)
                   $ V.map (+ nOff) $ S.indices sliceB
                 copyIxs (ixA + 1) (off + lenB)
             | otherwise = return ()
 
-      V.unsafeIndexM ptrs m >>= copyIxs 0 . fromIntegral
+      V.unsafeIndexM ptrs m >>= copyIxs 0
 
   U.forM_ (U.enumFromN 0 $ majDim matA) $ \mA -> do
     U.forM_ (U.enumFromN 0 $ majDim matB) $ \mB -> do
@@ -617,7 +617,7 @@ kronecker matA matB = runST $ do
           lenB = V.length $ S.values sliceB
           m = mA * majDim matB + mB
 
-      let copyXs !ixA !off
+      let copyXs ixA off
             | ixA < lenA = do
                 a <- V.unsafeIndexM (S.values sliceA) ixA
                 V.copy (MV.slice off lenB _xs)
@@ -625,7 +625,7 @@ kronecker matA matB = runST $ do
                 copyXs (ixA + 1) (off + lenB)
             | otherwise = return ()
 
-      V.unsafeIndexM ptrs m >>= copyXs 0 . fromIntegral
+      V.unsafeIndexM ptrs m >>= copyXs 0
 
   _ixs <- V.unsafeFreeze _ixs
   _xs <- V.unsafeFreeze _xs
@@ -642,7 +642,7 @@ takeDiag :: (Num a, Storable a) => Matrix or a -> Vector a
 takeDiag = \mat@Matrix{..} ->
   flip V.map (V.enumFromN 0 $ min majDim minDim) $ \m ->
     let sl = slice mat m
-    in case V.elemIndex (fromIntegral m) (S.indices sl) of
+    in case V.elemIndex m (S.indices sl) of
       Nothing -> 0
       Just ix -> S.values sl V.! ix
 

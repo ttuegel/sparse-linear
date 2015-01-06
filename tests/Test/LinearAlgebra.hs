@@ -41,8 +41,7 @@ prop_indicesIncreasing mat =
   all (increasing . S.indices) $ map (slice mat) [0..(majDim mat - 1)]
 
 prop_indicesNonNegative :: Storable a => Matrix or a -> Bool
-prop_indicesNonNegative mat = V.all (>= 0) (indices mat)
+prop_indicesNonNegative Matrix{..} = V.all (>= 0) indices
 
 prop_indicesInRange :: Storable a => Matrix or a -> Bool
-prop_indicesInRange mat = V.all (< dn) (indices mat)
-  where dn = minDim mat
+prop_indicesInRange Matrix{..} = V.all (< minDim) indices
