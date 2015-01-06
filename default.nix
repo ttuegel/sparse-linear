@@ -2,18 +2,16 @@
 , QuickCheck, sparseLinear, storableComplex, suitesparse, vector }:
 
 cabal.mkDerivation (self: {
-  pname = "suitesparse";
+  pname = "feast";
   version = "0.1.0.0";
   src = ./.;
   buildDepends = [
-    globalLock hmatrix monoTraversable sparseLinear storableComplex vector
+    globalLock hmatrix monoTraversable sparseLinear suitesparse vector
   ];
   testDepends = [ hspec QuickCheck vector ];
-  extraLibraries = [
-    atlas feast suitesparse gfortran.gcc
-  ];
+  extraLibraries = [ atlas feast gfortran.gcc ];
   meta = {
-    description = "Haskell bindings to the SuiteSparse library of sparse linear algebra routines";
+    description = "Haskell bindings to the FEAST eigensolver library";
     license = self.stdenv.lib.licenses.gpl2;
     platforms = self.ghc.meta.platforms;
   };
