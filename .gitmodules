@@ -1,0 +1,3 @@
+[submodule "suitesparse"]
+	path = suitesparse
+	url = git@github.com:ttuegel/suitesparse.git
