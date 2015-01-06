@@ -14,19 +14,14 @@ import Test.LinearAlgebra
 main :: IO ()
 main = hspec $ do
   describe "Numeric.LinearAlgebra.Sparse" $ do
-    describe "fromTriples" $ do
-      it "row indices non-negative" $
-        property (prop_indicesNonNegative :: Matrix Col (Complex Double) -> Bool)
-      it "row indices in range" $
-        property (prop_indicesInRange :: Matrix Col (Complex Double) -> Bool)
-      it "row indices increasing" $
-        property (prop_indicesIncreasing :: Matrix Col (Complex Double) -> Bool)
-      it "values length" $
-        property (prop_valuesLength :: Matrix Col (Complex Double) -> Bool)
-      it "column pointers length" $
-        property (prop_pointersLength :: Matrix Col (Complex Double) -> Bool)
-      it "column pointers nondecreasing" $
-        property (prop_pointersNondecreasing :: Matrix Col (Complex Double) -> Bool)
+    describe "fromTriples -> Matrix Col Double"
+      $ checkFunMat1 (id :: Matrix Col Double -> Matrix Col Double)
+    describe "fromTriples -> Matrix Row Double"
+      $ checkFunMat1 (id :: Matrix Row Double -> Matrix Row Double)
+    describe "fromTriples -> Matrix Col (Complex Double)"
+      $ checkFunMat1 (id :: Matrix Col (Complex Double) -> Matrix Col (Complex Double))
+    describe "fromTriples -> Matrix Row (Complex Double)"
+      $ checkFunMat1 (id :: Matrix Row (Complex Double) -> Matrix Row (Complex Double))
 
     describe "kronecker" $ do
       it "assembles identity matrices" $
@@ -63,6 +58,15 @@ main = hspec $ do
     describe "transpose" $ do
       it "self-inverse" $ property prop_transposeId
       it "preserves diagonal" $ property prop_transposeDiag
+
+      describe "transpose -> Matrix Col Double"
+        $ checkFunMat1 (transpose :: Matrix Row Double -> Matrix Col Double)
+      describe "transpose -> Matrix Row Double"
+        $ checkFunMat1 (transpose :: Matrix Col Double -> Matrix Row Double)
+      describe "transpose -> Matrix Col (Complex Double)"
+        $ checkFunMat1 (transpose :: Matrix Row (Complex Double) -> Matrix Col (Complex Double))
+      describe "transpose -> Matrix Row (Complex Double)"
+        $ checkFunMat1 (transpose :: Matrix Col (Complex Double) -> Matrix Row (Complex Double))
 
     describe "ctrans" $ do
       it "self-inverse" $ property prop_ctransId

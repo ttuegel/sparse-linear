@@ -6,6 +6,7 @@ module Test.LinearAlgebra where
 import Data.Traversable
 import qualified Data.Vector.Generic as V
 import Data.Vector.Storable (Storable, Vector)
+import Test.Hspec
 import Test.QuickCheck
 
 import Data.Matrix.Sparse
@@ -45,3 +46,36 @@ prop_indicesNonNegative Matrix{..} = V.all (>= 0) indices
 
 prop_indicesInRange :: Storable a => Matrix or a -> Bool
 prop_indicesInRange Matrix{..} = V.all (< minDim) indices
+
+checkFunMat1
+  :: (Arbitrary a, Num a, Orient or, Orient or', Show a, Storable a)
+  => (Matrix or a -> Matrix or' a) -> SpecWith ()
+checkFunMat1 f = do
+  it "nondecreasing pointers" $ property $ prop_pointersNondecreasing . f
+  it "pointers length" $ property $ prop_pointersLength . f
+  it "values length" $ property $ prop_valuesLength . f
+  it "increasing indices per slice" $ property $ prop_indicesIncreasing . f
+  it "non-negative indices" $ property $ prop_indicesNonNegative . f
+  it "indices < dim" $ property $ prop_indicesInRange . f
+
+checkFunMat2
+  :: (Arbitrary a, Num a, Orient or, Show a, Storable a)
+  => (Matrix or a -> Matrix or a -> Matrix or a) -> SpecWith ()
+checkFunMat2 f = do
+  it "nondecreasing pointers" $ property $ \a b ->
+    prop_pointersNondecreasing (f a b)
+
+  it "pointers length" $ property $ \a b ->
+    prop_pointersLength (f a b)
+
+  it "values length" $ property $ \a b ->
+    prop_valuesLength (f a b)
+
+  it "increasing indices per slice" $ property $ \a b ->
+    prop_indicesIncreasing (f a b)
+
+  it "non-negative indices" $ property $ \a b ->
+    prop_indicesNonNegative (f a b)
+
+  it "indices < dim" $ property $ \a b ->
+    prop_indicesInRange (f a b)
