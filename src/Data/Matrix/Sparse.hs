@@ -39,6 +39,7 @@ import Data.Proxy
 import Data.Tuple (swap)
 import qualified Data.Vector.Algorithms.Intro as Intro
 import qualified Data.Vector as Box
+import qualified Data.Vector.Generic.Mutable as G
 import Data.Vector.Unboxed (Vector, Unbox)
 import qualified Data.Vector.Unboxed as V
 import Data.Vector.Unboxed.Mutable (MVector)
@@ -426,16 +427,16 @@ add :: (Num a, Unbox a) => Matrix or a -> Matrix or a -> Matrix or a
 add a b = lin 1 a 1 b
 
 gaxpy_
-  :: (Orient or, Num a, PrimMonad m, Unbox a)
-  => Matrix or a -> MVector (PrimState m) a -> MVector (PrimState m) a -> m ()
+  :: (G.MVector v a, Orient or, Num a, PrimMonad m, Unbox a)
+  => Matrix or a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 {-# INLINE gaxpy_ #-}
 gaxpy_ mat@Matrix{..} xs ys =
   V.forM_ (V.enumFromN 0 majDim) $ \m -> do
     V.forM_ (S.entries $ slice mat m) $ \(n, a) -> do
       let (r, c) = orientSwap (orient mat) (m, n)
-      x <- MV.unsafeRead xs c
-      y <- MV.unsafeRead ys r
-      MV.unsafeWrite ys r $! y + a * x
+      x <- G.unsafeRead xs c
+      y <- G.unsafeRead ys r
+      G.unsafeWrite ys r $! y + a * x
 
 gaxpy
   :: (Orient or, Num a, Unbox a)
