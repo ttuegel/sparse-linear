@@ -16,11 +16,10 @@ import Data.Vector.Storable (Storable)
 import qualified Data.Vector.Storable as V
 import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
-import Foreign.C.Types (CInt(..))
 
 data Vector a = Vector
   { dim :: !Int
-  , indices :: !(V.Vector CInt)
+  , indices :: !(V.Vector Int)
   , values :: !(V.Vector a)
   }
   deriving (Eq, Show)
@@ -61,6 +60,6 @@ cmap :: (Storable a, Storable b) => (a -> b) -> Vector a -> Vector b
 {-# INLINE cmap #-}
 cmap = \f v -> v { values = V.map f $ values v }
 
-iforM_ :: (Monad m, Storable a) => Vector a -> (CInt -> a -> m b) -> m ()
+iforM_ :: (Monad m, Storable a) => Vector a -> (Int -> a -> m b) -> m ()
 {-# INLINE iforM_ #-}
 iforM_ = \v f -> V.zipWithM_ f (indices v) (values v)

@@ -8,7 +8,7 @@ import qualified Data.Vector.Storable as V
 import Test.Hspec
 import Test.QuickCheck
 
-import Numeric.LinearAlgebra.Sparse
+import Data.Matrix.Sparse
 import Test.LinearAlgebra
 
 main :: IO ()
@@ -153,7 +153,7 @@ prop_addInv m = counterexample (show subtracted) (subtracted == m0)
     m0 = omap (const 0) m
 
 prop_addId :: Matrix Col (Complex Double) -> Bool
-prop_addId m = add m (zeros (dimN m) (dimM m)) == m
+prop_addId m = add m (zeros (minDim m) (majDim m)) == m
 
 prop_linIndicesIncreasing
   :: Complex Double -> Matrix Col (Complex Double) -> Bool
@@ -194,7 +194,7 @@ prop_ctransDiag v = m == ctrans m
 
 prop_mulId :: Matrix Col (Complex Double) -> Property
 prop_mulId m = counterexample (show n) $ m == n
-  where n = m `mul` (ident $ dimM m)
+  where n = m `mul` (ident $ majDim m)
 
 prop_fromBlocksId :: Int -> Int -> Property
 prop_fromBlocksId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)

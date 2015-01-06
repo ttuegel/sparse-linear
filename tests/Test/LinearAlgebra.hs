@@ -11,12 +11,11 @@ import Test.QuickCheck
 import Data.Matrix.Sparse
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util (increasing, nondecreasing)
-import Numeric.LinearAlgebra.Sparse
 
 instance (Arbitrary a, Storable a) => Arbitrary (Vector a) where
     arbitrary = fmap V.fromList $ suchThat arbitrary $ \v -> length v > 0
 
-instance (Arbitrary a, Indices or, Num a, Storable a) => Arbitrary (Matrix or a) where
+instance (Arbitrary a, Num a, Orient or, Storable a) => Arbitrary (Matrix or a) where
     arbitrary = do
       nr <- arbitrary `suchThat` (> 0)
       let nc = nr
@@ -31,18 +30,19 @@ prop_pointersNondecreasing :: Matrix or a -> Bool
 prop_pointersNondecreasing Matrix{..} = nondecreasing pointers
 
 prop_pointersLength :: Matrix or a -> Bool
-prop_pointersLength Matrix{..} = V.length pointers == dimM + 1
+prop_pointersLength Matrix{..} = V.length pointers == majDim + 1
 
 prop_valuesLength :: Storable a => Matrix or a -> Bool
 prop_valuesLength Matrix{..} =
   V.length values == (fromIntegral $ V.last pointers)
 
 prop_indicesIncreasing :: Storable a => Matrix or a -> Bool
-prop_indicesIncreasing mat = V.all (increasing . S.indices) (slices mat)
+prop_indicesIncreasing mat =
+  all (increasing . S.indices) $ map (slice mat) [0..(majDim mat - 1)]
 
 prop_indicesNonNegative :: Storable a => Matrix or a -> Bool
 prop_indicesNonNegative mat = V.all (>= 0) (indices mat)
 
 prop_indicesInRange :: Storable a => Matrix or a -> Bool
 prop_indicesInRange mat = V.all (< dn) (indices mat)
-  where dn = fromIntegral $ dimN mat
+  where dn = minDim mat

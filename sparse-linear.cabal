@@ -13,13 +13,9 @@ cabal-version: >=1.10
 library
   exposed-modules:
     Data.Complex.Enhanced
-    Data.Matrix
     Data.Matrix.Sparse
-    Data.Matrix.Sparse.Compress
-    Data.Matrix.Sparse.Type
     Data.Vector.Sparse
     Data.Vector.Util
-    Numeric.LinearAlgebra.Sparse
   build-depends:
       base >=4.7 && <4.8
     , global-lock >=0.1 && <1
