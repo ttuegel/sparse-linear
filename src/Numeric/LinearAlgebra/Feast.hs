@@ -154,6 +154,8 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
 
           _work1 <- forM [0..(m0 - 1)] $ \c ->
             return $ MV.slice (c * n) n _work1
+          _work2 <- forM [0..(m0 - 1)] $ \c ->
+            return $ MV.slice (c * n) n _work2
           _eigenvectors <- forM [0..(m0 - 1)] $ \c ->
             return $ MV.slice (c * n) n _eigenvectors
 
@@ -174,9 +176,11 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                    40 -> multiplyWork matB
                    _ -> return ()
                   geigSH_go
+
               solveLinear mat = do
-                solns <- linearSolve_ mat _work1
-                forM_ (zip _work1 solns) $ uncurry MV.copy
+                solns <- linearSolve_ mat _work2
+                forM_ (zip _work2 solns) $ uncurry MV.copy
+
               multiplyWork mat = do
                 i <- (+ (-1)) . fromIntegral <$> peekElemOff fpm 23
                 j <- fromIntegral <$> peekElemOff fpm 24
