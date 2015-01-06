@@ -1,4 +1,4 @@
-{ cabal, atlas, feast, gfortran, globalLock, hmatrix, hspec, monoTraversable
+{ cabal, feast, gfortran, globalLock, hmatrix, hspec, monoTraversable
 , QuickCheck, sparseLinear, storableComplex, suitesparse, vector }:
 
 cabal.mkDerivation (self: {
@@ -9,7 +9,7 @@ cabal.mkDerivation (self: {
     globalLock hmatrix monoTraversable sparseLinear suitesparse vector
   ];
   testDepends = [ hspec QuickCheck vector ];
-  extraLibraries = [ atlas feast gfortran.gcc ];
+  extraLibraries = [ feast gfortran.gcc ];
   meta = {
     description = "Haskell bindings to the FEAST eigensolver library";
     license = self.stdenv.lib.licenses.gpl2;

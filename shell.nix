@@ -6,7 +6,6 @@ let
 in
 haskellPackages.callPackage ./. {
   inherit sparseLinear;
-  atlas = atlasWithLapack;
   suitesparse = haskellPackages.callPackage ../suitesparse {
     inherit sparseLinear;
     suitesparse = suitesparse_4_4_1;
