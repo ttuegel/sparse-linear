@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -fsimpl-tick-factor=200 #-}
 
 module Data.Vector.Sparse
-       ( Vector(..), cmap, iforM_
+       ( Vector(..), cmap
        , fromPairs, (|>)
        ) where
 
@@ -12,54 +12,49 @@ import Control.Monad.ST (runST)
 import Data.MonoTraversable
 import Data.Ord (comparing)
 import qualified Data.Vector.Algorithms.Intro as Intro
-import Data.Vector.Storable (Storable)
-import qualified Data.Vector.Storable as V
 import Data.Vector.Unboxed (Unbox)
-import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Unboxed as V
 
 data Vector a = Vector
   { dim :: !Int
-  , indices :: !(V.Vector Int)
-  , values :: !(V.Vector a)
+  , entries :: !(V.Vector (Int, a))
   }
   deriving (Eq, Show)
 
-fromPairs :: (Storable a, Unbox a) => Int -> U.Vector (Int, a) -> Vector a
+fromPairs :: Unbox a => Int -> V.Vector (Int, a) -> Vector a
 {-# INLINE fromPairs #-}
 fromPairs = \dim _pairs -> runST $ do
-  _pairs <- U.thaw _pairs
+  _pairs <- V.thaw _pairs
   Intro.sortBy (comparing fst) _pairs
-  _pairs <- U.unsafeFreeze _pairs
-  let (V.map fromIntegral . V.convert -> indices, V.convert -> values) =
-        U.unzip _pairs
+  entries <- V.unsafeFreeze _pairs
   return Vector{..}
 
-(|>) :: (Storable a, Unbox a) => Int -> [(Int, a)] -> Vector a
+(|>) :: Unbox a => Int -> [(Int, a)] -> Vector a
 {-# INLINE (|>) #-}
-(|>) = \dim pairs -> fromPairs dim $ U.fromList pairs
+(|>) = \dim pairs -> fromPairs dim $ V.fromList pairs
 
 type instance Element (Vector a) = a
 
-instance Storable a => MonoFunctor (Vector a) where
-  omap = \f v -> v { values = omap f $ values v }
+instance Unbox a => MonoFunctor (Vector a) where
   {-# INLINE omap #-}
+  omap = \f v ->
+    let (indices, values) = V.unzip $ entries v
+    in v { entries = V.zip indices $ omap f values }
 
-instance Storable a => MonoFoldable (Vector a) where
-  ofoldMap = \f Vector{..} -> ofoldMap f values
+instance Unbox a => MonoFoldable (Vector a) where
   {-# INLINE ofoldMap #-}
-  ofoldr = \f r Vector{..} -> ofoldr f r values
   {-# INLINE ofoldr #-}
-  ofoldl' = \f r Vector{..} -> ofoldl' f r values
   {-# INLINE ofoldl' #-}
-  ofoldr1Ex = \f Vector{..} -> ofoldr1Ex f values
   {-# INLINE ofoldr1Ex #-}
-  ofoldl1Ex' = \f Vector{..} -> ofoldl1Ex' f values
   {-# INLINE ofoldl1Ex' #-}
+  ofoldMap = \f Vector{..} -> ofoldMap f $ snd $ V.unzip entries
+  ofoldr = \f r Vector{..} -> ofoldr f r $ snd $ V.unzip entries
+  ofoldl' = \f r Vector{..} -> ofoldl' f r $ snd $ V.unzip entries
+  ofoldr1Ex = \f Vector{..} -> ofoldr1Ex f $ snd $ V.unzip entries
+  ofoldl1Ex' = \f Vector{..} -> ofoldl1Ex' f $ snd $ V.unzip entries
 
-cmap :: (Storable a, Storable b) => (a -> b) -> Vector a -> Vector b
+cmap :: (Unbox a, Unbox b) => (a -> b) -> Vector a -> Vector b
 {-# INLINE cmap #-}
-cmap = \f v -> v { values = V.map f $ values v }
-
-iforM_ :: (Monad m, Storable a) => Vector a -> (Int -> a -> m b) -> m ()
-{-# INLINE iforM_ #-}
-iforM_ = \v f -> V.zipWithM_ f (indices v) (values v)
+cmap = \f v ->
+  let (indices, values) = V.unzip $ entries v
+  in v { entries = V.zip indices $ V.map f values }

@@ -26,17 +26,17 @@ class IsImag a where
   imag :: Num (RealOf a) => RealOf a -> a
 
 instance IsReal Double where
+  {-# INLINE real #-}
+  {-# INLINE conj #-}
   real = id
   conj = id
-  {-# INLINE real #-}
-  {-# INLINE conj #-}
 
 instance IsReal (Complex Double) where
-  real = (:+ 0)
-  conj = conjugate
   {-# INLINE real #-}
   {-# INLINE conj #-}
+  real = (:+ 0)
+  conj = conjugate
 
 instance IsImag (Complex Double) where
-  imag = (0 :+)
   {-# INLINE imag #-}
+  imag = (0 :+)

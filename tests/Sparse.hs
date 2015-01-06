@@ -3,8 +3,8 @@
 module Main where
 
 import Data.MonoTraversable
-import Data.Vector.Storable (Vector)
-import qualified Data.Vector.Storable as V
+import Data.Vector.Unboxed (Vector)
+import qualified Data.Vector.Unboxed as V
 import Test.Hspec
 import Test.QuickCheck
 
