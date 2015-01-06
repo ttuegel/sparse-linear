@@ -24,12 +24,13 @@ import Foreign.Marshal.Utils (with)
 import Foreign.Ptr
 import Foreign.Storable
 import GHC.Stack (errorWithStackTrace)
+import Prelude hiding (mapM)
 import System.GlobalLock (lock)
 import System.IO.Unsafe
 
-import qualified Data.Matrix as Dense
+import Data.Complex.Enhanced
+import qualified Data.Packed.Matrix as Dense
 import qualified Data.Matrix.Sparse as Sparse
-import Numeric.LinearAlgebra.Sparse
 import Numeric.LinearAlgebra.Umfpack
 
 type FeastRci a
@@ -71,15 +72,14 @@ instance Feast Double where
     {-# INLINE feast_rci #-}
 
 type EigSH a =
-    ( CxSparse a
-    , Eq a
+    ( Eq a
     , Feast a
     , IsReal a
     , Num (RealOf a)
-    , Num a
     , Show a
     , Storable (RealOf a)
     , Umfpack a
+    , Dense.Element a
     )
 geigSH
   :: (EigSH a)
@@ -89,13 +89,13 @@ geigSH
 geigSH !m0 (!_emin, !_emax) !matA !matB
   | matA /= matA' = errorWithStackTrace "matrix A must be hermitian"
   | matB /= matB' = errorWithStackTrace "matrix B must be hermitian"
-  | Sparse.dimM matA /= Sparse.dimM matB =
+  | Sparse.majDim matA /= Sparse.majDim matB =
       errorWithStackTrace "matrices A and B must be the same size"
   | otherwise = geigH_go
   where
-    n = Sparse.dimM matA
-    matA' = Sparse.reorient $ ctrans matA
-    matB' = Sparse.reorient $ ctrans matB
+    n = Sparse.majDim matA
+    matA' = Sparse.reorient $ Sparse.ctrans matA
+    matB' = Sparse.reorient $ Sparse.ctrans matB
 
     {-# NOINLINE geigH_go #-}
     geigH_go =
@@ -154,6 +154,8 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
 
           _work1 <- forM [0..(m0 - 1)] $ \c ->
             return $ MV.slice (c * n) n _work1
+          _eigenvectors <- forM [0..(m0 - 1)] $ \c ->
+            return $ MV.slice (c * n) n _eigenvectors
 
           let geigSH_go = do
                 feast_go
@@ -163,11 +165,11 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                    10 -> return ()
                    11 -> do
                      _ze <- peek _ze
-                     solveLinear $ lin (-1) matA _ze matB
+                     solveLinear $ Sparse.lin (-1) matA _ze matB
                    20 -> return ()
                    21 -> do
                      _ze <- peek _ze
-                     solveLinear $ lin (-1) matA' (conj _ze) matB'
+                     solveLinear $ Sparse.lin (-1) matA' (conj _ze) matB'
                    30 -> multiplyWork matA
                    40 -> multiplyWork matB
                    _ -> return ()
@@ -177,20 +179,18 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                 forM_ (zip _work1 solns) $ uncurry MV.copy
               multiplyWork mat = do
                 i <- (+ (-1)) . fromIntegral <$> peekElemOff fpm 23
-                j <- (+ i) . fromIntegral <$> peekElemOff fpm 24
-                _eigenvectors <- forM [i..(j - 1)] $ \c ->
-                  return $ MV.slice (c * n) n _eigenvectors
-                _work1 <- return $ take (j - i) $ drop (i - 1) _work1
-                forM_ (zip _work1 _eigenvectors) $ \(dst, x) -> do
-                  MV.set dst 0
-                  gaxpy_ mat x dst
+                j <- fromIntegral <$> peekElemOff fpm 24
+                forM_ (take j $ drop (i - 1) $ zip _work1 _eigenvectors)
+                  $ \(dst, x) -> do
+                    MV.set dst 0
+                    Sparse.gaxpy_ mat x dst
           geigSH_go
 
           m <- fromIntegral <$> peek mode
           _eigenvalues <- V.unsafeFreeze $ MV.slice 0 m _eigenvalues
-          _eigenvectors <- V.unsafeFreeze $ MV.slice 0 (m * n) _eigenvectors
+          _eigenvectors <- mapM V.unsafeFreeze $ take m _eigenvectors
 
-          return (_eigenvalues, Dense.fromVector n m _eigenvectors)
+          return (_eigenvalues, Dense.fromColumns _eigenvectors)
 {-# INLINE geigSH #-}
 
 eigSH
@@ -199,5 +199,6 @@ eigSH
   -> (RealOf a, RealOf a)
   -> Sparse.Matrix Sparse.Col a
   -> (Vector (RealOf a), Dense.Matrix a)
-eigSH = \m0 bounds matA -> geigSH m0 bounds matA $ ident $ Sparse.dimM matA
+eigSH = \m0 bounds matA ->
+  geigSH m0 bounds matA $ Sparse.ident $ Sparse.majDim matA
 {-# INLINE eigSH #-}

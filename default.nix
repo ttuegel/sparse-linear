@@ -1,11 +1,13 @@
-{ cabal, atlas, feast, gfortran, globalLock, hspec, monoTraversable
-, QuickCheck, storableComplex, suitesparse, vector }:
+{ cabal, atlas, feast, gfortran, globalLock, hmatrix, hspec, monoTraversable
+, QuickCheck, sparseLinear, storableComplex, suitesparse, vector }:
 
 cabal.mkDerivation (self: {
   pname = "suitesparse";
   version = "0.1.0.0";
   src = ./.;
-  buildDepends = [ globalLock monoTraversable storableComplex vector ];
+  buildDepends = [
+    globalLock hmatrix monoTraversable sparseLinear storableComplex vector
+  ];
   testDepends = [ hspec QuickCheck vector ];
   extraLibraries = [
     atlas feast suitesparse gfortran.gcc

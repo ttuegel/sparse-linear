@@ -5,8 +5,8 @@ module Main where
 import qualified Data.Vector.Storable as V
 import Test.Hspec
 
+import Data.Matrix.Sparse
 import Numeric.LinearAlgebra.Feast
-import Numeric.LinearAlgebra.Sparse
 
 main :: IO ()
 main = hspec $ do

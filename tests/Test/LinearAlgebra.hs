@@ -5,18 +5,18 @@ module Test.LinearAlgebra where
 
 import Data.Traversable
 import qualified Data.Vector.Generic as V
-import Data.Vector.Storable (Storable, Vector)
+import Data.Vector.Unboxed (Vector, Unbox)
+import Test.Hspec
 import Test.QuickCheck
 
 import Data.Matrix.Sparse
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util (increasing, nondecreasing)
-import Numeric.LinearAlgebra.Sparse
 
-instance (Arbitrary a, Storable a) => Arbitrary (Vector a) where
+instance (Arbitrary a, Unbox a) => Arbitrary (Vector a) where
     arbitrary = fmap V.fromList $ suchThat arbitrary $ \v -> length v > 0
 
-instance (Arbitrary a, CxSparse a, Indices or) => Arbitrary (Matrix or a) where
+instance (Arbitrary a, Num a, Orient or, Unbox a) => Arbitrary (Matrix or a) where
     arbitrary = do
       nr <- arbitrary `suchThat` (> 0)
       let nc = nr
@@ -31,18 +31,52 @@ prop_pointersNondecreasing :: Matrix or a -> Bool
 prop_pointersNondecreasing Matrix{..} = nondecreasing pointers
 
 prop_pointersLength :: Matrix or a -> Bool
-prop_pointersLength Matrix{..} = V.length pointers == dimM + 1
+prop_pointersLength Matrix{..} = V.length pointers == majDim + 1
 
-prop_valuesLength :: Storable a => Matrix or a -> Bool
+prop_valuesLength :: Unbox a => Matrix or a -> Bool
 prop_valuesLength Matrix{..} =
-  V.length values == (fromIntegral $ V.last pointers)
+  V.length entries == fromIntegral (V.last pointers)
 
-prop_indicesIncreasing :: Storable a => Matrix or a -> Bool
-prop_indicesIncreasing mat = V.all (increasing . S.indices) (slices mat)
+prop_indicesIncreasing :: Unbox a => Matrix or a -> Bool
+prop_indicesIncreasing mat =
+  all (increasing . fst . V.unzip . S.entries)
+  $ map (slice mat) [0..(majDim mat - 1)]
 
-prop_indicesNonNegative :: Storable a => Matrix or a -> Bool
-prop_indicesNonNegative mat = V.all (>= 0) (indices mat)
+prop_indicesNonNegative :: Unbox a => Matrix or a -> Bool
+prop_indicesNonNegative = V.all (>= 0) . fst . V.unzip . entries
 
-prop_indicesInRange :: Storable a => Matrix or a -> Bool
-prop_indicesInRange mat = V.all (< dn) (indices mat)
-  where dn = fromIntegral $ dimN mat
+prop_indicesInRange :: Unbox a => Matrix or a -> Bool
+prop_indicesInRange Matrix{..} = V.all (< minDim) $ fst $ V.unzip entries
+
+checkFunMat1
+  :: (Arbitrary a, Num a, Orient or, Orient or', Show a, Unbox a)
+  => (Matrix or a -> Matrix or' a) -> SpecWith ()
+checkFunMat1 f = do
+  it "nondecreasing pointers" $ property $ prop_pointersNondecreasing . f
+  it "pointers length" $ property $ prop_pointersLength . f
+  it "values length" $ property $ prop_valuesLength . f
+  it "increasing indices per slice" $ property $ prop_indicesIncreasing . f
+  it "non-negative indices" $ property $ prop_indicesNonNegative . f
+  it "indices < dim" $ property $ prop_indicesInRange . f
+
+checkFunMat2
+  :: (Arbitrary a, Num a, Orient or, Show a, Unbox a)
+  => (Matrix or a -> Matrix or a -> Matrix or a) -> SpecWith ()
+checkFunMat2 f = do
+  it "nondecreasing pointers" $ property $ \a b ->
+    prop_pointersNondecreasing (f a b)
+
+  it "pointers length" $ property $ \a b ->
+    prop_pointersLength (f a b)
+
+  it "values length" $ property $ \a b ->
+    prop_valuesLength (f a b)
+
+  it "increasing indices per slice" $ property $ \a b ->
+    prop_indicesIncreasing (f a b)
+
+  it "non-negative indices" $ property $ \a b ->
+    prop_indicesNonNegative (f a b)
+
+  it "indices < dim" $ property $ \a b ->
+    prop_indicesInRange (f a b)
