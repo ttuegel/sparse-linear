@@ -40,7 +40,7 @@ main = hspec $ do
       it "assembles identity matrices" $ property $ do
         m <- arbdim
         n <- arbdim
-        return $ kronecker (ident m) (ident n) === (ident (m + n) :: Matrix Row Double)
+        return $ kronecker (ident m) (ident n) === (ident (m * n) :: Matrix Row Double)
 
       let arbitraryKronecker
             :: (Arbitrary a, Num a, Orient or, Unbox a) => Gen (Matrix or a)
