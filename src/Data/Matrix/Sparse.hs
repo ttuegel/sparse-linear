@@ -47,6 +47,8 @@ import qualified Data.Vector.Unboxed.Mutable as MV
 import GHC.Stack (errorWithStackTrace)
 
 import Data.Complex.Enhanced
+import Data.Matrix.Sparse.Lin
+import Data.Matrix.Sparse.Slice
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util
 
@@ -150,82 +152,6 @@ slice = \Matrix{..} c ->
   { S.dim = idim
   , S.entries = unsafeSlice pointers c entries
   }
-
--- | Given a vector of pointers to slices in an array, return the indexed slice.
--- The following requirements are not checked:
--- * @index + 1 < length pointers@
--- * @last pointers == length data@
--- * for all @0 <= i < length pointers@, @pointers ! i <= pointers ! (i + 1)@
-unsafeSlice
-  :: Unbox a
-  => Vector Int -- ^ pointers
-  -> Int -- ^ index of slice
-  -> Vector a -- ^ data
-  -> Vector a
-{-# INLINE unsafeSlice #-}
-unsafeSlice = \ptrs ix dat ->
-  let start = V.unsafeIndex ptrs ix
-      end = V.unsafeIndex ptrs (ix + 1)
-  in V.unsafeSlice start (end - start) dat
-
--- | Given a vector of pointers to slices in an array, return the indexed slice.
--- The following requirements are not checked:
--- * @index + 1 < length pointers@
--- * @last pointers == length data@
--- * for all @0 <= i < length pointers@, @pointers ! i <= pointers ! (i + 1)@
-unsafeMSlice
-  :: Unbox a
-  => Vector Int -- ^ pointers
-  -> Int -- ^ index of slice
-  -> MVector s a -- ^ data
-  -> MVector s a
-{-# INLINE unsafeMSlice #-}
-unsafeMSlice = \ptrs ix dat ->
-  let start = V.unsafeIndex ptrs ix
-      end = V.unsafeIndex ptrs (ix + 1)
-  in MV.unsafeSlice start (end - start) dat
-
-unsafeScatter
-  :: (Num a, PrimMonad m, Unbox a)
-  => MVector (PrimState m) (Bool, a) -- ^ workspace
-  -> a -- ^ multiplicative factor
-  -> Vector (Int, a) -- ^ input
-  -> MVector (PrimState m) Int -- ^ pattern
-  -> Int -- ^ population of pattern
-  -> m Int -- ^ population of pattern after scatter
-{-# INLINE unsafeScatter #-}
-unsafeScatter = \work alpha as ixs _pop -> do
-  let (markers, xs) = MV.unzip work
-      unsafeScatter_go _pop (i, ax) = do
-        marked <- MV.unsafeRead markers i
-        if marked
-          then do
-            x <- MV.unsafeRead xs i
-            MV.unsafeWrite xs i $! alpha * ax + x
-            return _pop
-          else do
-            MV.unsafeWrite markers i True
-            MV.unsafeWrite ixs _pop i
-            MV.unsafeWrite xs i $! alpha * ax
-            return $! _pop + 1
-  V.foldM' unsafeScatter_go _pop as
-
-unsafeGather
-  :: (PrimMonad m, Unbox a)
-  => MVector (PrimState m) (Bool, a) -- ^ workspace
-  -> MVector (PrimState m) Int -- ^ pattern
-  -> MVector (PrimState m) a -- ^ destination
-  -> Int -- ^ population
-  -> m ()
-{-# INLINE unsafeGather #-}
-unsafeGather = \work ixs dst pop -> do
-  let (markers, xs) = MV.unzip work
-  Intro.sortByBounds compare ixs 0 pop
-  V.forM_ (V.enumFromN 0 pop) $ \i -> do
-    ix <- MV.unsafeRead ixs i
-    MV.unsafeRead xs ix >>= MV.unsafeWrite dst i
-    MV.unsafeWrite markers ix False
-  MV.clear xs
 
 compress
   :: (Orient or, Num a, Unbox a)
@@ -424,56 +350,17 @@ lin a matA b matB
       errorWithStackTrace "lin: inner dimensions differ"
   | odim matA /= odim matB =
       errorWithStackTrace "lin: outer dimensions differ"
-  | idim matA > odim matA =
-      -- if the inner dimension is greater than the outer dimension, we can
-      -- add the matrices using less memory by adding their transposes instead
-      -- this works only because transpose is completely free
-      transpose $ lin a (transpose matA) b (transpose matB)
-  | otherwise = runST $ do
-      let odm = odim matA
-          idm = idim matA
-          ptrsA = pointers matA
-          ptrsB = pointers matB
-          entA = entries matA
-          entB = entries matB
-      ptrs <- MV.new (odm + 1)
-      MV.unsafeWrite ptrs 0 0
-
-      _entries <- MV.new 0
-      _work <- MV.zip <$> MV.replicate idm False <*> MV.new idm
-
-      let lin_go _entries i = do
-            let len = MV.length _entries
-                sliceA = unsafeSlice ptrsA i entA
-                sliceB = unsafeSlice ptrsB i entB
-                dlen = V.length sliceA + V.length sliceB
-
-            -- grow destination just enough to accomodate current slice
-            _entries <- MV.unsafeGrow _entries dlen
-
-            -- find the start of the current destination slice
-            start <- MV.unsafeRead ptrs i
-            let (pat, dat) = MV.unzip $ MV.slice start dlen _entries
-
-            -- scatter/gather
-            _pop <- unsafeScatter _work a sliceA pat 0
-            _pop <- unsafeScatter _work b sliceB pat _pop
-            unsafeGather _work pat dat _pop
-
-            -- record the start of the next slice
-            MV.unsafeWrite ptrs (i + 1) $! start + _pop
-
-            -- shrink destination
-            return $! MV.slice 0 (len + _pop) _entries
-
-      _entries <- V.foldM' lin_go _entries $ V.enumFromN 0 odm
-
-      pointers <- V.unsafeFreeze ptrs
-      let odim = odm
-          idim = idm
-      entries <- V.unsafeFreeze _entries
-
-      return Matrix {..}
+  | otherwise =
+      let (ptrs, ents) =
+            unsafeLin (odim matA) (idim matA)
+              a (pointers matA) (entries matA)
+              b (pointers matB) (entries matB)
+      in Matrix
+      { odim = odim matA
+      , idim = idim matA
+      , pointers = ptrs
+      , entries = ents
+      }
 
 add :: (Num a, Unbox a) => Matrix or a -> Matrix or a -> Matrix or a
 {-# INLINE add #-}

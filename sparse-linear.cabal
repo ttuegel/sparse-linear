@@ -15,6 +15,9 @@ library
     Data.Complex.Enhanced
     Data.Matrix.Sparse
     Data.Matrix.Sparse.Foreign
+    Data.Matrix.Sparse.Lin
+    Data.Matrix.Sparse.ScatterGather
+    Data.Matrix.Sparse.Slice
     Data.Vector.Sparse
     Data.Vector.Util
   build-depends:
