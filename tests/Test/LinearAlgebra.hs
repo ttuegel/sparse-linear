@@ -38,47 +38,33 @@ arbitraryMatrix rdim cdim = do
 
 checkMatrixRowR :: Gen (Matrix Row Double) -> SpecWith ()
 checkMatrixRowR =
-  describe "format properties :: Matrix Row Double" . checkMatrix
+  it "format properties :: Matrix Row Double" . checkMatrix
 
 checkMatrixRowZ :: Gen (Matrix Row (Complex Double)) -> SpecWith ()
 checkMatrixRowZ =
-  describe "format properties :: Matrix Row (Complex Double)" . checkMatrix
+  it "format properties :: Matrix Row (Complex Double)" . checkMatrix
 
 checkMatrixColR :: Gen (Matrix Col Double) -> SpecWith ()
 checkMatrixColR =
-  describe "format properties :: Matrix Col Double" . checkMatrix
+  it "format properties :: Matrix Col Double" . checkMatrix
 
 checkMatrixColZ :: Gen (Matrix Col (Complex Double)) -> SpecWith ()
 checkMatrixColZ =
-  describe "format properties :: Matrix Col (Complex Double)" . checkMatrix
+  it "format properties :: Matrix Col (Complex Double)" . checkMatrix
 
 checkMatrix
-  :: (Arbitrary a, Num a, Orient or, Unbox a)
-  => Gen (Matrix or a) -> SpecWith ()
-checkMatrix arbmat = do
-  it "nondecreasing pointers" $ property $ do
-    Matrix{..} <- arbmat
-    return $ nondecreasing pointers
-
-  it "length pointers == odim + 1" $ property $ do
-    Matrix{..} <- arbmat
-    return $ V.length pointers == odim + 1
-
-  it "length values == last pointers" $ property $ do
-    Matrix{..} <- arbmat
-    return $ V.length entries == V.last pointers
-
-  it "increasing indices in slice" $ property $ do
-    mat <- arbmat
-    let slices = map (slice mat) [0..(odim mat - 1)]
-    return $ all (increasing . fst . V.unzip . S.entries) slices
-
-  it "all indices >= 0" $ property $ do
-    Matrix{..} <- arbmat
-    let indices = fst $ V.unzip entries
-    return $ V.all (>= 0) indices
-
-  it "all indices < idim" $ property $ do
-    Matrix{..} <- arbmat
-    let indices = fst $ V.unzip entries
-    return $ V.all (< idim) indices
+  :: (Arbitrary a, Num a, Orient or, Show a, Unbox a)
+  => Gen (Matrix or a) -> Property
+checkMatrix arbmat = property $ do
+  mat@Matrix{..} <- arbmat
+  let dieUnless str = counterexample ("failed: " ++ str ++ " " ++ show mat)
+      slices = map (slice mat) [0..(odim - 1)]
+      indices = fst $ V.unzip entries
+  return $ conjoin
+    [ dieUnless "nondecreasing pointers" (nondecreasing pointers)
+    , dieUnless "length pointers == odim + 1" (V.length pointers == odim + 1)
+    , dieUnless "length values == last pointers" (V.length entries == V.last pointers)
+    , dieUnless "increasing indices in slice" (all (increasing . fst . V.unzip . S.entries) slices)
+    , dieUnless "all indices >= 0" (V.all (>= 0) indices)
+    , dieUnless "all indices < idim" (V.all (< idim) indices)
+    ]
