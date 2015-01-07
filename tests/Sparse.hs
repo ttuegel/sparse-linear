@@ -206,7 +206,7 @@ prop_ctransDiag v = m == ctrans m
 
 prop_mulId :: Matrix Col (Complex Double) -> Property
 prop_mulId m = counterexample (show n) $ m == n
-  where n = m `mul` (ident $ odim m)
+  where n = m * (ident $ odim m)
 
 prop_fromBlocksId :: Int -> Int -> Property
 prop_fromBlocksId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)

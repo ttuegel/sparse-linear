@@ -15,7 +15,7 @@ module Data.Matrix.Sparse
        , fromTriples, (><)
        , transpose, reorient
        , ctrans, hermitian
-       , outer, mul
+       , outer
        , gaxpy_, gaxpy, mulV
        , lin, add
        , mcat, hcat, vcat
@@ -110,7 +110,47 @@ instance (Num a, Unbox a) => Num (Matrix Col a) where
   {-# INLINE signum #-}
   (+) = add
   (-) = \a b -> lin 1 a (-1) b
-  (*) = mul
+  (*) = \a b ->
+    if odim a /= idim b
+      then errorWithStackTrace "(*): inner dimension mismatch"
+    else
+      let (ptrs, ents) =
+            unsafeMul (idim a) (odim b)
+              (pointers a) (entries a)
+              (pointers b) (entries b)
+      in Matrix
+      { odim = odim b
+      , idim = idim a
+      , pointers = ptrs
+      , entries = ents
+      }
+  negate = omap negate
+  abs = omap abs
+  signum = omap signum
+  fromInteger = errorWithStackTrace "fromInteger: not implemented"
+
+instance (Num a, Unbox a) => Num (Matrix Row a) where
+  {-# INLINE (+) #-}
+  {-# INLINE (-) #-}
+  {-# INLINE (*) #-}
+  {-# INLINE negate #-}
+  {-# INLINE abs #-}
+  {-# INLINE signum #-}
+  (+) = add
+  (-) = \a b -> lin 1 a (-1) b
+  (*) = \a b ->
+    if idim a /= odim b
+      then errorWithStackTrace "(*): inner dimension mismatch"
+    else
+      let (ptrs, ents) = unsafeMul (idim b) (odim a)
+                         (pointers b) (entries b)
+                         (pointers a) (entries a)
+      in Matrix
+      { odim = odim a
+      , idim = idim b
+      , pointers = ptrs
+      , entries = ents
+      }
   negate = omap negate
   abs = omap abs
   signum = omap signum
@@ -289,25 +329,6 @@ outer = \sliceC sliceR -> fix $ \mat ->
         return vals
       entries = V.zip indices values
   in Matrix {..}
-
-mul
-  :: (Num a, Unbox a)
-  => Matrix Col a -> Matrix Col a -> Matrix Col a
-{-# INLINE mul #-}
-mul = \matA matB ->
-  if odim matA /= idim matB
-    then errorWithStackTrace "mul: inner dimension mismatch"
-  else
-    let (ptrs, ents) =
-          unsafeMul (idim matA) (odim matB)
-            (pointers matA) (entries matA)
-            (pointers matB) (entries matB)
-    in Matrix
-    { odim = odim matB
-    , idim = idim matA
-    , pointers = ptrs
-    , entries = ents
-    }
 
 fromTriples
   :: (Orient or, Num a, Unbox a)
