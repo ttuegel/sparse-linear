@@ -385,6 +385,40 @@ add :: (Num a, Unbox a) => Matrix or a -> Matrix or a -> Matrix or a
 {-# INLINE add #-}
 add a b = lin 1 a 1 b
 
+unsafeDotInto
+  :: (Num a, PrimMonad m, Unbox a)
+  => Matrix Row a -> S.Vector a -> MVector (PrimState m) (Int, a) -> m Int
+{-# INLINE unsafeDotInto #-}
+unsafeDotInto = \matA bs cs -> do
+  let (ixsB, xsB) = V.unzip $ S.entries bs
+      (ixsC, xsC) = MV.unzip cs
+      lenB = V.length ixsB
+      mul_go !m !k
+        | m < majDim matA = do
+            let as = S.entries $ slice matA m
+                (ixsA, xsA) = V.unzip as
+                lenA = V.length as
+                dot_go !nz !acc !i !j
+                  | i < lenA && j < lenB = do
+                      rA <- V.unsafeIndexM ixsA i
+                      rB <- V.unsafeIndexM ixsB j
+                      case compare rA rB of
+                        LT -> dot_go nz acc (i + 1) j
+                        EQ -> do
+                          xA <- V.unsafeIndexM xsA i
+                          xB <- V.unsafeIndexM xsB j
+                          dot_go True (acc + xA * xB) (i + 1) (j + 1)
+                        GT -> dot_go nz acc i (j + 1)
+                  | otherwise = do
+                      when nz $ do
+                        MV.unsafeWrite ixsC k m
+                        MV.unsafeWrite xsC k acc
+                      return nz
+            nz <- dot_go False 0 0 0
+            mul_go (m + 1) (if nz then k + 1 else k)
+        | otherwise = return k
+  mul_go 0 0
+
 gaxpy_
   :: (G.MVector v a, Orient or, Num a, PrimMonad m, Unbox a)
   => Matrix or a -> v (PrimState m) a -> v (PrimState m) a -> m ()
