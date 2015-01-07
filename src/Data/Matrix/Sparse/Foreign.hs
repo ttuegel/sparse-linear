@@ -37,8 +37,8 @@ withConstMatrix Matrix{..} action =
     _ptrs = S.map fromIntegral $ S.convert pointers
     _rows = S.map fromIntegral $ S.convert $ fst $ V.unzip entries
     _vals = S.convert $ snd $ V.unzip entries
-    nr = fromIntegral minDim
-    nc = fromIntegral majDim
+    nr = fromIntegral idim
+    nc = fromIntegral odim
 
 fromForeign
   :: (Num a, Storable a, Unbox a)
@@ -46,18 +46,18 @@ fromForeign
 {-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO (Matrix Col Double) #-}
 {-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO (Matrix Col (Complex Double)) #-}
 fromForeign copy nRows nCols ptrs rows vals = do
-  let (majDim, minDim) =
+  let (odim, idim) =
         orientSwap (Proxy :: Proxy Col) (fromIntegral nRows, fromIntegral nCols)
 
   _ptrs <- if copy
-           then do _ptrs <- mallocArray (majDim + 1)
-                   copyArray _ptrs ptrs (majDim + 1)
+           then do _ptrs <- mallocArray (odim + 1)
+                   copyArray _ptrs ptrs (odim + 1)
                    return _ptrs
            else return ptrs
   _ptrs <- newForeignPtr finalizerFree _ptrs
 
   let pointers = V.convert . S.map fromIntegral
-                 $ S.unsafeFromForeignPtr0 _ptrs (majDim + 1)
+                 $ S.unsafeFromForeignPtr0 _ptrs (odim + 1)
       nz = V.last pointers
 
   _rows <- if copy
@@ -82,11 +82,11 @@ fromForeign copy nRows nCols ptrs rows vals = do
 
   let _entries = VM.zip _rows _vals
 
-  V.forM_ (V.enumFromN 0 majDim) $ \m -> do
+  V.forM_ (V.enumFromN 0 odim) $ \m -> do
     start <- V.unsafeIndexM pointers m
     end <- V.unsafeIndexM pointers (m + 1)
     let len = end - start
-    dedupInPlace minDim $ VM.slice start len _entries
+    dedupInPlace idim $ VM.slice start len _entries
 
   entries <- V.unsafeFreeze _entries
   return Matrix{..}

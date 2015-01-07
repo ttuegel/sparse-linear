@@ -70,10 +70,11 @@ type family Transpose (or :: OrientK) where
 
 -- | Matrix in compressed sparse column (CSC) format.
 data Matrix (or :: OrientK) a = Matrix
-  { majDim :: !Int -- ^ major/outer dimension (number of slices)
-  , minDim :: !Int -- ^ minor/inner dimension (dimension of each slice)
+  { odim :: !Int -- ^ outer dimension (number of slices)
+  , idim :: !Int -- ^ inner dimension (dimension of each slice)
   , pointers :: !(Vector Int)
-                -- ^ starting index of each slice + length of values
+                -- ^ starting index of each slice,
+                -- last element is non-zero length
   , entries :: !(Vector (Int, a))
   }
   deriving (Eq, Read, Show)
@@ -84,7 +85,7 @@ instance Unbox a => MonoFunctor (Matrix or a) where
   {-# INLINE omap #-}
   omap = \f mat ->
     let (indices, values) = V.unzip $ entries mat
-    in mat { entries = V.zip indices $ omap f values }
+    in mat { entries = V.zip indices $ V.map f values }
 
 instance Unbox a => MonoFoldable (Matrix or a) where
   {-# INLINE ofoldMap #-}
@@ -93,10 +94,10 @@ instance Unbox a => MonoFoldable (Matrix or a) where
   {-# INLINE ofoldr1Ex #-}
   {-# INLINE ofoldl1Ex' #-}
   ofoldMap = \f Matrix{..} -> ofoldMap f $ snd $ V.unzip entries
-  ofoldr = \f r Matrix{..} -> ofoldr f r $ snd $ V.unzip entries
-  ofoldl' = \f r Matrix{..} -> ofoldl' f r $ snd $ V.unzip entries
-  ofoldr1Ex = \f Matrix{..} -> ofoldr1Ex f $ snd $ V.unzip entries
-  ofoldl1Ex' = \f Matrix{..} -> ofoldl1Ex' f $ snd $ V.unzip entries
+  ofoldr = \f r Matrix{..} -> V.foldr f r $ snd $ V.unzip entries
+  ofoldl' = \f r Matrix{..} -> V.foldl' f r $ snd $ V.unzip entries
+  ofoldr1Ex = \f Matrix{..} -> V.foldr1 f $ snd $ V.unzip entries
+  ofoldl1Ex' = \f Matrix{..} -> V.foldl1' f $ snd $ V.unzip entries
 
 instance (Num a, Unbox a) => Num (Matrix Col a) where
   {-# INLINE (+) #-}
@@ -149,7 +150,7 @@ slice = \Matrix{..} c ->
       end = pointers V.! (c + 1)
       len = end - start
   in S.Vector
-  { S.dim = minDim
+  { S.dim = idim
   , S.entries = V.slice start len entries
   }
 
@@ -165,27 +166,27 @@ compress
 {-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Complex Double) -> Matrix Col (Complex Double) #-}
 compress nRows nColumns _triples = fix $ \mat -> runST $ do
   let (_rows, _cols, _vals) = V.unzip3 _triples
-      (majDim, minDim) = orientSwap (orient mat) (nRows, nColumns)
-      (_maj, _min) = orientSwap (orient mat) (_rows, _cols)
-      ptrs = computePtrs majDim _maj
+      (odim, idim) = orientSwap (orient mat) (nRows, nColumns)
+      (_out, _inn) = orientSwap (orient mat) (_rows, _cols)
+      ptrs = computePtrs odim _out
 
-  _maj <- V.unsafeThaw _maj
-  _min <- V.unsafeThaw _min
+  _out <- V.unsafeThaw _out
+  _inn <- V.unsafeThaw _inn
   _vals <- V.unsafeThaw _vals
-  let _entries = MV.zip _min _vals
+  let _entries = MV.zip _inn _vals
 
-  Intro.sortBy (comparing fst) $ MV.zip _maj _entries
+  Intro.sortBy (comparing fst) $ MV.zip _out _entries
 
-  dels <- V.forM (V.enumFromN 0 majDim) $ \m -> do
+  dels <- V.forM (V.enumFromN 0 odim) $ \m -> do
     start <- V.unsafeIndexM ptrs m
     end <- V.unsafeIndexM ptrs (m + 1)
     let len = end - start
-    dedupInPlace minDim (MV.slice start len _entries)
+    dedupInPlace idim (MV.slice start len _entries)
 
   let shifts = V.scanl' (+) 0 dels
       pointers = V.zipWith (-) ptrs shifts
 
-  V.forM_ (V.enumFromN 0 majDim) $ \m -> do
+  V.forM_ (V.enumFromN 0 odim) $ \m -> do
     shift <- V.unsafeIndexM shifts m
     when (shift > 0) $ do
       start <- V.unsafeIndexM ptrs m
@@ -203,7 +204,7 @@ dedupInPlace
   :: (Num a, PrimMonad m, Unbox a)
   => Int -> MVector (PrimState m) (Int, a) -> m Int
 {-# INLINE dedupInPlace #-}
-dedupInPlace minDim _entries = do
+dedupInPlace idim _entries = do
   Intro.sortBy (comparing fst) _entries
   let len = MV.length _entries
       (ixs, xs) = MV.unzip _entries
@@ -213,7 +214,7 @@ dedupInPlace minDim _entries = do
             ixw <- MV.unsafeRead ixs w
             if ixr == ixw
               then do
-                MV.unsafeWrite ixs r minDim
+                MV.unsafeWrite ixs r idim
                 x <- MV.unsafeRead xs r
                 x' <- MV.unsafeRead xs w
                 MV.unsafeWrite xs w $! x' + x
@@ -254,17 +255,17 @@ reorient :: Unbox a => Matrix (Transpose or) a -> Matrix or a
 reorient mat@Matrix{..} = runST $ do
   let (indices, values) = V.unzip entries
       nz = V.length values
-      ptrs = computePtrs minDim indices
+      ptrs = computePtrs idim indices
 
   -- re-initialize row counts from row pointers
-  count <- V.thaw $ V.slice 0 minDim ptrs
+  count <- V.thaw $ V.slice 0 idim ptrs
 
   _ixs <- MV.new nz
   _xs <- MV.new nz
 
   -- copy each column into place
   -- "major" and "minor" indices refer to the orientation of the original matrix
-  V.forM_ (V.enumFromN 0 majDim) $ \m -> do
+  V.forM_ (V.enumFromN 0 odim) $ \m -> do
     V.forM_ (S.entries $ slice mat m) $ \(n, x) -> do
       ix <- preincrement count n
       MV.unsafeWrite _ixs ix m
@@ -274,8 +275,8 @@ reorient mat@Matrix{..} = runST $ do
   _xs <- V.unsafeFreeze _xs
 
   return Matrix
-    { majDim = minDim
-    , minDim = majDim
+    { odim = idim
+    , idim = odim
     , pointers = ptrs
     , entries = V.zip _ixs _xs
     }
@@ -290,14 +291,14 @@ outer = \sliceC sliceR -> fix $ \mat ->
   let -- indices of sliceM are outer (major) indices of result
       -- indices of sliceN are inner (minor) indices of result
       (sliceM, sliceN) = orientSwap (orient mat) (sliceC, sliceR)
-      majDim = S.dim sliceM
-      minDim = S.dim sliceN
+      odim = S.dim sliceM
+      idim = S.dim sliceN
       (indicesN, valuesN) = V.unzip $ S.entries sliceN
       (indicesM, valuesM) = V.unzip $ S.entries sliceM
       lenM = V.length valuesM
       lenN = V.length valuesN
       lengths = V.create $ do
-        lens <- MV.replicate (majDim + 1) 0
+        lens <- MV.replicate (odim + 1) 0
         V.forM_ indicesM $ \m -> MV.unsafeWrite lens m lenN
         return lens
       pointers = V.scanl' (+) 0 lengths
@@ -318,12 +319,12 @@ mul
   => Matrix Col a -> Matrix Row a -> Matrix or a
 {-# INLINE mul #-}
 mul = \matA matB ->
-  if majDim matA /= majDim matB
+  if odim matA /= odim matB
     then errorWithStackTrace "mul: inner dimension mismatch"
   else
-    let matZ = zeros (minDim matA) (minDim matB)
+    let matZ = zeros (idim matA) (idim matB)
     in Box.foldl' add matZ $ do
-      n <- Box.enumFromN 0 $ majDim matA
+      n <- Box.enumFromN 0 (odim matA)
       return $ outer (slice matA n) (slice matB n)
 
 fromTriples
@@ -354,20 +355,20 @@ lin :: (Num a, Unbox a) => a -> Matrix or a -> a -> Matrix or a -> Matrix or a
 {-# SPECIALIZE lin :: (Complex Double) -> Matrix Row (Complex Double) -> (Complex Double) -> Matrix Row (Complex Double) -> Matrix Row (Complex Double) #-}
 {-# SPECIALIZE lin :: (Complex Double) -> Matrix Col (Complex Double) -> (Complex Double) -> Matrix Col (Complex Double) -> Matrix Col (Complex Double) #-}
 lin a matA b matB
-  | minDim matA /= minDim matB =
+  | idim matA /= idim matB =
       errorWithStackTrace "lin: inner dimensions differ"
-  | majDim matA /= majDim matB =
+  | odim matA /= odim matB =
       errorWithStackTrace "lin: outer dimensions differ"
   | otherwise = runST $ do
-      let dm = majDim matA
-          dn = minDim matA
-      ptrs <- MV.new (dm + 1)
+      let odm = odim matA
+          idm = idim matA
+      ptrs <- MV.new (odm + 1)
       MV.unsafeWrite ptrs 0 0
 
       let nz = nonZero matA + nonZero matB
       _entries <- MV.new nz
 
-      V.forM_ (V.enumFromN 0 dm) $ \ixM -> do
+      V.forM_ (V.enumFromN 0 odm) $ \ixM -> do
         off <- MV.unsafeRead ptrs ixM
         -- let dst = MV.slice off (nz - off) _entries
         len <- S.unsafeLinInto a (slice matA ixM) b (slice matB ixM) off _entries
@@ -375,8 +376,8 @@ lin a matA b matB
 
       pointers <- V.unsafeFreeze ptrs
       let nz' = V.last pointers
-          majDim = dm
-          minDim = dn
+          odim = odm
+          idim = idm
       entries <- V.unsafeFreeze $ MV.slice 0 nz' _entries
 
       return Matrix {..}
@@ -394,7 +395,7 @@ unsafeDotInto = \matA bs cs -> do
       (ixsC, xsC) = MV.unzip cs
       lenB = V.length ixsB
       mul_go !m !k
-        | m < majDim matA = do
+        | m < odim matA = do
             let as = S.entries $ slice matA m
                 (ixsA, xsA) = V.unzip as
                 lenA = V.length as
@@ -424,7 +425,7 @@ gaxpy_
   => Matrix or a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 {-# INLINE gaxpy_ #-}
 gaxpy_ mat@Matrix{..} xs ys =
-  V.forM_ (V.enumFromN 0 majDim) $ \m -> do
+  V.forM_ (V.enumFromN 0 odim) $ \m -> do
     V.forM_ (S.entries $ slice mat m) $ \(n, a) -> do
       let (r, c) = orientSwap (orient mat) (m, n)
       x <- G.unsafeRead xs c
@@ -452,15 +453,15 @@ mulV = \a _x -> runST $ do
 mcat :: Unbox a => Matrix or a -> Matrix or a -> Matrix or a
 {-# INLINE mcat #-}
 mcat a b
-  | minDim a /= minDim b = errorWithStackTrace "inner dimension mismatch"
+  | idim a /= idim b = errorWithStackTrace "inner dimension mismatch"
   | otherwise = Matrix
-      { majDim = dm
-      , minDim = minDim a
+      { odim = dm
+      , idim = idim a
       , pointers = V.init (pointers a) V.++ (V.map (+ nza) $ pointers b)
       , entries = entries a V.++ entries b
       }
   where
-    dm = majDim a + majDim b
+    dm = odim a + odim b
     nza = nonZero a
 
 hcat :: Unbox a => Matrix Col a -> Matrix Col a -> Matrix Col a
@@ -487,8 +488,8 @@ fromBlocks = foldl1 vcat . map (reorient . foldl1 hcat) . adjustDims
         cols = List.transpose rows
         incompatible = any (\xs -> let x = head xs in any (/= x) xs)
         underspecified = any null
-        heightSpecs = map (map minDim . catMaybes) rows
-        widthSpecs = map (map majDim . catMaybes) cols
+        heightSpecs = map (map idim . catMaybes) rows
+        widthSpecs = map (map odim . catMaybes) cols
         heights
           | underspecified heightSpecs =
               errorWithStackTrace "fixDimsByRow: underspecified heights"
@@ -514,8 +515,8 @@ kronecker :: (Num a, Unbox a) => Matrix or a -> Matrix or a -> Matrix or a
 {-# SPECIALIZE kronecker :: Matrix Row (Complex Double) -> Matrix Row (Complex Double) -> Matrix Row (Complex Double) #-}
 {-# SPECIALIZE kronecker :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Matrix Col (Complex Double) #-}
 kronecker matA matB = runST $ do
-  let dn = minDim matA * minDim matB
-      dm = majDim matA * majDim matB
+  let dn = idim matA * idim matB
+      dm = odim matA * odim matB
       nz = nonZero matA * nonZero matB
 
       lengthsA = V.zipWith (-) (V.tail $ pointers matA) (pointers matA)
@@ -529,33 +530,33 @@ kronecker matA matB = runST $ do
   _ixs <- MV.new nz
   _xs <- MV.new nz
 
-  V.forM_ (V.enumFromN 0 $ majDim matA) $ \mA -> do
-    V.forM_ (V.enumFromN 0 $ majDim matB) $ \mB -> do
+  V.forM_ (V.enumFromN 0 $ odim matA) $ \mA -> do
+    V.forM_ (V.enumFromN 0 $ odim matB) $ \mB -> do
 
       let (indicesA, _) = V.unzip $ S.entries $ slice matA mA
           lenA = V.length indicesA
           (indicesB, _) = V.unzip $ S.entries $ slice matB mB
           lenB = V.length indicesB
-          m = mA * majDim matB + mB
+          m = mA * odim matB + mB
 
       let copyIxs ixA off
             | ixA < lenA = do
                 nA <- V.unsafeIndexM indicesA ixA
-                let nOff = nA * minDim matB
+                let nOff = nA * idim matB
                 V.copy (MV.slice off lenB _ixs) $ V.map (+ nOff) indicesB
                 copyIxs (ixA + 1) (off + lenB)
             | otherwise = return ()
 
       V.unsafeIndexM ptrs m >>= copyIxs 0
 
-  V.forM_ (V.enumFromN 0 $ majDim matA) $ \mA -> do
-    V.forM_ (V.enumFromN 0 $ majDim matB) $ \mB -> do
+  V.forM_ (V.enumFromN 0 $ odim matA) $ \mA -> do
+    V.forM_ (V.enumFromN 0 $ odim matB) $ \mB -> do
 
       let (_, valuesA) = V.unzip $ S.entries $ slice matA mA
           lenA = V.length valuesA
           (_, valuesB) = V.unzip $ S.entries $ slice matB mB
           lenB = V.length valuesB
-          m = mA * majDim matB + mB
+          m = mA * odim matB + mB
 
       let copyXs ixA off
             | ixA < lenA = do
@@ -569,8 +570,8 @@ kronecker matA matB = runST $ do
   _ixs <- V.unsafeFreeze _ixs
   _xs <- V.unsafeFreeze _xs
   return Matrix
-    { majDim = dm
-    , minDim = dn
+    { odim = dm
+    , idim = dn
     , pointers = ptrs
     , entries = V.zip _ixs _xs
     }
@@ -578,7 +579,7 @@ kronecker matA matB = runST $ do
 takeDiag :: (Num a, Unbox a) => Matrix or a -> Vector a
 {-# INLINE takeDiag #-}
 takeDiag = \mat@Matrix{..} ->
-  flip V.map (V.enumFromN 0 $ min majDim minDim) $ \m ->
+  flip V.map (V.enumFromN 0 $ min odim idim) $ \m ->
     let (indices, values) = V.unzip $ S.entries $ slice mat m
     in case V.elemIndex m indices of
       Nothing -> 0
@@ -588,10 +589,10 @@ diag :: Unbox a => Vector a -> Matrix or a
 {-# INLINE diag #-}
 diag values = Matrix{..}
   where
-    majDim = V.length values
-    minDim = majDim
-    pointers = V.iterateN (majDim + 1) (+1) 0
-    indices = V.iterateN majDim (+1) 0
+    odim = V.length values
+    idim = odim
+    pointers = V.iterateN (odim + 1) (+1) 0
+    indices = V.iterateN odim (+1) 0
     entries = V.zip indices values
 
 ident :: (Num a, Unbox a) => Int -> Matrix or a
@@ -602,9 +603,9 @@ zeros :: (Orient or, Unbox a) => Int -> Int -> Matrix or a
 {-# INLINE zeros #-}
 zeros nRows nColumns = mat
   where
-    pointers = V.replicate (majDim + 1) 0
+    pointers = V.replicate (odim + 1) 0
     indices = V.empty
     values = V.empty
     entries = V.zip indices values
-    (majDim, minDim) = orientSwap (orient mat) (nRows, nColumns)
+    (odim, idim) = orientSwap (orient mat) (nRows, nColumns)
     mat = Matrix {..}

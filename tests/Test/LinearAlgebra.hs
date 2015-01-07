@@ -31,7 +31,7 @@ prop_pointersNondecreasing :: Matrix or a -> Bool
 prop_pointersNondecreasing Matrix{..} = nondecreasing pointers
 
 prop_pointersLength :: Matrix or a -> Bool
-prop_pointersLength Matrix{..} = V.length pointers == majDim + 1
+prop_pointersLength Matrix{..} = V.length pointers == odim + 1
 
 prop_valuesLength :: Unbox a => Matrix or a -> Bool
 prop_valuesLength Matrix{..} =
@@ -40,13 +40,13 @@ prop_valuesLength Matrix{..} =
 prop_indicesIncreasing :: Unbox a => Matrix or a -> Bool
 prop_indicesIncreasing mat =
   all (increasing . fst . V.unzip . S.entries)
-  $ map (slice mat) [0..(majDim mat - 1)]
+  $ map (slice mat) [0..(odim mat - 1)]
 
 prop_indicesNonNegative :: Unbox a => Matrix or a -> Bool
 prop_indicesNonNegative = V.all (>= 0) . fst . V.unzip . entries
 
 prop_indicesInRange :: Unbox a => Matrix or a -> Bool
-prop_indicesInRange Matrix{..} = V.all (< minDim) $ fst $ V.unzip entries
+prop_indicesInRange Matrix{..} = V.all (< idim) $ fst $ V.unzip entries
 
 checkFunMat1
   :: (Arbitrary a, Num a, Orient or, Orient or', Show a, Unbox a)
