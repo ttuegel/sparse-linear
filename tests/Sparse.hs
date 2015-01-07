@@ -1,8 +1,10 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# OPTIONS_GHC -fsimpl-tick-factor=500 #-}
 
 module Main where
 
-import Data.MonoTraversable
+import Control.Applicative
 import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as V
 import System.IO.Unsafe (unsafePerformIO)
@@ -13,66 +15,183 @@ import Data.Matrix.Sparse
 import Data.Matrix.Sparse.Foreign
 import Test.LinearAlgebra
 
+(~==) :: (IsReal a, Eq a, Fractional a, Fractional (RealOf a), Num a, Ord (RealOf a), Show a, Unbox a, Unbox (RealOf a)) => Matrix or a -> Matrix or a -> Property
+(~==) a b =
+  counterexample (show a ++ " /= " ++ show b)
+  $ odim a == odim b
+  && idim a == idim b
+  && pointers a == pointers b
+  && indices a == indices b
+  && V.all (< 1E-10) (V.map (\x -> 1 - mag x) $ V.zipWith (/) (values a) (values b))
+  where
+    indices = fst . V.unzip . entries
+    values = snd . V.unzip . entries
+
 main :: IO ()
 main = hspec $ do
-  describe "Numeric.LinearAlgebra.Sparse" $ do
-    describe "fromTriples -> Matrix Col Double"
-      $ checkFunMat1 (id :: Matrix Col Double -> Matrix Col Double)
-    describe "fromTriples -> Matrix Row Double"
-      $ checkFunMat1 (id :: Matrix Row Double -> Matrix Row Double)
-    describe "fromTriples -> Matrix Col (Complex Double)"
-      $ checkFunMat1 (id :: Matrix Col (Complex Double) -> Matrix Col (Complex Double))
-    describe "fromTriples -> Matrix Row (Complex Double)"
-      $ checkFunMat1 (id :: Matrix Row (Complex Double) -> Matrix Row (Complex Double))
+  describe "Data.Matrix.Sparse" $ do
+    describe "fromTriples" $ do
+      checkMatrixRowR arbitrary
+      checkMatrixRowZ arbitrary
+      checkMatrixColR arbitrary
+      checkMatrixColZ arbitrary
 
     describe "kronecker" $ do
-      it "assembles identity matrices" $
-        property prop_kroneckerIdent
-      it "row indices increasing" $
-        property prop_kroneckerIndicesIncreasing
-      it "column pointers nondecreasing" $
-        property prop_kroneckerPointersNondecreasing
-      it "column pointers length" $
-        property prop_kroneckerPointersLength
-      it "values length" $
-        property prop_kroneckerValuesLength
+      it "assembles identity matrices" $ property $ do
+        m <- arbdim
+        n <- arbdim
+        return $ kronecker (ident m) (ident n) === (ident (m + n) :: Matrix Row Double)
 
-    describe "takeDiag" $ do
-      it "returns what diag is given" $ property prop_takeDiag
+      let arbitraryKronecker
+            :: (Arbitrary a, Num a, Orient or, Unbox a) => Gen (Matrix or a)
+          arbitraryKronecker = kronecker <$> arbitrary <*> arbitrary
+      checkMatrixRowR arbitraryKronecker
+      checkMatrixRowZ arbitraryKronecker
+      checkMatrixColR arbitraryKronecker
+      checkMatrixColZ arbitraryKronecker
+
+    describe "diag" $ do
+      it "takeDiag (diag v) == v" $ property $ do
+        m <- arbdim
+        v <- V.fromList <$> vectorOf m arbitrary
+        return $ takeDiag (diag v) == (v :: Vector Double)
+
+      let arbitraryDiag
+            :: (Arbitrary a, Eq a, Num a, Orient or, Unbox a)
+            => Gen (Matrix or a)
+          arbitraryDiag = diag <$> arbitrary
+      checkMatrixRowR arbitraryDiag
+      checkMatrixRowZ arbitraryDiag
+      checkMatrixColR arbitraryDiag
+      checkMatrixColZ arbitraryDiag
 
     describe "mulV" $ do
-      it "identity" $ property prop_identMulV
+      it "ident `mulV` v == v :: Matrix Row Double" $ property $ do
+        m <- arbdim
+        v <- V.fromList <$> vectorOf m arbitrary
+        let mat :: Matrix Row Double
+            mat = ident m
+        return $ mat `mulV` v == v
+
+      it "ident `mulV` v == v :: Matrix Row (Complex Double)" $ property $ do
+        m <- arbdim
+        v <- V.fromList <$> vectorOf m arbitrary
+        let mat :: Matrix Row (Complex Double)
+            mat = ident m
+        return $ mat `mulV` v == v
+
+      it "ident `mulV` v == v :: Matrix Col Double" $ property $ do
+        m <- arbdim
+        v <- V.fromList <$> vectorOf m arbitrary
+        let mat :: Matrix Col Double
+            mat = ident m
+        return $ mat `mulV` v == v
+
+      it "ident `mulV` v == v :: Matrix Col (Complex Double)" $ property $ do
+        m <- arbdim
+        v <- V.fromList <$> vectorOf m arbitrary
+        let mat :: Matrix Col Double
+            mat = ident m
+        return $ mat `mulV` v == v
 
     describe "lin" $ do
-      it "additive inverse" $
-        property prop_addInv
-      it "additive identity" $
-        property prop_addId
-      it "row indices increasing" $
-        property prop_linIndicesIncreasing
-      it "column pointers nondecreasing" $
-        property prop_linPointersNondecreasing
-      it "column pointers length" $
-        property prop_linPointersLength
-      it "values length" $
-        property prop_linValuesLength
+      let addIdent
+            :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
+            => Matrix or a -> Bool
+          addIdent a =
+            let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
+            in a + zeros rdim cdim == a
+      it "a + zeros == a :: Matrix Row Double"
+        $ property (addIdent :: Matrix Row Double -> Bool)
+      it "a + zeros == a :: Matrix Row (Complex Double)"
+        $ property (addIdent :: Matrix Row (Complex Double) -> Bool)
+      it "a + zeros == a :: Matrix Col Double"
+        $ property (addIdent :: Matrix Col Double -> Bool)
+      it "a + zeros == a :: Matrix Col (Complex Double)"
+        $ property (addIdent :: Matrix Col (Complex Double) -> Bool)
+
+      let addInv
+            :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
+            => Matrix or a -> Bool
+          addInv a = a - a == cmap (const 0) a
+      it "a - a `propTo` zeros :: Matrix Row Double"
+        $ property (addInv :: Matrix Row Double -> Bool)
+      it "a - a `propTo` zeros :: Matrix Row (Complex Double)"
+        $ property (addInv :: Matrix Row (Complex Double) -> Bool)
+      it "a - a `propTo` zeros :: Matrix Col Double"
+        $ property (addInv :: Matrix Col Double -> Bool)
+      it "a - a `propTo` zeros :: Matrix Col (Complex Double)"
+        $ property (addInv :: Matrix Col (Complex Double) -> Bool)
+
+      let addComm
+            :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
+            => Matrix or a -> Gen Bool
+          addComm a = do
+            let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
+            b <- arbitraryMatrix rdim cdim
+            return $ a + b == b + a
+      it "a + b == b + a :: Matrix Row Double"
+        $ property (addComm :: Matrix Row Double -> Gen Bool)
+      it "a + b == b + a :: Matrix Row (Complex Double)"
+        $ property (addComm :: Matrix Row (Complex Double) -> Gen Bool)
+      it "a + b == b + a :: Matrix Col Double"
+        $ property (addComm :: Matrix Col Double -> Gen Bool)
+      it "a + b == b + a :: Matrix Col (Complex Double)"
+        $ property (addComm :: Matrix Col (Complex Double) -> Gen Bool)
+
+      let addAssoc
+            :: (Arbitrary a, Eq a, Fractional a, Fractional (RealOf a), IsReal a, Num a, Num (Matrix or a), Ord (RealOf a), Orient or, Show a, Unbox a, Unbox (RealOf a))
+            => Matrix or a -> Gen Property
+          addAssoc a = do
+            let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
+            b <- arbitraryMatrix rdim cdim
+            c <- arbitraryMatrix rdim cdim
+            return $ ((a + b) + c) ~== (a + (b + c))
+      it "(a + b) + c == a + (b + c) :: Matrix Row Double"
+        $ property (addAssoc :: Matrix Row Double -> Gen Property)
+      it "(a + b) + c == a + (b + c) :: Matrix Row (Complex Double)"
+        $ property (addAssoc :: Matrix Row (Complex Double) -> Gen Property)
+      it "(a + b) + c == a + (b + c) :: Matrix Col Double"
+        $ property (addAssoc :: Matrix Col Double -> Gen Property)
+      it "(a + b) + c == a + (b + c) :: Matrix Col (Complex Double)"
+        $ property (addAssoc :: Matrix Col (Complex Double) -> Gen Property)
+
+      let arbitraryAdd
+            :: (Arbitrary a, Num a, Num (Matrix or a), Orient or, Unbox a)
+            => Gen (Matrix or a)
+          arbitraryAdd = do
+            a <- arbitrary
+            let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
+            b <- arbitraryMatrix rdim cdim
+            return $ a + b
+      checkMatrixRowR arbitraryAdd
+      checkMatrixRowZ arbitraryAdd
+      checkMatrixColR arbitraryAdd
+      checkMatrixColZ arbitraryAdd
 
     describe "transpose" $ do
-      it "self-inverse" $ property prop_transposeId
-      it "preserves diagonal" $ property prop_transposeDiag
-
-      describe "transpose -> Matrix Col Double"
-        $ checkFunMat1 (transpose :: Matrix Row Double -> Matrix Col Double)
-      describe "transpose -> Matrix Row Double"
-        $ checkFunMat1 (transpose :: Matrix Col Double -> Matrix Row Double)
-      describe "transpose -> Matrix Col (Complex Double)"
-        $ checkFunMat1 (transpose :: Matrix Row (Complex Double) -> Matrix Col (Complex Double))
-      describe "transpose -> Matrix Row (Complex Double)"
-        $ checkFunMat1 (transpose :: Matrix Col (Complex Double) -> Matrix Row (Complex Double))
+      it "transpose . diag == diag :: Matrix Row Double " $ property $ do
+        v <- arbitrary
+        let mat :: Matrix Row Double
+            mat = diag v
+        return $ reorient (transpose mat) == mat
+      it "transpose . diag == diag :: Matrix Row (Complex Double) " $ property $ do
+        v <- arbitrary
+        let mat :: Matrix Row (Complex Double)
+            mat = diag v
+        return $ reorient (transpose mat) == mat
+      it "transpose . diag == diag :: Matrix Col Double " $ property $ do
+        v <- arbitrary
+        let mat :: Matrix Col Double
+            mat = diag v
+        return $ reorient (transpose mat) == mat
+      it "transpose . diag == diag :: Matrix Col (Complex Double) " $ property $ do
+        v <- arbitrary
+        let mat :: Matrix Col (Complex Double)
+            mat = diag v
+        return $ reorient (transpose mat) == mat
 
     describe "ctrans" $ do
-      it "self-inverse" $ property prop_ctransId
-      it "preserves diagonal of real matrices" $ property prop_ctransDiag
       it "preserves hermitian matrices" $ do
         let m :: Matrix Col (Complex Double)
             m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
@@ -87,189 +206,87 @@ main = hspec $ do
         m `shouldBe` reorient (ctrans m)
 
     describe "mul" $ do
-      it "identity on matrices" $ property prop_mulId
+      let mulIdentL
+            :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
+            => Matrix or a -> Gen Bool
+          mulIdentL a = do
+            let (rdim, _) = orientSwap (orient a) (odim a, idim a)
+            return $ ident rdim * a == a
+      it "ident * a == a :: Matrix Row Double"
+        $ property (mulIdentL :: Matrix Row Double -> Gen Bool)
+      it "ident * a == a :: Matrix Row (Complex Double)"
+        $ property (mulIdentL :: Matrix Row (Complex Double) -> Gen Bool)
+      it "ident * a == a :: Matrix Col Double"
+        $ property (mulIdentL :: Matrix Col Double -> Gen Bool)
+      it "ident * a == a :: Matrix Col (Complex Double)"
+        $ property (mulIdentL :: Matrix Col (Complex Double) -> Gen Bool)
 
-    describe "fromBlocks" $ do
-      it "assembles identity matrices" $
-        property prop_fromBlocksId
-      it "row indices increasing" $
-        property prop_fromBlocksIndicesIncreasing
-      it "column pointers nondecreasing"
-        $ property prop_fromBlocksPointersNondecreasing
-      it "column pointers length" $
-        property prop_fromBlocksPointersLength
-      it "values length" $
-        property prop_fromBlocksValuesLength
+      let mulIdentR
+            :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
+            => Matrix or a -> Gen Bool
+          mulIdentR a = do
+            let (_, cdim) = orientSwap (orient a) (odim a, idim a)
+            return $ a * ident cdim == a
+      it "ident * a == a :: Matrix Row Double"
+        $ property (mulIdentR :: Matrix Row Double -> Gen Bool)
+      it "ident * a == a :: Matrix Row (Complex Double)"
+        $ property (mulIdentR :: Matrix Row (Complex Double) -> Gen Bool)
+      it "ident * a == a :: Matrix Col Double"
+        $ property (mulIdentR :: Matrix Col Double -> Gen Bool)
+      it "ident * a == a :: Matrix Col (Complex Double)"
+        $ property (mulIdentR :: Matrix Col (Complex Double) -> Gen Bool)
+
+      let mulAssoc
+            :: (Arbitrary a, Eq a, Fractional a, Fractional (RealOf a), IsReal a, Num a, Num (Matrix or a), Ord (RealOf a), Orient or, Show a, Unbox a, Unbox (RealOf a))
+            => Matrix or a -> Gen Property
+          mulAssoc a = do
+            let (_, m) = orientSwap (orient a) (odim a, idim a)
+            n <- arbdim
+            b <- arbitraryMatrix m n
+            p <- arbdim
+            c <- arbitraryMatrix n p
+            return $ ((a * b) * c) ~== (a * (b * c))
+      it "(a * b) * c == a * (b * c) :: Matrix Row Double"
+        $ property (mulAssoc :: Matrix Row Double -> Gen Property)
+      it "(a * b) * c == a * (b * c) :: Matrix Row (Complex Double)"
+        $ property (mulAssoc :: Matrix Row (Complex Double) -> Gen Property)
+      it "(a * b) * c == a * (b * c) :: Matrix Col Double"
+        $ property (mulAssoc :: Matrix Col Double -> Gen Property)
+      it "(a * b) * c == a * (b * c) :: Matrix Col (Complex Double)"
+        $ property (mulAssoc :: Matrix Col (Complex Double) -> Gen Property)
+
+      let arbitraryMul
+            :: (Arbitrary a, Num a, Num (Matrix or a), Orient or, Unbox a)
+            => Gen (Matrix or a)
+          arbitraryMul = do
+            m <- arbdim
+            n <- arbdim
+            a <- arbitraryMatrix m n
+            p <- arbdim
+            b <- arbitraryMatrix n p
+            return $! a * b
+      checkMatrixRowR arbitraryMul
+      checkMatrixRowZ arbitraryMul
+      checkMatrixColR arbitraryMul
+      checkMatrixColZ arbitraryMul
 
     describe "fromBlocksDiag" $ do
-      it "assembles identity matrices" $
-        property prop_fromBlocksDiagId
-      it "row indices increasing" $
-        property prop_fromBlocksDiagIndicesIncreasing
-      it "column pointers nondecreasing" $
-        property prop_fromBlocksDiagPointersNondecreasing
-      it "column pointers length" $
-        property prop_fromBlocksDiagPointersLength
-      it "values length" $
-        property prop_fromBlocksDiagValuesLength
-      it "produces hermitian matrices" $
-        property prop_fromBlocksDiagHermitian
+      let arbitraryFromBlocksDiag
+            :: (Arbitrary a, Num a, Unbox a) => Gen (Matrix Row a)
+          arbitraryFromBlocksDiag = do
+            n <- arbdim
+            mats <- vectorOf n arbitrary
+            return $ fromBlocksDiag
+              $ (map Just mats)
+              : replicate (n - 1) (replicate n Nothing)
+      checkMatrixRowR arbitraryFromBlocksDiag
+      checkMatrixRowZ arbitraryFromBlocksDiag
 
-    describe "Data.Matrix.Sparse.Foreign" $ do
-      it "fromForeign . withConstMatrix == id (Double)"
-        $ property (prop_withConstFromForeign :: Matrix Col Double -> Bool)
-      it "fromForeign . withConstMatrix == id (Complex Double)"
-        $ property (prop_withConstFromForeign :: Matrix Col (Complex Double) -> Bool)
-
-prop_kroneckerIdent :: Int -> Int -> Property
-prop_kroneckerIdent x y = (x > 0 && y > 0) ==> lhs == rhs
-  where
-    lhs :: Matrix Col (Complex Double)
-    lhs = kronecker (ident x) (ident y)
-    rhs = ident (x * y)
-
-prop_kroneckerIndicesIncreasing
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_kroneckerIndicesIncreasing a b =
-  prop_indicesIncreasing $ kronecker a b
-
-prop_kroneckerPointersNondecreasing
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_kroneckerPointersNondecreasing a b =
-  prop_pointersNondecreasing $ kronecker a b
-
-prop_kroneckerPointersLength
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_kroneckerPointersLength a b =
-  prop_pointersLength $ kronecker a b
-
-prop_kroneckerValuesLength
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Property
-prop_kroneckerValuesLength a b =
-  let k = kronecker a b
-  in counterexample (show k) $ prop_valuesLength k
-
-prop_takeDiag :: Vector (Complex Double) -> Bool
-prop_takeDiag v = takeDiag (diag v) == v
-
-prop_identMulV :: Vector (Complex Double) -> Bool
-prop_identMulV v = mulV identM v == v
-  where
-    identM :: Matrix Row (Complex Double)
-    identM = ident (V.length v)
-
-prop_addInv :: Matrix Col (Complex Double) -> Property
-prop_addInv m = counterexample (show subtracted) (subtracted == m0)
-  where
-    subtracted = lin 1 m (-1) m
-    m0 = omap (const 0) m
-
-prop_addId :: Matrix Col (Complex Double) -> Bool
-prop_addId m = add m (zeros (idim m) (odim m)) == m
-
-prop_linIndicesIncreasing
-  :: Complex Double -> Matrix Col (Complex Double) -> Bool
-prop_linIndicesIncreasing c mat =
-  prop_indicesIncreasing
-  $ lin c mat (0.5683358478038576 :+ 1.9175490512894502) mat
-
-prop_linPointersNondecreasing
-  :: Complex Double -> Matrix Col (Complex Double) -> Bool
-prop_linPointersNondecreasing c mat =
-  prop_pointersNondecreasing $ lin c mat (-1) mat
-
-prop_linPointersLength
-  :: Complex Double -> Matrix Col (Complex Double) -> Bool
-prop_linPointersLength c mat =
-  prop_pointersLength $ lin c mat (-1) mat
-
-prop_linValuesLength
-  :: Complex Double -> Matrix Col (Complex Double) -> Bool
-prop_linValuesLength c mat =
-  prop_valuesLength $ lin c mat (-1) mat
-
-prop_transposeId :: Matrix Col (Complex Double) -> Bool
-prop_transposeId m = transpose (transpose m) == m
-
-prop_transposeDiag :: Vector Double -> Bool
-prop_transposeDiag v = m == transpose m
-  where
-    m = diag v
-
-prop_ctransId :: Matrix Col (Complex Double) -> Bool
-prop_ctransId m = ctrans (ctrans m) == m
-
-prop_ctransDiag :: Vector Double -> Bool
-prop_ctransDiag v = m == ctrans m
-  where
-    m = diag v
-
-prop_mulId :: Matrix Col (Complex Double) -> Property
-prop_mulId m = counterexample (show n) $ m == n
-  where n = m * (ident $ odim m)
-
-prop_fromBlocksId :: Int -> Int -> Property
-prop_fromBlocksId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
-  where
-    lhs :: Matrix Row (Complex Double)
-    lhs = fromBlocks [[Just (ident x), Nothing], [Nothing, Just (ident y)]]
-
-prop_fromBlocksIndicesIncreasing
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_fromBlocksIndicesIncreasing x y =
-  prop_indicesIncreasing $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
-
-prop_fromBlocksPointersNondecreasing
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_fromBlocksPointersNondecreasing x y =
-  prop_pointersNondecreasing
-  $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
-
-prop_fromBlocksPointersLength
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_fromBlocksPointersLength x y =
-  prop_pointersLength
-  $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
-
-prop_fromBlocksValuesLength
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_fromBlocksValuesLength x y =
-  prop_valuesLength
-  $ fromBlocks [[Just x, Nothing], [Nothing, Just y]]
-
-prop_fromBlocksDiagId :: Int -> Int -> Property
-prop_fromBlocksDiagId x y = (x > 0 && y > 0) ==> lhs === ident (x + y)
-  where
-    lhs :: Matrix Row (Complex Double)
-    lhs = fromBlocksDiag [[Just (ident x), Just (ident y)], [Nothing, Nothing]]
-
-prop_fromBlocksDiagIndicesIncreasing
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_fromBlocksDiagIndicesIncreasing x y =
-  prop_indicesIncreasing
-  $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
-
-prop_fromBlocksDiagPointersNondecreasing
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_fromBlocksDiagPointersNondecreasing x y =
-  prop_pointersNondecreasing
-  $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
-
-prop_fromBlocksDiagPointersLength
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_fromBlocksDiagPointersLength x y =
-  prop_pointersLength
-  $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
-
-prop_fromBlocksDiagValuesLength
-  :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Bool
-prop_fromBlocksDiagValuesLength x y =
-  prop_valuesLength
-  $ fromBlocksDiag [[Just x, Just y], [Nothing, Nothing]]
-
-prop_fromBlocksDiagHermitian :: Matrix Col (Complex Double) -> Bool
-prop_fromBlocksDiagHermitian a =
-  hermitian $ fromBlocksDiag [[Nothing, Nothing], [Just a, Just $ reorient $ ctrans a]]
+  describe "Data.Matrix.Sparse.Foreign" $ do
+    it "fromForeign . withConstMatrix == id (Double)"
+      $ property (prop_withConstFromForeign :: Matrix Col Double -> Bool)
+    it "fromForeign . withConstMatrix == id (Complex Double)"
+      $ property (prop_withConstFromForeign :: Matrix Col (Complex Double) -> Bool)
 
 prop_withConstFromForeign
   :: (Eq a, Num a, Storable a, Unbox a) => Matrix Col a -> Bool

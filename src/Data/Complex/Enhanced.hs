@@ -4,7 +4,7 @@
 
 module Data.Complex.Enhanced
        ( RealOf, ComplexOf, IsReal(..), IsImag(..)
-       , Complex(..), magnitude
+       , Complex(..)
        ) where
 
 import Data.Complex
@@ -21,6 +21,7 @@ type family ComplexOf a where
 class IsReal a where
   real :: Num (RealOf a) => RealOf a -> a
   conj :: a -> a
+  mag :: a -> RealOf a
 
 class IsImag a where
   imag :: Num (RealOf a) => RealOf a -> a
@@ -28,14 +29,18 @@ class IsImag a where
 instance IsReal Double where
   {-# INLINE real #-}
   {-# INLINE conj #-}
+  {-# INLINE mag #-}
   real = id
   conj = id
+  mag = abs
 
 instance IsReal (Complex Double) where
   {-# INLINE real #-}
   {-# INLINE conj #-}
+  {-# INLINE mag #-}
   real = (:+ 0)
   conj = conjugate
+  mag = magnitude
 
 instance IsImag (Complex Double) where
   {-# INLINE imag #-}

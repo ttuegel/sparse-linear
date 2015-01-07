@@ -1,13 +1,13 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Test.LinearAlgebra where
 
-import Data.Traversable
 import qualified Data.Vector.Generic as V
 import Data.Vector.Unboxed (Vector, Unbox)
 import Test.Hspec
-import Test.QuickCheck
+import Test.QuickCheck hiding ((><))
 
 import Data.Matrix.Sparse
 import qualified Data.Vector.Sparse as S
@@ -18,65 +18,67 @@ instance (Arbitrary a, Unbox a) => Arbitrary (Vector a) where
 
 instance (Arbitrary a, Num a, Orient or, Unbox a) => Arbitrary (Matrix or a) where
     arbitrary = do
-      nr <- arbitrary `suchThat` (> 0)
-      let nc = nr
-      triples <- forM [0..(nr * nr `div` 4)] $ \_ -> do
-        r <- arbitrary `suchThat` (\r -> r >= 0 && r < nr)
-        c <- arbitrary `suchThat` (\c -> c >= 0 && c < nc)
-        x <- arbitrary
-        return (r, c, x)
-      return $ fromTriples nr nc triples
+      m <- arbdim
+      n <- arbdim
+      arbitraryMatrix m n
 
-prop_pointersNondecreasing :: Matrix or a -> Bool
-prop_pointersNondecreasing Matrix{..} = nondecreasing pointers
+arbdim :: Gen Int
+arbdim = arbitrary `suchThat` (> 0)
 
-prop_pointersLength :: Matrix or a -> Bool
-prop_pointersLength Matrix{..} = V.length pointers == odim + 1
+arbitraryMatrix
+  :: (Arbitrary a, Num a, Orient or, Unbox a)
+  => Int -> Int -> Gen (Matrix or a)
+arbitraryMatrix rdim cdim = do
+  triples <- vectorOf (rdim * cdim `div` 4) $ do
+    r <- choose (0, rdim - 1)
+    c <- choose (0, cdim - 1)
+    x <- arbitrary
+    return (r, c, x)
+  return $ (rdim >< cdim) triples
 
-prop_valuesLength :: Unbox a => Matrix or a -> Bool
-prop_valuesLength Matrix{..} =
-  V.length entries == fromIntegral (V.last pointers)
+checkMatrixRowR :: Gen (Matrix Row Double) -> SpecWith ()
+checkMatrixRowR =
+  describe "format properties :: Matrix Row Double" . checkMatrix
 
-prop_indicesIncreasing :: Unbox a => Matrix or a -> Bool
-prop_indicesIncreasing mat =
-  all (increasing . fst . V.unzip . S.entries)
-  $ map (slice mat) [0..(odim mat - 1)]
+checkMatrixRowZ :: Gen (Matrix Row (Complex Double)) -> SpecWith ()
+checkMatrixRowZ =
+  describe "format properties :: Matrix Row (Complex Double)" . checkMatrix
 
-prop_indicesNonNegative :: Unbox a => Matrix or a -> Bool
-prop_indicesNonNegative = V.all (>= 0) . fst . V.unzip . entries
+checkMatrixColR :: Gen (Matrix Col Double) -> SpecWith ()
+checkMatrixColR =
+  describe "format properties :: Matrix Col Double" . checkMatrix
 
-prop_indicesInRange :: Unbox a => Matrix or a -> Bool
-prop_indicesInRange Matrix{..} = V.all (< idim) $ fst $ V.unzip entries
+checkMatrixColZ :: Gen (Matrix Col (Complex Double)) -> SpecWith ()
+checkMatrixColZ =
+  describe "format properties :: Matrix Col (Complex Double)" . checkMatrix
 
-checkFunMat1
-  :: (Arbitrary a, Num a, Orient or, Orient or', Show a, Unbox a)
-  => (Matrix or a -> Matrix or' a) -> SpecWith ()
-checkFunMat1 f = do
-  it "nondecreasing pointers" $ property $ prop_pointersNondecreasing . f
-  it "pointers length" $ property $ prop_pointersLength . f
-  it "values length" $ property $ prop_valuesLength . f
-  it "increasing indices per slice" $ property $ prop_indicesIncreasing . f
-  it "non-negative indices" $ property $ prop_indicesNonNegative . f
-  it "indices < dim" $ property $ prop_indicesInRange . f
+checkMatrix
+  :: (Arbitrary a, Num a, Orient or, Unbox a)
+  => Gen (Matrix or a) -> SpecWith ()
+checkMatrix arbmat = do
+  it "nondecreasing pointers" $ property $ do
+    Matrix{..} <- arbmat
+    return $ nondecreasing pointers
 
-checkFunMat2
-  :: (Arbitrary a, Num a, Orient or, Show a, Unbox a)
-  => (Matrix or a -> Matrix or a -> Matrix or a) -> SpecWith ()
-checkFunMat2 f = do
-  it "nondecreasing pointers" $ property $ \a b ->
-    prop_pointersNondecreasing (f a b)
+  it "length pointers == odim + 1" $ property $ do
+    Matrix{..} <- arbmat
+    return $ V.length pointers == odim + 1
 
-  it "pointers length" $ property $ \a b ->
-    prop_pointersLength (f a b)
+  it "length values == last pointers" $ property $ do
+    Matrix{..} <- arbmat
+    return $ V.length entries == V.last pointers
 
-  it "values length" $ property $ \a b ->
-    prop_valuesLength (f a b)
+  it "increasing indices in slice" $ property $ do
+    mat <- arbmat
+    let slices = map (slice mat) [0..(odim mat - 1)]
+    return $ all (increasing . fst . V.unzip . S.entries) slices
 
-  it "increasing indices per slice" $ property $ \a b ->
-    prop_indicesIncreasing (f a b)
+  it "all indices >= 0" $ property $ do
+    Matrix{..} <- arbmat
+    let indices = fst $ V.unzip entries
+    return $ V.all (>= 0) indices
 
-  it "non-negative indices" $ property $ \a b ->
-    prop_indicesNonNegative (f a b)
-
-  it "indices < dim" $ property $ \a b ->
-    prop_indicesInRange (f a b)
+  it "all indices < idim" $ property $ do
+    Matrix{..} <- arbmat
+    let indices = fst $ V.unzip entries
+    return $ V.all (< idim) indices
