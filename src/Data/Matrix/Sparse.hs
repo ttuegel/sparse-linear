@@ -365,60 +365,19 @@ lin a matA b matB
       MV.unsafeWrite ptrs 0 0
 
       let nz = nonZero matA + nonZero matB
-      ixs <- MV.new nz
-      xs <- MV.new nz
+      _entries <- MV.new nz
 
       V.forM_ (V.enumFromN 0 dm) $ \ixM -> do
-        let (ixsA, xsA) = V.unzip $ S.entries $ slice matA ixM
-            (ixsB, xsB) = V.unzip $ S.entries $ slice matB ixM
-            lenA = V.length xsA
-            lenB = V.length xsB
-
-            dedupCopy2 ixA ixB ix =
-              if ixA < lenA
-                then if ixB < lenB
-                  then do
-                    rA <- V.unsafeIndexM ixsA ixA
-                    rB <- V.unsafeIndexM ixsB ixB
-                    case compare rA rB of
-                     LT -> do
-                       MV.unsafeWrite ixs ix rA
-                       x <- V.unsafeIndexM xsA ixA
-                       MV.unsafeWrite xs ix $! a * x
-                       dedupCopy2 (ixA + 1) ixB (ix + 1)
-                     EQ -> do
-                       MV.unsafeWrite ixs ix rA
-                       xA <- V.unsafeIndexM xsA ixA
-                       xB <- V.unsafeIndexM xsB ixB
-                       MV.unsafeWrite xs ix $! a * xA + b * xB
-                       dedupCopy2 (ixA + 1) (ixB + 1) (ix + 1)
-                     GT -> do
-                       MV.unsafeWrite ixs ix rB
-                       x <- V.unsafeIndexM xsB ixB
-                       MV.unsafeWrite xs ix $! b * x
-                       dedupCopy2 ixA (ixB + 1) (ix + 1)
-                else do
-                  let len' = lenA - ixA
-                  V.copy (MV.slice ix len' ixs) (V.slice ixA len' ixsA)
-                  V.copy (MV.slice ix len' xs) (V.slice ixA len' xsA)
-                  return $! ix + len'
-              else do
-                let len' = lenB - ixB
-                V.copy (MV.slice ix len' ixs) (V.slice ixB len' ixsB)
-                V.copy (MV.slice ix len' xs) (V.slice ixB len' xsB)
-                return $! ix + len'
-
         off <- MV.unsafeRead ptrs ixM
-        off' <- dedupCopy2 0 0 off
-        MV.unsafeWrite ptrs (ixM + 1) off'
+        -- let dst = MV.slice off (nz - off) _entries
+        len <- S.unsafeLinInto a (slice matA ixM) b (slice matB ixM) off _entries
+        MV.unsafeWrite ptrs (ixM + 1) $! off + len
 
       pointers <- V.unsafeFreeze ptrs
       let nz' = V.last pointers
           majDim = dm
           minDim = dn
-      indices <- V.unsafeFreeze $ MV.slice 0 nz' ixs
-      values <- V.unsafeFreeze $ MV.slice 0 nz' xs
-      let entries = V.zip indices values
+      entries <- V.unsafeFreeze $ MV.slice 0 nz' _entries
 
       return Matrix {..}
 
