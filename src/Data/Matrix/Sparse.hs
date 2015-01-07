@@ -38,7 +38,6 @@ import Data.Ord (comparing)
 import Data.Proxy
 import Data.Tuple (swap)
 import qualified Data.Vector.Algorithms.Intro as Intro
-import qualified Data.Vector as Box
 import qualified Data.Vector.Generic.Mutable as G
 import Data.Vector.Unboxed (Vector, Unbox)
 import qualified Data.Vector.Unboxed as V
@@ -48,6 +47,7 @@ import GHC.Stack (errorWithStackTrace)
 
 import Data.Complex.Enhanced
 import Data.Matrix.Sparse.Lin
+import Data.Matrix.Sparse.Mul
 import Data.Matrix.Sparse.Slice
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util
@@ -110,22 +110,7 @@ instance (Num a, Unbox a) => Num (Matrix Col a) where
   {-# INLINE signum #-}
   (+) = add
   (-) = \a b -> lin 1 a (-1) b
-  (*) = \matA matB -> matA `mul` reorient matB
-  negate = omap negate
-  abs = omap abs
-  signum = omap signum
-  fromInteger = errorWithStackTrace "fromInteger: not implemented"
-
-instance (Num a, Unbox a) => Num (Matrix Row a) where
-  {-# INLINE (+) #-}
-  {-# INLINE (-) #-}
-  {-# INLINE (*) #-}
-  {-# INLINE negate #-}
-  {-# INLINE abs #-}
-  {-# INLINE signum #-}
-  (+) = add
-  (-) = \a b -> lin 1 a (-1) b
-  (*) = \matA matB -> reorient matA `mul` matB
+  (*) = mul
   negate = omap negate
   abs = omap abs
   signum = omap signum
@@ -306,17 +291,23 @@ outer = \sliceC sliceR -> fix $ \mat ->
   in Matrix {..}
 
 mul
-  :: (Orient or, Num a, Unbox a)
-  => Matrix Col a -> Matrix Row a -> Matrix or a
+  :: (Num a, Unbox a)
+  => Matrix Col a -> Matrix Col a -> Matrix Col a
 {-# INLINE mul #-}
 mul = \matA matB ->
-  if odim matA /= odim matB
+  if odim matA /= idim matB
     then errorWithStackTrace "mul: inner dimension mismatch"
   else
-    let matZ = zeros (idim matA) (idim matB)
-    in Box.foldl' add matZ $ do
-      n <- Box.enumFromN 0 (odim matA)
-      return $ outer (slice matA n) (slice matB n)
+    let (ptrs, ents) =
+          unsafeMul (idim matA) (odim matB)
+            (pointers matA) (entries matA)
+            (pointers matB) (entries matB)
+    in Matrix
+    { odim = odim matB
+    , idim = idim matA
+    , pointers = ptrs
+    , entries = ents
+    }
 
 fromTriples
   :: (Orient or, Num a, Unbox a)
@@ -365,40 +356,6 @@ lin a matA b matB
 add :: (Num a, Unbox a) => Matrix or a -> Matrix or a -> Matrix or a
 {-# INLINE add #-}
 add a b = lin 1 a 1 b
-
-unsafeDotInto
-  :: (Num a, PrimMonad m, Unbox a)
-  => Matrix Row a -> S.Vector a -> MVector (PrimState m) (Int, a) -> m Int
-{-# INLINE unsafeDotInto #-}
-unsafeDotInto = \matA bs cs -> do
-  let (ixsB, xsB) = V.unzip $ S.entries bs
-      (ixsC, xsC) = MV.unzip cs
-      lenB = V.length ixsB
-      mul_go !m !k
-        | m < odim matA = do
-            let as = unsafeSlice (pointers matA) m (entries matA)
-                (ixsA, xsA) = V.unzip as
-                lenA = V.length as
-                dot_go !nz !acc !i !j
-                  | i < lenA && j < lenB = do
-                      rA <- V.unsafeIndexM ixsA i
-                      rB <- V.unsafeIndexM ixsB j
-                      case compare rA rB of
-                        LT -> dot_go nz acc (i + 1) j
-                        EQ -> do
-                          xA <- V.unsafeIndexM xsA i
-                          xB <- V.unsafeIndexM xsB j
-                          dot_go True (acc + xA * xB) (i + 1) (j + 1)
-                        GT -> dot_go nz acc i (j + 1)
-                  | otherwise = do
-                      when nz $ do
-                        MV.unsafeWrite ixsC k m
-                        MV.unsafeWrite xsC k acc
-                      return nz
-            nz <- dot_go False 0 0 0
-            mul_go (m + 1) (if nz then k + 1 else k)
-        | otherwise = return k
-  mul_go 0 0
 
 gaxpy_
   :: (G.MVector v a, Orient or, Num a, PrimMonad m, Unbox a)

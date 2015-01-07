@@ -16,6 +16,7 @@ library
     Data.Matrix.Sparse
     Data.Matrix.Sparse.Foreign
     Data.Matrix.Sparse.Lin
+    Data.Matrix.Sparse.Mul
     Data.Matrix.Sparse.ScatterGather
     Data.Matrix.Sparse.Slice
     Data.Vector.Sparse
