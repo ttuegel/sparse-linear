@@ -15,7 +15,6 @@ unsafeScatter
   -> MVector (PrimState m) Int -- ^ pattern
   -> Int -- ^ population of pattern
   -> m Int -- ^ population of pattern after scatter
-{-# INLINE unsafeScatter #-}
 unsafeScatter = \work alpha as ixs _pop -> do
   let (markers, xs) = MV.unzip work
       unsafeScatter_go _pop (i, ax) = do
@@ -39,7 +38,6 @@ unsafeGather
   -> MVector (PrimState m) a -- ^ destination
   -> Int -- ^ population
   -> m ()
-{-# INLINE unsafeGather #-}
 unsafeGather = \work ixs dst pop -> do
   let (markers, xs) = MV.unzip work
   Intro.sortByBounds compare ixs 0 pop

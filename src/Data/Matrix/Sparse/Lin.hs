@@ -15,38 +15,39 @@ unsafeLin
   -> a -> Vector Int -> Vector (Int, a)
   -> a -> Vector Int -> Vector (Int, a)
   -> (Vector Int, Vector (Int, a))
-{-# INLINE unsafeLin #-}
 unsafeLin = \odim idim a ptrsA entriesA b ptrsB entriesB -> runST $ do
-  ptrs <- MV.new (odim + 1)
-  MV.unsafeWrite ptrs 0 0
+  _ptrs <- MV.new (odim + 1)
+  MV.unsafeWrite _ptrs 0 0
 
-  _entries <- MV.new 0
+  -- This may allocate more memory than required (if the matrix patterns
+  -- overlap), but at worst it only allocates min(V.last ptrsA, V.last ptrsB)
+  -- more than required. This is much better than incremental allocation with
+  -- copying!
+  _entries <- MV.new $! V.last ptrsA + V.last ptrsB
+
   _work <- MV.zip <$> MV.replicate idim False <*> MV.new idim
 
-  let unsafeLin_go _entries n = do
-        let len = MV.length _entries
-            sliceA = unsafeSlice ptrsA n entriesA
+  let unsafeLin_go n = do
+        let sliceA = unsafeSlice ptrsA n entriesA
             sliceB = unsafeSlice ptrsB n entriesB
             dlen = V.length sliceA + V.length sliceB
 
-        -- grow destination just enough to accomodate current slice
-        _entries <- MV.unsafeGrow _entries dlen
-
         -- find the start of the current destination slice
-        start <- MV.unsafeRead ptrs n
-        let (pat, dat) = MV.unzip $ MV.slice start dlen _entries
+        start <- MV.unsafeRead _ptrs n
+        let (ixs, xs) = MV.unzip $ MV.slice start dlen _entries
 
         -- scatter/gather
-        _pop <- unsafeScatter _work a sliceA pat 0
-        _pop <- unsafeScatter _work b sliceB pat _pop
-        unsafeGather _work pat dat _pop
+        _pop <- unsafeScatter _work a sliceA ixs 0
+        _pop <- unsafeScatter _work b sliceB ixs _pop
+        unsafeGather _work ixs xs _pop
 
         -- record the start of the next slice
-        MV.unsafeWrite ptrs (n + 1) $! start + _pop
+        MV.unsafeWrite _ptrs (n + 1) $! start + _pop
 
-        -- shrink destination
-        return $! MV.slice 0 (len + _pop) _entries
+  V.mapM_ unsafeLin_go $ V.enumFromN 0 odim
 
-  _entries <- V.foldM' unsafeLin_go _entries $ V.enumFromN 0 odim
+  _ptrs <- V.unsafeFreeze _ptrs
+  let nz' = V.last _ptrs
+  _entries <- V.unsafeFreeze $ MV.slice 0 nz' _entries
 
-  (,) <$> V.unsafeFreeze ptrs <*> V.unsafeFreeze _entries
+  return (_ptrs, _entries)
