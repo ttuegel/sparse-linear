@@ -17,8 +17,8 @@ unsafeMul
   -> (Vector Int, Vector (Int, a))
 {-# INLINE unsafeMul #-}
 unsafeMul = \rdim cdim ptrsA entriesA ptrsB entriesB -> runST $ do
-  ptrs <- MV.new (cdim + 1)
-  MV.unsafeWrite ptrs 0 0
+  _ptrs <- MV.new (cdim + 1)
+  MV.unsafeWrite _ptrs 0 0
 
   work <- MV.zip <$> MV.replicate rdim False <*> MV.new rdim
 
@@ -26,23 +26,36 @@ unsafeMul = \rdim cdim ptrsA entriesA ptrsB entriesB -> runST $ do
 
   let unsafeMul_go _entries c = do
         let len = MV.length _entries
-        _entries <- MV.unsafeGrow _entries rdim
+        start <- MV.unsafeRead _ptrs c
 
-        start <- MV.unsafeRead ptrs c
-        let (pat, dat) = MV.unzip $ MV.unsafeSlice start rdim _entries
+        -- Grow the result if needed to ensure enough space for the incoming
+        -- slice, but at least double the size of the result each time to
+        -- reduce the number of allocations/copies required. Unlike when we do
+        -- addition, we cannot just preallocate the entire result because the
+        -- upper bound on the storage requirement is not very restrictive.
+        _entries <- if len - start < rdim
+                      then MV.unsafeGrow _entries (len + rdim)
+                    else return _entries
 
-        let sliceB = unsafeSlice ptrsB c entriesB
+        let (ixs, xs) = MV.unzip $ MV.unsafeSlice start rdim _entries
+            sliceB = unsafeSlice ptrsB c entriesB
+
             unsafeMul_scatter _pop (p, b) = do
               let sliceA = unsafeSlice ptrsA p entriesA
-              unsafeScatter work b sliceA pat _pop
+              unsafeScatter work b sliceA ixs _pop
+
         pop <- V.foldM' unsafeMul_scatter 0 sliceB
-        unsafeGather work pat dat pop
+        unsafeGather work ixs xs pop
 
-        let len' = len + pop
-        MV.unsafeWrite ptrs (c + 1) len'
+        MV.unsafeWrite _ptrs (c + 1) (start + pop)
 
-        return $ MV.slice 0 len' _entries
+        return _entries
 
   _entries <- V.foldM' unsafeMul_go _entries $ V.enumFromN 0 cdim
 
-  (,) <$> V.unsafeFreeze ptrs <*> V.unsafeFreeze _entries
+  _ptrs <- V.unsafeFreeze _ptrs
+  let nz' = V.last _ptrs
+
+  _entries <- V.unsafeFreeze $ MV.slice 0 nz' _entries
+
+  return (_ptrs, _entries)
