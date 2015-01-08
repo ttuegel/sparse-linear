@@ -46,7 +46,7 @@ linearSolve_ mat@Matrix{..} bs =
 
     num <- peek pnum
     solns <- forM bs $ \_b -> do
-      _soln <- MV.replicate majDim 0
+      _soln <- MV.replicate odim 0
       _ <- MV.unsafeWith _b $ \_b -> MV.unsafeWith _soln $ \_soln -> do
         _stat <- umfpack_solve 0 ptrs ixs xs _soln _b num nullPtr nullPtr
         umfpack_report_status mat nullPtr _stat
