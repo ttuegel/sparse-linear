@@ -8,6 +8,7 @@ cabal.mkDerivation (self: {
   buildDepends = [ hmatrix monoTraversable sparseLinear vector ];
   testDepends = [ hspec QuickCheck vector ];
   extraLibraries = [ suitesparse ];
+  configureFlags = [ "-O2" ];
   meta = {
     description = "Haskell bindings to the SuiteSparse library of sparse linear algebra routines";
     license = self.stdenv.lib.licenses.gpl2;
