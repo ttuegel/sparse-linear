@@ -8,6 +8,7 @@ cabal.mkDerivation (self: {
   buildDepends = [
     globalLock hmatrix monoTraversable sparseLinear suitesparse vector
   ];
+  configureFlags = [ "-O2" ];
   testDepends = [ hspec QuickCheck vector ];
   extraLibraries = [ feast gfortran.gcc ];
   meta = {
