@@ -89,11 +89,11 @@ geigSH
 geigSH !m0 (!_emin, !_emax) !matA !matB
   | matA /= matA' = errorWithStackTrace "matrix A must be hermitian"
   | matB /= matB' = errorWithStackTrace "matrix B must be hermitian"
-  | Sparse.majDim matA /= Sparse.majDim matB =
+  | Sparse.odim matA /= Sparse.odim matB =
       errorWithStackTrace "matrices A and B must be the same size"
   | otherwise = geigH_go
   where
-    n = Sparse.majDim matA
+    n = Sparse.odim matA
     matA' = Sparse.reorient $ Sparse.ctrans matA
     matB' = Sparse.reorient $ Sparse.ctrans matB
 
@@ -219,5 +219,5 @@ eigSH
   -> Sparse.Matrix Sparse.Col a
   -> (Vector (RealOf a), Dense.Matrix a)
 eigSH = \m0 bounds matA ->
-  geigSH m0 bounds matA $ Sparse.ident $ Sparse.majDim matA
+  geigSH m0 bounds matA $ Sparse.ident $ Sparse.odim matA
 {-# INLINE eigSH #-}
