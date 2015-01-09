@@ -160,8 +160,8 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
           _eigenvectors <- forM [0..(m0 - 1)] $ \c ->
             return $ MV.slice (c * n) n _eigenvectors
 
-          _mat <- newIORef $ Sparse.zeros 1 1
-          _matH <- newIORef $ Sparse.zeros 1 1
+          _fact <- newIORef undefined
+          _mat <- newIORef undefined
 
           let geigSH_go = do
                 feast_go
@@ -170,23 +170,21 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                   case _ijob of
                    10 -> do
                      _ze <- peek _ze
-                     writeIORef _mat $! Sparse.lin (-1) matA _ze matB
-                   11 -> do
-                     !mat <- readIORef _mat
-                     solveLinear mat
-                   20 -> do
-                     !mat <- readIORef _mat
-                     writeIORef _matH $! Sparse.reorient $ Sparse.ctrans mat
-                   21 -> do
-                     !matH <- readIORef _matH
-                     solveLinear matH
+                     let mat = Sparse.lin (-1) matA _ze matB
+                     writeIORef _mat $! mat
+                     writeIORef _fact $! factor mat
+                   11 -> solveLinear UmfpackNormal
+                   20 -> return ()
+                   21 -> solveLinear UmfpackTrans
                    30 -> multiplyWork matA
                    40 -> multiplyWork matB
                    _ -> return ()
                   geigSH_go
 
-              solveLinear mat = do
-                solns <- linearSolve_ mat _work2
+              solveLinear m = do
+                !fact <- readIORef _fact
+                !mat <- readIORef _mat
+                solns <- linearSolve_ fact m mat _work2
                 forM_ (zip _work2 solns) $ uncurry MV.copy
 
               multiplyWork mat = do

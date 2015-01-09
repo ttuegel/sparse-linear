@@ -11,7 +11,7 @@ import Numeric.LinearAlgebra.Feast
 main :: IO ()
 main = hspec $ do
   describe "Numeric.LinearAlgebra.Feast" $ do
-    it "ident" $ do
+    it "ident :: Matrix Col (Complex Double)" $ do
       let m :: Matrix Col (Complex Double)
           m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
           eigenvalues = fst $ eigSH 2 (0, 4) m
