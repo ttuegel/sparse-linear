@@ -10,6 +10,7 @@ module Numeric.LinearAlgebra.Umfpack.Internal
 
 import Data.Vector.Unboxed (Unbox)
 import Foreign.C.Types (CInt(..))
+import Foreign.ForeignPtr (FinalizerPtr)
 import Foreign.Ptr (Ptr, castPtr, nullPtr)
 import Foreign.Storable
 
@@ -54,18 +55,14 @@ type UmfpackSolve a
   -> Info
   -> IO CInt  -- ^ status code
 
-type UmfpackFreeSymbolic a = Ptr (Symbolic a) -> IO ()
-
-type UmfpackFreeNumeric a = Ptr (Numeric a) -> IO ()
-
 type UmfpackReport = Control -> CInt -> IO ()
 
 class (Num a, Storable a, Unbox a) => Umfpack a where
     umfpack_symbolic :: UmfpackSymbolic a
     umfpack_numeric :: UmfpackNumeric a
     umfpack_solve :: UmfpackSolve a
-    umfpack_free_symbolic :: UmfpackFreeSymbolic a
-    umfpack_free_numeric :: UmfpackFreeNumeric a
+    umfpack_free_symbolic :: FinalizerPtr (Symbolic a)
+    umfpack_free_numeric :: FinalizerPtr (Numeric a)
     umfpack_report_status :: Matrix or a -> UmfpackReport
 
 foreign import ccall "umfpack.h umfpack_zi_symbolic"
@@ -109,10 +106,10 @@ foreign import ccall "umfpack.h umfpack_zi_solve"
     -> Info
     -> IO CInt  -- ^ status code
 
-foreign import ccall "umfpack.h umfpack_zi_free_symbolic"
-  umfpack_zi_free_symbolic :: UmfpackFreeSymbolic (Complex Double)
-foreign import ccall "umfpack.h umfpack_zi_free_numeric"
-  umfpack_zi_free_numeric :: UmfpackFreeNumeric (Complex Double)
+foreign import ccall "umfpack.h &umfpack_zi_free_symbolic"
+  umfpack_zi_free_symbolic :: FinalizerPtr (Symbolic (Complex Double))
+foreign import ccall "umfpack.h &umfpack_zi_free_numeric"
+  umfpack_zi_free_numeric :: FinalizerPtr (Numeric (Complex Double))
 foreign import ccall "umfpack.h umfpack_zi_report_status"
   umfpack_zi_report_status :: UmfpackReport
 
@@ -142,10 +139,10 @@ foreign import ccall "umfpack.h umfpack_di_numeric"
   umfpack_di_numeric :: UmfpackNumeric Double
 foreign import ccall "umfpack.h umfpack_di_solve"
   umfpack_di_solve :: UmfpackSolve Double
-foreign import ccall "umfpack.h umfpack_di_free_symbolic"
-  umfpack_di_free_symbolic :: UmfpackFreeSymbolic Double
-foreign import ccall "umfpack.h umfpack_di_free_numeric"
-  umfpack_di_free_numeric :: UmfpackFreeNumeric Double
+foreign import ccall "umfpack.h &umfpack_di_free_symbolic"
+  umfpack_di_free_symbolic :: FinalizerPtr (Symbolic Double)
+foreign import ccall "umfpack.h &umfpack_di_free_numeric"
+  umfpack_di_free_numeric :: FinalizerPtr (Numeric Double)
 foreign import ccall "umfpack.h umfpack_di_report_status"
   umfpack_di_report_status :: UmfpackReport
 

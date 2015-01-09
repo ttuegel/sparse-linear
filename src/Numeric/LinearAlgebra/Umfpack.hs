@@ -3,7 +3,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Numeric.LinearAlgebra.Umfpack
-    ( Umfpack(), linearSolve, linearSolve_, (<\>)
+    ( Umfpack()
+    , Factors(..), factor
+    , UmfpackMode(..)
+    , linearSolve, linearSolve_, (<\>)
     ) where
 
 import Control.Applicative
@@ -23,37 +26,56 @@ import System.IO.Unsafe (unsafePerformIO)
 import Data.Complex.Enhanced
 import Data.Matrix.Sparse
 import Data.Matrix.Sparse.Foreign
+import Foreign.ForeignPtr (ForeignPtr, newForeignPtr, withForeignPtr)
 import Numeric.LinearAlgebra.Umfpack.Internal
+
+data Factors a =
+  Factors
+  { fsym :: !(ForeignPtr (Symbolic a))
+  , fnum :: !(ForeignPtr (Numeric a))
+  }
+
+withNum :: Factors a -> (Numeric a -> IO b) -> IO b
+withNum Factors{..} f = withForeignPtr fnum $ \p -> peek p >>= f
+
+factor :: Umfpack a => Matrix Col a -> Factors a
+{-# NOINLINE factor #-}
+factor mat = unsafePerformIO $ withConstMatrix mat $ \m n p i x -> do
+  sym <- malloc
+  _stat <- umfpack_symbolic m n p i x sym nullPtr nullPtr
+  fsym <- newForeignPtr umfpack_free_symbolic sym
+  umfpack_report_status mat nullPtr _stat
+  when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_symbolic failed"
+
+  num <- malloc
+  _stat <- withForeignPtr fsym $ \_sym -> do
+    _sym <- peek _sym
+    umfpack_numeric p i x _sym num nullPtr nullPtr
+  fnum <- newForeignPtr umfpack_free_numeric num
+  umfpack_report_status mat nullPtr _stat
+  when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_numeric failed"
+
+  return Factors{..}
+
+data UmfpackMode = UmfpackNormal | UmfpackTrans
 
 linearSolve_
   :: Umfpack a
-  => Matrix Col a -> [IOVector a] -> IO [IOVector a]
-{-# SPECIALIZE linearSolve_ :: Matrix Col Double -> [IOVector Double] -> IO [IOVector Double] #-}
-{-# SPECIALIZE linearSolve_ :: Matrix Col (Complex Double) -> [IOVector (Complex Double)] -> IO [IOVector (Complex Double)] #-}
-linearSolve_ mat@Matrix{..} bs =
-  withConstMatrix mat $ \m n ptrs ixs xs -> do
-    psym <- malloc
-    _stat <- umfpack_symbolic m n ptrs ixs xs psym nullPtr nullPtr
-    umfpack_report_status mat nullPtr _stat
-    when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_symbolic failed"
-
-    pnum <- malloc
-    sym <- peek psym
-    _stat <- umfpack_numeric ptrs ixs xs sym pnum nullPtr nullPtr
-    umfpack_report_status mat nullPtr _stat
-    umfpack_free_symbolic psym
-    when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_numeric failed"
-
-    num <- peek pnum
-    solns <- forM bs $ \_b -> do
-      _soln <- MV.replicate odim 0
-      _ <- MV.unsafeWith _b $ \_b -> MV.unsafeWith _soln $ \_soln -> do
-        _stat <- umfpack_solve 0 ptrs ixs xs _soln _b num nullPtr nullPtr
-        umfpack_report_status mat nullPtr _stat
-        when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_solve failed"
-      return _soln
-    umfpack_free_numeric pnum
-    return solns
+  => Factors a -> UmfpackMode -> Matrix Col a -> [IOVector a] -> IO [IOVector a]
+{-# SPECIALIZE linearSolve_ :: Factors Double -> UmfpackMode -> Matrix Col Double -> [IOVector Double] -> IO [IOVector Double] #-}
+{-# SPECIALIZE linearSolve_ :: Factors (Complex Double) -> UmfpackMode -> Matrix Col (Complex Double) -> [IOVector (Complex Double)] -> IO [IOVector (Complex Double)] #-}
+linearSolve_ fact mode mat@Matrix{..} bs =
+  withConstMatrix mat $ \_ _ p i x -> forM bs $ \_b -> do
+    _soln <- MV.replicate odim 0
+    _ <- MV.unsafeWith _b $ \_b -> MV.unsafeWith _soln $ \_soln -> do
+      let m = case mode of
+                UmfpackNormal -> 0
+                UmfpackTrans -> 1
+      _stat <- withNum fact $ \num ->
+        umfpack_solve m p i x _soln _b num nullPtr nullPtr
+      umfpack_report_status mat nullPtr _stat
+      when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_solve failed"
+    return _soln
 
 linearSolve
   :: (Vector v a, Umfpack a)
@@ -63,7 +85,8 @@ linearSolve = linearSolve_go where
   {-# NOINLINE linearSolve_go #-}
   linearSolve_go mat@Matrix{..} _bs =
     unsafePerformIO $ do
-      _xs <- mapM (V.unsafeThaw . V.convert) _bs >>= linearSolve_ mat
+      _xs <- mapM (V.unsafeThaw . V.convert) _bs
+             >>= linearSolve_ (factor mat) UmfpackNormal mat
       map V.convert <$> mapM V.unsafeFreeze _xs
 
 (<\>) :: (Vector v a, Umfpack a) => Matrix Col a -> v a -> v a
