@@ -38,7 +38,10 @@ import Data.Ord (comparing)
 import Data.Proxy
 import Data.Tuple (swap)
 import qualified Data.Vector.Algorithms.Intro as Intro
-import qualified Data.Vector.Generic.Mutable as G
+import qualified Data.Vector.Fusion.Stream as S
+import Data.Vector.Fusion.Stream.Size
+import qualified Data.Vector.Generic as G
+import qualified Data.Vector.Generic.Mutable as MG
 import Data.Vector.Unboxed (Vector, Unbox)
 import qualified Data.Vector.Unboxed as V
 import Data.Vector.Unboxed.Mutable (MVector)
@@ -381,16 +384,16 @@ add :: (Num a, Unbox a) => Matrix or a -> Matrix or a -> Matrix or a
 add a b = lin 1 a 1 b
 
 gaxpy_
-  :: (G.MVector v a, Orient or, Num a, PrimMonad m, Unbox a)
+  :: (MG.MVector v a, Orient or, Num a, PrimMonad m, Unbox a)
   => Matrix or a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 {-# INLINE gaxpy_ #-}
 gaxpy_ mat@Matrix{..} xs ys =
   V.forM_ (V.enumFromN 0 odim) $ \m -> do
     V.forM_ (unsafeSlice pointers m entries) $ \(n, a) -> do
       let (r, c) = orientSwap (orient mat) (m, n)
-      x <- G.unsafeRead xs c
-      y <- G.unsafeRead ys r
-      G.unsafeWrite ys r $! y + a * x
+      x <- MG.unsafeRead xs c
+      y <- MG.unsafeRead ys r
+      MG.unsafeWrite ys r $! y + a * x
 
 gaxpy
   :: (Orient or, Num a, Unbox a)
@@ -474,66 +477,47 @@ kronecker :: (Num a, Unbox a) => Matrix or a -> Matrix or a -> Matrix or a
 {-# SPECIALIZE kronecker :: Matrix Col Double -> Matrix Col Double -> Matrix Col Double #-}
 {-# SPECIALIZE kronecker :: Matrix Row (Complex Double) -> Matrix Row (Complex Double) -> Matrix Row (Complex Double) #-}
 {-# SPECIALIZE kronecker :: Matrix Col (Complex Double) -> Matrix Col (Complex Double) -> Matrix Col (Complex Double) #-}
-kronecker matA matB = runST $ do
+kronecker matA matB =
   let dn = idim matA * idim matB
       dm = odim matA * odim matB
       nz = nonZero matA * nonZero matB
 
-      lengthsA = V.zipWith (-) (V.tail $ pointers matA) (pointers matA)
-      lengthsB = V.zipWith (-) (V.tail $ pointers matB) (pointers matB)
+      ptrsA = pointers matA
+      ptrsB = pointers matB
+      lengthsA = V.zipWith (-) (V.tail ptrsA) ptrsA
+      lengthsB = V.zipWith (-) (V.tail ptrsB) ptrsB
+      ptrs = V.scanl' (+) 0
+             $ G.unstream $ flip S.sized (Exact $ dm + 1)
+             $ S.concatMap (\nzA -> S.map (* nzA) $ G.stream lengthsB)
+             $ G.stream lengthsA
 
-  let ptrs = V.scanl' (+) 0
-             $ V.concat
-             $ map (\nzA -> V.map (* nzA) lengthsB)
-             $ V.toList lengthsA
+      (indicesA, valuesA) = V.unzip $ entries matA
+      (indicesB, valuesB) = V.unzip $ entries matB
+      idimB = idim matB
 
-  _ixs <- MV.new nz
-  _xs <- MV.new nz
+      nbs = S.enumFromStepN 0 1 $ odim matB
+      nas = S.enumFromStepN 0 1 $ odim matA
+      ns = S.concatMap (\na -> S.map ((,) na) nbs) nas
 
-  V.forM_ (V.enumFromN 0 $ odim matA) $ \mA -> do
-    V.forM_ (V.enumFromN 0 $ odim matB) $ \mB -> do
+      kronecker_ixs (!na, !nb) =
+        let as = streamSlice ptrsA na indicesA
+            bs = streamSlice ptrsB nb indicesB
+        in S.concatMap (\n -> S.map (+ n) bs) $ S.map (* idimB) as
+      ixs = G.unstream $ flip S.sized (Exact nz)
+            $ S.concatMap kronecker_ixs ns
 
-      let (indicesA, _) = V.unzip $ unsafeSlice (pointers matA) mA (entries matA)
-          lenA = V.length indicesA
-          (indicesB, _) = V.unzip $ unsafeSlice (pointers matB) mB (entries matB)
-          lenB = V.length indicesB
-          m = mA * odim matB + mB
+      kronecker_xs (!na, !nb) =
+        let as = streamSlice ptrsA na valuesA
+            bs = streamSlice ptrsB nb valuesB
+        in S.concatMap (\a -> S.map (* a) bs) as
+      xs = G.unstream $ flip S.sized (Exact nz)
+           $ S.concatMap kronecker_xs ns
 
-      let copyIxs ixA off
-            | ixA < lenA = do
-                nA <- V.unsafeIndexM indicesA ixA
-                let nOff = nA * idim matB
-                V.copy (MV.unsafeSlice off lenB _ixs) $ V.map (+ nOff) indicesB
-                copyIxs (ixA + 1) (off + lenB)
-            | otherwise = return ()
-
-      V.unsafeIndexM ptrs m >>= copyIxs 0
-
-  V.forM_ (V.enumFromN 0 $ odim matA) $ \mA -> do
-    V.forM_ (V.enumFromN 0 $ odim matB) $ \mB -> do
-
-      let (_, valuesA) = V.unzip $ unsafeSlice (pointers matA) mA (entries matA)
-          lenA = V.length valuesA
-          (_, valuesB) = V.unzip $ unsafeSlice (pointers matB) mB (entries matB)
-          lenB = V.length valuesB
-          m = mA * odim matB + mB
-
-      let copyXs ixA off
-            | ixA < lenA = do
-                a <- V.unsafeIndexM valuesA ixA
-                V.copy (MV.unsafeSlice off lenB _xs) $ V.map (* a) valuesB
-                copyXs (ixA + 1) (off + lenB)
-            | otherwise = return ()
-
-      V.unsafeIndexM ptrs m >>= copyXs 0
-
-  _ixs <- V.unsafeFreeze _ixs
-  _xs <- V.unsafeFreeze _xs
-  return Matrix
+  in Matrix
     { odim = dm
     , idim = dn
     , pointers = ptrs
-    , entries = V.zip _ixs _xs
+    , entries = V.zip ixs xs
     }
 
 takeDiag :: (Num a, Unbox a) => Matrix or a -> Vector a
