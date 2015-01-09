@@ -21,13 +21,15 @@ library
     , sparse-linear >=0.1 && <1
     , suitesparse >=0.1 && <1
     , vector >=0.10 && <1
-    , vector-algorithms >=0.6 && <1
   hs-source-dirs: src
   default-language: Haskell2010
   ghc-options: -Wall
   ghc-prof-options: -fprof-auto
   extra-libraries:
     feast
+    lapack
+    f77blas
+    atlas
     gfortran
 
 test-suite test-feast

@@ -2,10 +2,14 @@
 
 with pkgs;
 let
+  atlas = atlasWithLapack;
+  f77blas = atlasWithLapack;
+  gfortran = pkgs.gfortran.gcc;
+  lapack = atlasWithLapack;
   sparseLinear = haskellPackages.callPackage ./sparse-linear {};
 in
 haskellPackages.callPackage ./. {
-  inherit sparseLinear;
+  inherit atlas f77blas lapack gfortran sparseLinear;
   suitesparse = haskellPackages.callPackage ./suitesparse {
     inherit sparseLinear;
     suitesparse = suitesparse_4_4_1;
