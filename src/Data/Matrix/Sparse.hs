@@ -214,10 +214,12 @@ compress nRows nColumns _triples = fix $ \mat -> runST $ do
       end <- V.unsafeIndexM ptrs (m + 1)
       let len = end - start
           start' = start - shift
-      MV.move (MV.slice start' len _entries) (MV.slice start len _entries)
+      MV.move
+        (MV.unsafeSlice start' len _entries)
+        (MV.unsafeSlice start len _entries)
 
   let nz' = V.last pointers
-  entries <- V.unsafeFreeze $ MV.slice 0 nz' _entries
+  entries <- V.unsafeFreeze $ MV.unsafeSlice 0 nz' _entries
 
   return Matrix{..}
 
@@ -277,7 +279,7 @@ reorient Matrix{..} = runST $ do
       ptrs = computePtrs idim indices
 
   -- re-initialize row counts from row pointers
-  count <- V.thaw $ V.slice 0 idim ptrs
+  count <- V.thaw $ V.unsafeSlice 0 idim ptrs
 
   _ixs <- MV.new nz
   _xs <- MV.new nz
@@ -501,7 +503,7 @@ kronecker matA matB = runST $ do
             | ixA < lenA = do
                 nA <- V.unsafeIndexM indicesA ixA
                 let nOff = nA * idim matB
-                V.copy (MV.slice off lenB _ixs) $ V.map (+ nOff) indicesB
+                V.copy (MV.unsafeSlice off lenB _ixs) $ V.map (+ nOff) indicesB
                 copyIxs (ixA + 1) (off + lenB)
             | otherwise = return ()
 
@@ -519,7 +521,7 @@ kronecker matA matB = runST $ do
       let copyXs ixA off
             | ixA < lenA = do
                 a <- V.unsafeIndexM valuesA ixA
-                V.copy (MV.slice off lenB _xs) $ V.map (* a) valuesB
+                V.copy (MV.unsafeSlice off lenB _xs) $ V.map (* a) valuesB
                 copyXs (ixA + 1) (off + lenB)
             | otherwise = return ()
 

@@ -56,6 +56,6 @@ unsafeMul = \rdim cdim ptrsA entriesA ptrsB entriesB -> runST $ do
   _ptrs <- V.unsafeFreeze _ptrs
   let nz' = V.last _ptrs
 
-  _entries <- V.unsafeFreeze $ MV.slice 0 nz' _entries
+  _entries <- V.unsafeFreeze $ MV.unsafeSlice 0 nz' _entries
 
   return (_ptrs, _entries)

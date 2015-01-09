@@ -42,11 +42,11 @@ shiftR
 shiftR = \v ix off -> do
   let len' = MV.length v - ix - abs off
       src
-        | off >= 0 = MV.slice ix len' v
-        | otherwise = MV.slice (ix + abs off) len' v
+        | off >= 0 = MV.unsafeSlice ix len' v
+        | otherwise = MV.unsafeSlice (ix + abs off) len' v
       dst
-        | off >= 0 = MV.slice (ix + abs off) len' v
-        | otherwise = MV.slice ix len' v
+        | off >= 0 = MV.unsafeSlice (ix + abs off) len' v
+        | otherwise = MV.unsafeSlice ix len' v
   MV.move dst src
 
 preincrement
@@ -65,8 +65,8 @@ forSlicesM2_ = \ptrs as bs f -> do
   U.forM_ (U.enumFromN 0 $ V.length ptrs - 1) $ \c -> do
     start <- liftM fromIntegral $ V.unsafeIndexM ptrs c
     end <- liftM fromIntegral $ V.unsafeIndexM ptrs (c + 1)
-    let as' = V.slice start (end - start) as
-        bs' = V.slice start (end - start) bs
+    let as' = V.unsafeSlice start (end - start) as
+        bs' = V.unsafeSlice start (end - start) bs
     f c as' bs'
 
 nondecreasing :: (Ord a, Vector v Bool, Vector v a) => v a -> Bool

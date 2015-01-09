@@ -86,7 +86,7 @@ fromForeign copy nRows nCols ptrs rows vals = do
     start <- V.unsafeIndexM pointers m
     end <- V.unsafeIndexM pointers (m + 1)
     let len = end - start
-    dedupInPlace idim $ VM.slice start len _entries
+    dedupInPlace idim $ VM.unsafeSlice start len _entries
 
   entries <- V.unsafeFreeze _entries
   return Matrix{..}
