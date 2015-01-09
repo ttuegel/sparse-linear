@@ -15,6 +15,7 @@ unsafeLin
   -> a -> Vector Int -> Vector (Int, a)
   -> a -> Vector Int -> Vector (Int, a)
   -> (Vector Int, Vector (Int, a))
+{-# INLINE unsafeLin #-}
 unsafeLin = \odim idim a ptrsA entriesA b ptrsB entriesB -> runST $ do
   _ptrs <- MV.new (odim + 1)
   MV.unsafeWrite _ptrs 0 0
