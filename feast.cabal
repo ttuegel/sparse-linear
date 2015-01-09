@@ -28,7 +28,8 @@ library
   extra-libraries:
     feast
     lapack
-    f77blas
+    ptf77blas
+    ptcblas
     atlas
     gfortran
 
