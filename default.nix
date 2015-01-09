@@ -1,11 +1,13 @@
 { cabal, hspec, monoTraversable, QuickCheck, storableComplex
-, tagged, vector }:
+, tagged, vector, vectorAlgorithms }:
 
 cabal.mkDerivation (self: {
   pname = "sparse-linear";
   version = "0.1.0.0";
   src = ./.;
-  buildDepends = [ monoTraversable storableComplex tagged vector ];
+  buildDepends = [
+    monoTraversable storableComplex tagged vector vectorAlgorithms
+  ];
   testDepends = [ hspec QuickCheck vector ];
   extraLibraries = [ ];
   configureFlags = [ "-O2" ];
