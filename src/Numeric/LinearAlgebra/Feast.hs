@@ -161,6 +161,7 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
             return $ MV.slice (c * n) n _eigenvectors
 
           _mat <- newIORef $ Sparse.zeros 1 1
+          _matH <- newIORef $ Sparse.zeros 1 1
 
           let geigSH_go = do
                 feast_go
@@ -171,11 +172,14 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                      _ze <- peek _ze
                      writeIORef _mat $! Sparse.lin (-1) matA _ze matB
                    11 -> do
-                     readIORef _mat >>= solveLinear
+                     !mat <- readIORef _mat
+                     solveLinear mat
                    20 -> do
-                     modifyIORef' _mat (Sparse.reorient . Sparse.ctrans)
+                     !mat <- readIORef _mat
+                     writeIORef _matH $! Sparse.reorient $ Sparse.ctrans mat
                    21 -> do
-                     readIORef _mat >>= solveLinear
+                     !matH <- readIORef _matH
+                     solveLinear matH
                    30 -> multiplyWork matA
                    40 -> multiplyWork matB
                    _ -> return ()
