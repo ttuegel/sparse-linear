@@ -18,6 +18,7 @@ module Data.Matrix.Sparse
        , outer
        , gaxpy_, gaxpy, mulV
        , lin, add
+       , mjoin, hjoin, vjoin
        , mcat, hcat, vcat
        , fromBlocks, fromBlocksDiag
        , kronecker
@@ -30,6 +31,7 @@ import Control.Applicative
 import Control.Monad (when)
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import Control.Monad.ST (runST)
+import Data.Foldable
 import Data.Function (fix)
 import qualified Data.List as List
 import Data.Maybe (catMaybes)
@@ -47,6 +49,7 @@ import qualified Data.Vector.Unboxed as V
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as MV
 import GHC.Stack (errorWithStackTrace)
+import Prelude hiding (any, foldl1)
 
 import Data.Complex.Enhanced
 import Data.Matrix.Sparse.Lin
@@ -413,10 +416,10 @@ mulV = \a _x -> runST $ do
   gaxpy_ a _x y
   V.unsafeFreeze y
 
-mcat :: Unbox a => Matrix or a -> Matrix or a -> Matrix or a
-{-# INLINE mcat #-}
-mcat a b
-  | idim a /= idim b = errorWithStackTrace "inner dimension mismatch"
+mjoin :: Unbox a => Matrix or a -> Matrix or a -> Matrix or a
+{-# INLINE mjoin #-}
+mjoin a b
+  | idim a /= idim b = errorWithStackTrace "mjoin: inner dimension mismatch"
   | otherwise = Matrix
       { odim = dm
       , idim = idim a
@@ -427,18 +430,43 @@ mcat a b
     dm = odim a + odim b
     nza = nonZero a
 
-hcat :: Unbox a => Matrix Col a -> Matrix Col a -> Matrix Col a
+mcat :: Unbox a => [Matrix or a] -> Matrix or a
+{-# INLINE mcat #-}
+mcat mats
+  | null mats = errorWithStackTrace "mcat: empty list"
+  | any (/= _idim) (map idim mats) =
+      errorWithStackTrace "mcat: inner dimension mismatch"
+  | otherwise =
+      Matrix
+      { odim = foldl' (+) 0 $ map odim mats
+      , idim = _idim
+      , pointers = V.scanl' (+) 0 $ V.concat $ map lengths mats
+      , entries = V.concat $ map entries mats
+      }
+  where
+    _idim = idim $ head mats
+    lengths m = let ptrs = pointers m in V.zipWith (-) (V.tail ptrs) ptrs
+
+hcat :: Unbox a => [Matrix Col a] -> Matrix Col a
 {-# INLINE hcat #-}
 hcat = mcat
 
-vcat :: Unbox a => Matrix Row a -> Matrix Row a -> Matrix Row a
+vcat :: Unbox a => [Matrix Row a] -> Matrix Row a
 {-# INLINE vcat #-}
 vcat = mcat
+
+hjoin :: Unbox a => Matrix Col a -> Matrix Col a -> Matrix Col a
+{-# INLINE hjoin #-}
+hjoin = mjoin
+
+vjoin :: Unbox a => Matrix Row a -> Matrix Row a -> Matrix Row a
+{-# INLINE vjoin #-}
+vjoin = mjoin
 
 fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix Col a)]] -> Matrix Row a
 {-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Col Double)]] -> Matrix Row Double #-}
 {-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Col (Complex Double))]] -> Matrix Row (Complex Double) #-}
-fromBlocks = foldl1 vcat . map (reorient . foldl1 hcat) . adjustDims
+fromBlocks = vcat . map (reorient . hcat) . adjustDims
   where
     adjustDims rows = do
       (r, row) <- zip [0..] rows

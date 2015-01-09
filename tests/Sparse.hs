@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# OPTIONS_GHC -fsimpl-tick-factor=500 #-}
 
 module Main where
 
@@ -146,7 +145,7 @@ main = hspec $ do
             let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
             b <- arbitraryMatrix rdim cdim
             c <- arbitraryMatrix rdim cdim
-            return $ ((a + b) + c) === (a + (b + c))
+            return $ ((a + b) + c) ~== (a + (b + c))
       it "(a + b) + c == a + (b + c) :: Matrix Row Double"
         $ property (addAssoc :: Matrix Row Double -> Gen Property)
       it "(a + b) + c == a + (b + c) :: Matrix Row (Complex Double)"

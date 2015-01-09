@@ -41,7 +41,7 @@ test-suite sparse
   other-modules:
     Test.LinearAlgebra
   default-language: Haskell2010
-  ghc-options: -Wall
+  ghc-options: -Wall -fexcess-precision
   ghc-prof-options: -fprof-auto
   build-depends:
       base
