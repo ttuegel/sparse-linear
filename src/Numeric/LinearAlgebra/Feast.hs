@@ -14,6 +14,7 @@ module Numeric.LinearAlgebra.Feast
 import Control.Applicative
 import Control.Monad (when)
 import Data.Foldable
+import Data.IORef
 import Data.Traversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
@@ -159,19 +160,22 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
           _eigenvectors <- forM [0..(m0 - 1)] $ \c ->
             return $ MV.slice (c * n) n _eigenvectors
 
+          _mat <- newIORef $ Sparse.zeros 1 1
+
           let geigSH_go = do
                 feast_go
                 _ijob <- peek _ijob
                 when (_ijob /= 0) $ do
                   case _ijob of
-                   10 -> return ()
+                   10 -> do
+                     _ze <- peek _ze
+                     writeIORef _mat $! Sparse.lin (-1) matA _ze matB
                    11 -> do
-                     _ze <- peek _ze
-                     solveLinear $ Sparse.lin (-1) matA _ze matB
-                   20 -> return ()
+                     readIORef _mat >>= solveLinear
+                   20 -> do
+                     modifyIORef' _mat (Sparse.reorient . Sparse.ctrans)
                    21 -> do
-                     _ze <- peek _ze
-                     solveLinear $ Sparse.lin (-1) matA' (conj _ze) matB'
+                     readIORef _mat >>= solveLinear
                    30 -> multiplyWork matA
                    40 -> multiplyWork matB
                    _ -> return ()
