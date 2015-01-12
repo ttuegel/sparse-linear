@@ -17,6 +17,7 @@ library
       base >=4.7 && <4.8
     , global-lock >=0.1 && <1
     , hmatrix >=0.16 && <1
+    , parallel-io >=0.3 && <1
     , primitive >=0.5 && <1
     , sparse-linear >=0.1 && <1
     , suitesparse >=0.1 && <1
