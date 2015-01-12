@@ -77,12 +77,14 @@ instance Feast Double where
 -- | Split a list into chunks with the given length.
 chunks :: Int -> [a] -> [[a]]
 {-# INLINE chunks #-}
-chunks n xs =
-  case xs of
-    [] -> []
-    _ ->
-      let (this, rest) = splitAt n xs
-      in this : chunks n rest
+chunks n xs = chunks_go 0 xs where
+  (q, r) = length xs `divMod` n
+  chunks_go i ys =
+    case ys of
+      [] -> []
+      _ ->
+        let (this, rest) = splitAt (if i < r then q + 1 else q) ys
+        in this : chunks_go (i + 1) rest
 
 type EigSH a =
     ( Eq a
