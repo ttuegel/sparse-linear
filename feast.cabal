@@ -39,7 +39,7 @@ test-suite test-feast
   hs-source-dirs: tests
   main-is: test-feast.hs
   default-language: Haskell2010
-  ghc-options: -Wall
+  ghc-options: -Wall -threaded
   ghc-prof-options: -fprof-auto
   build-depends:
       base
