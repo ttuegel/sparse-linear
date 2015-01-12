@@ -27,7 +27,7 @@ import Foreign.Ptr
 import Foreign.Storable
 import GHC.Conc.Sync (getNumCapabilities)
 import GHC.Stack (errorWithStackTrace)
-import Prelude hiding (mapM)
+import Prelude hiding (concat, mapM)
 import System.GlobalLock (lock)
 import System.IO.Unsafe
 
@@ -74,6 +74,16 @@ instance Feast Double where
     feast_rci = dfeast_srci
     {-# INLINE feast_rci #-}
 
+-- | Split a list into chunks with the given length.
+chunks :: Int -> [a] -> [[a]]
+{-# INLINE chunks #-}
+chunks n xs =
+  case xs of
+    [] -> []
+    _ ->
+      let (this, rest) = splitAt n xs
+      in this : chunks n rest
+
 type EigSH a =
     ( Eq a
     , Feast a
@@ -96,14 +106,14 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
       errorWithStackTrace "matrices A and B must be the same size"
   | otherwise = unsafePerformIO $ lock $ do
       nCap <- getNumCapabilities
-      withPool nCap geigSH_go
+      withPool nCap (geigSH_go nCap)
   where
     n = Sparse.odim matA
     matA' = Sparse.reorient $ Sparse.ctrans matA
     matB' = Sparse.reorient $ Sparse.ctrans matB
 
     {-# NOINLINE geigSH_go #-}
-    geigSH_go pool =
+    geigSH_go nCap pool =
       -- initialize scalars
       with (-1) $ \_ijob ->
       withArray (replicate 64 0) $ \fpm ->
@@ -189,9 +199,10 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
             solveLinear m = do
               !fact <- readIORef _fact
               !mat <- readIORef _mat
-              solns <- map head
+              let chunkSize = m0 `div` nCap
+              solns <- concat
                        <$> parMapM (linearSolve_ fact m mat)
-                       (map (: []) _work2)
+                       (chunks chunkSize _work2)
               forM_ (zip _work2 solns) $ uncurry MV.copy
 
             multiplyWork mat = do
