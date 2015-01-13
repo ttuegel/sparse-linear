@@ -37,14 +37,14 @@ import Numeric.LinearAlgebra.Umfpack
 error :: String -> a
 error = errorWithStackTrace
 
-geigSH
+geigSH_
   :: (Feast a)
   => Int -> (RealOf a, RealOf a)
   -> Maybe (Dense.Matrix a) -- ^ subspace guess
   -> Matrix Col a -> Matrix Col a
   -> (Int, Vector (RealOf a), Dense.Matrix a)
-{-# INLINE geigSH #-}
-geigSH !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
+{-# INLINE geigSH_ #-}
+geigSH_ !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
   n = odim matA
   m0' = maybe m0 Dense.cols guess
   n' = maybe n Dense.rows guess
@@ -176,6 +176,18 @@ geigSH !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
               <*> V.unsafeFreeze _eigenvalues
               <*> (Dense.fromColumns <$> mapM V.unsafeFreeze _eigenvectors)
 
+geigSH
+  :: (Feast a)
+  => Int
+  -> (RealOf a, RealOf a)
+  -> Matrix Col a
+  -> Matrix Col a
+  -> (Vector (RealOf a), Dense.Matrix a)
+{-# INLINE geigSH #-}
+geigSH = \m0 bounds matA matB ->
+  let (m, evals, evecs) = geigSH_ m0 bounds Nothing matA matB
+  in (V.take m evals, Dense.takeColumns m evecs)
+
 
 eigSH
   :: (Feast a)
@@ -184,6 +196,4 @@ eigSH
   -> Matrix Col a
   -> (Vector (RealOf a), Dense.Matrix a)
 {-# INLINE eigSH #-}
-eigSH = \m0 bounds matA ->
-  let (m, evals, evecs) = geigSH m0 bounds Nothing matA (ident (odim matA))
-  in (V.take m evals, Dense.takeColumns m evecs)
+eigSH = \m0 bounds matA -> geigSH m0 bounds matA (ident (odim matA))
