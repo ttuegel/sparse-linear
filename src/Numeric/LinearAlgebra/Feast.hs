@@ -12,7 +12,7 @@ module Numeric.LinearAlgebra.Feast
     ) where
 
 import Control.Applicative
-import Control.Concurrent.ParallelIO.Local (withPool, parallel)
+import Control.Concurrent.ParallelIO.Local (withPool, parallel_)
 import Control.Monad (when)
 import Data.Foldable
 import Data.IORef
@@ -196,16 +196,15 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                  _ -> return ()
                 go
 
-            parMapM f xs = parallel pool $ map f xs
+            parMapM_ f xs = parallel_ pool $ map f xs
 
             solveLinear m = do
               !fact <- readIORef _fact
               !mat <- readIORef _mat
-              let chunkSize = m0 `div` nCap
-              solns <- concat
-                       <$> parMapM (linearSolve_ fact m mat)
-                       (chunks chunkSize _work2)
-              forM_ (zip _work2 solns) $ uncurry MV.copy
+              let solveLinear_go chunk = do
+                    solns <- linearSolve_ fact m mat chunk
+                    forM_ (zip chunk solns) $ uncurry MV.copy
+              parMapM_ solveLinear_go (chunks nCap _work2)
 
             multiplyWork mat = do
               i <- (+ (-1)) . fromIntegral <$> peekElemOff fpm 23
