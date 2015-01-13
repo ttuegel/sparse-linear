@@ -196,6 +196,7 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
                  _ -> return ()
                 go
 
+            parMapM_ :: (a -> IO b) -> [a] -> IO ()
             parMapM_ f xs = parallel_ pool $ map f xs
 
             solveLinear m = do
@@ -209,9 +210,11 @@ geigSH !m0 (!_emin, !_emax) !matA !matB
             multiplyWork mat = do
               i <- (+ (-1)) . fromIntegral <$> peekElemOff fpm 23
               j <- fromIntegral <$> peekElemOff fpm 24
-              forM_ (take j $ drop i $ zip _work1 _eigenvectors) $ \(dst, x) -> do
-                  MV.set dst 0
-                  Sparse.gaxpy_ mat x dst
+              let range = take j $ drop i $ zip _work1 _eigenvectors
+                  multiplyWork_go chunk = forM_ chunk $ \(!dst, !x) -> do
+                    MV.set dst 0
+                    Sparse.gaxpy_ mat x dst
+              parMapM_ multiplyWork_go (chunks nCap range)
         go
 
         i <- peek info
