@@ -39,7 +39,7 @@ geigSH
   :: (Feast a)
   => Int -> (RealOf a, RealOf a)
   -> Matrix Col a -> Matrix Col a
-  -> (Vector (RealOf a), Dense.Matrix a)
+  -> (Int, Vector (RealOf a), Dense.Matrix a)
 {-# INLINE geigSH #-}
 geigSH !m0 (!_emin, !_emax) !matA !matB = geigSH_go where
   n = odim matA
@@ -154,11 +154,10 @@ geigSH !m0 (!_emin, !_emax) !matA !matB = geigSH_go where
               4 -> putStrLn "geigSH: only subspace returned"
               _ -> error ("geigSH: unknown error, info = " ++ show i)
 
-            m <- fromIntegral <$> peek mode
-            _eigenvalues <- V.unsafeFreeze $ MV.slice 0 m _eigenvalues
-            _eigenvectors <- mapM V.unsafeFreeze $ take m _eigenvectors
-
-            return (_eigenvalues, Dense.fromColumns _eigenvectors)
+            (,,)
+              <$> (fromIntegral <$> peek mode)
+              <*> V.unsafeFreeze _eigenvalues
+              <*> (Dense.fromColumns <$> mapM V.unsafeFreeze _eigenvectors)
 
 
 eigSH
@@ -168,4 +167,6 @@ eigSH
   -> Matrix Col a
   -> (Vector (RealOf a), Dense.Matrix a)
 {-# INLINE eigSH #-}
-eigSH = \m0 bounds matA -> geigSH m0 bounds matA (ident (odim matA))
+eigSH = \m0 bounds matA ->
+  let (m, evals, evecs) = geigSH m0 bounds matA (ident (odim matA))
+  in (V.take m evals, Dense.takeColumns m evecs)
