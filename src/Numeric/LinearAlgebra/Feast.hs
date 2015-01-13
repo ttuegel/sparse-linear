@@ -7,7 +7,7 @@
 {-# LANGUAGE UnboxedTuples #-}
 
 module Numeric.LinearAlgebra.Feast
-    ( Feast, geigSH, eigSH
+    ( Feast, geigSH_, geigSH, eigSH
     ) where
 
 import Control.Applicative
