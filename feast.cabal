@@ -13,6 +13,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:
     Numeric.LinearAlgebra.Feast
+    Numeric.LinearAlgebra.Feast.Internal
   build-depends:
       base >=4.7 && <4.8
     , global-lock >=0.1 && <1
