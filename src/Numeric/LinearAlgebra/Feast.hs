@@ -14,6 +14,7 @@ import Control.Applicative
 import Control.Concurrent.ParallelIO.Local (withPool, parallel_)
 import Control.Monad (when)
 import Data.IORef
+import Data.Maybe (isJust)
 import Data.Traversable
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
@@ -28,6 +29,7 @@ import System.IO.Unsafe
 
 import Data.Complex.Enhanced
 import qualified Data.Packed.Matrix as Dense
+import qualified Numeric.LinearAlgebra.Devel as Dense
 import Data.Matrix.Sparse
 import Numeric.LinearAlgebra.Feast.Internal
 import Numeric.LinearAlgebra.Umfpack
@@ -38,17 +40,22 @@ error = errorWithStackTrace
 geigSH
   :: (Feast a)
   => Int -> (RealOf a, RealOf a)
+  -> Maybe (Dense.Matrix a) -- ^ subspace guess
   -> Matrix Col a -> Matrix Col a
   -> (Int, Vector (RealOf a), Dense.Matrix a)
 {-# INLINE geigSH #-}
-geigSH !m0 (!_emin, !_emax) !matA !matB = geigSH_go where
+geigSH !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
   n = odim matA
+  m0' = maybe m0 Dense.cols guess
+  n' = maybe n Dense.rows guess
 
   {-# NOINLINE geigSH_go #-}
   geigSH_go
     | not (hermitian matA) = error "geigSH: matrix A not hermitian"
     | not (hermitian matB) = error "geigSH: matrix B not hermitian"
     | odim matA /= odim matB = error "geigSH: matrix sizes do not match"
+    | m0 /= m0' = error "geigSH: subspace guess has wrong column dimension"
+    | n /= n' = error "geigSH: subspace guess has wrong row dimension"
     | otherwise = unsafePerformIO $ lock $ do
         ncap <- getNumCapabilities
         withPool ncap $ \pool ->
@@ -74,8 +81,18 @@ geigSH !m0 (!_emin, !_emax) !matA !matB = geigSH_go where
             _bq <- MV.replicate (m0 * m0) 0
             _res <- MV.replicate m0 0
 
+            -- initialize subspace guess
+            case guess of
+              Nothing -> return ()
+              Just mat ->
+                V.copy
+                  _eigenvectors
+                  (Dense.unsafeMatrixToVector (Dense.fmat mat))
+
             -- initialize
             fpm <- feastinit
+
+            when (isJust guess) (MV.unsafeWrite fpm 4 1)
 
             let feast_go =
                   MV.unsafeWith fpm $ \_fpm ->
@@ -168,5 +185,5 @@ eigSH
   -> (Vector (RealOf a), Dense.Matrix a)
 {-# INLINE eigSH #-}
 eigSH = \m0 bounds matA ->
-  let (m, evals, evecs) = geigSH m0 bounds matA (ident (odim matA))
+  let (m, evals, evecs) = geigSH m0 bounds Nothing matA (ident (odim matA))
   in (V.take m evals, Dense.takeColumns m evecs)
