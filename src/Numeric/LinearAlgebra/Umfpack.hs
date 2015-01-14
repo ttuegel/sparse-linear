@@ -23,7 +23,6 @@ import GHC.Stack (errorWithStackTrace)
 import Prelude hiding (mapM)
 import System.IO.Unsafe (unsafePerformIO)
 
-import Data.Complex.Enhanced
 import Data.Matrix.Sparse
 import Data.Matrix.Sparse.Foreign
 import Foreign.ForeignPtr (ForeignPtr, newForeignPtr, withForeignPtr)
@@ -61,11 +60,10 @@ data UmfpackMode = UmfpackNormal | UmfpackTrans
 
 linearSolve_
   :: Umfpack a
-  => Factors a -> UmfpackMode -> Matrix Col a -> [IOVector a] -> IO [IOVector a]
-{-# SPECIALIZE linearSolve_ :: Factors Double -> UmfpackMode -> Matrix Col Double -> [IOVector Double] -> IO [IOVector Double] #-}
-{-# SPECIALIZE linearSolve_ :: Factors (Complex Double) -> UmfpackMode -> Matrix Col (Complex Double) -> [IOVector (Complex Double)] -> IO [IOVector (Complex Double)] #-}
-linearSolve_ fact mode mat@Matrix{..} bs =
-  withConstMatrix mat $ \_ _ p i x -> forM bs $ \_b -> do
+  => Factors a -> UmfpackMode -> Matrix Col a -> IOVector a -> IO (IOVector a)
+{-# INLINE linearSolve_ #-}
+linearSolve_ fact mode mat@Matrix{..} _b =
+  withConstMatrix mat $ \_ _ p i x -> do
     _soln <- MV.replicate odim 0
     _ <- MV.unsafeWith _b $ \_b -> MV.unsafeWith _soln $ \_soln -> do
       let m = case mode of
@@ -77,17 +75,15 @@ linearSolve_ fact mode mat@Matrix{..} bs =
       when (_stat < 0) $ errorWithStackTrace "linearSolve_: umfpack_solve failed"
     return _soln
 
-linearSolve
-  :: (Vector v a, Umfpack a)
-  => Matrix Col a -> [v a] -> [v a]
-{-# INLINE linearSolve #-}
-linearSolve = linearSolve_go where
-  {-# NOINLINE linearSolve_go #-}
-  linearSolve_go mat@Matrix{..} _bs =
-    unsafePerformIO $ do
-      _xs <- mapM (V.unsafeThaw . V.convert) _bs
-             >>= linearSolve_ (factor mat) UmfpackNormal mat
-      map V.convert <$> mapM V.unsafeFreeze _xs
+linearSolve :: (Vector v a, Umfpack a) => Matrix Col a -> [v a] -> [v a]
+{-# NOINLINE linearSolve #-}
+linearSolve mat@Matrix{..} bs =
+  unsafePerformIO $ do
+    let fact = factor mat
+    xs <- forM bs $ \_b -> do
+      _b <- V.unsafeThaw (V.convert _b)
+      linearSolve_ fact UmfpackNormal mat _b
+    map V.convert <$> mapM V.unsafeFreeze xs
 
 (<\>) :: (Vector v a, Umfpack a) => Matrix Col a -> v a -> v a
 {-# INLINE (<\>) #-}
