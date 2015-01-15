@@ -4,11 +4,21 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UnboxedTuples #-}
 
 module Numeric.LinearAlgebra.Feast
-    ( Feast, geigSH_, geigSH, eigSH
+    (
+      -- * Simple interface
+      eigSH
+    , geigSH
+    , Feast
+      -- * Advanced interface
+    , FeastParams(..)
+    , defaultFeastParams
+    , eigSHParams
+    , geigSHParams
+    , geigSH_
     ) where
 
 import Control.Applicative
@@ -40,41 +50,81 @@ import Data.Matrix.Sparse
 import Numeric.LinearAlgebra.Feast.Internal
 import Numeric.LinearAlgebra.Umfpack
 
-error :: String -> a
-error = errorWithStackTrace
+-- ------------------------------------------------------------------------
+-- Simple interface
+-- ------------------------------------------------------------------------
 
-parMapM_ :: MonadIO m => (a -> IO ()) -> [a] -> m ()
-parMapM_ f xs = liftIO $ do
-  ncap <- getNumCapabilities
-  qstart <- newQSem ncap
-  qend <- newQSemN 0
-  let parMapM__go n ys =
-        case ys of
-          [] -> return n
-          (y : ys') -> forkOn n (parMapM__worker y) >> parMapM__go (n + 1) ys'
-      parMapM__worker a =
-        bracket_
-          (waitQSem qstart)
-          (signalQSem qstart >> signalQSemN qend 1)
-          (f a)
-  len <- parMapM__go 0 xs
-  -- wait for all workers to finish
-  waitQSemN qend len
+eigSH
+  :: (Feast a)
+  => Int
+  -> (RealOf a, RealOf a)
+  -> Matrix Col a
+  -> (Vector (RealOf a), Dense.Matrix a)
+{-# INLINE eigSH #-}
+eigSH = eigSHParams defaultFeastParams
 
-doM :: Monad m => m a -> (a -> Bool) -> m ()
-doM body check = doM_go where
-  doM_go = do
-    a <- body
-    when (check a) doM_go
+geigSH
+  :: (Feast a)
+  => Int
+  -> (RealOf a, RealOf a)
+  -> Matrix Col a
+  -> Matrix Col a
+  -> (Vector (RealOf a), Dense.Matrix a)
+{-# INLINE geigSH #-}
+geigSH = geigSHParams defaultFeastParams
+
+-- ------------------------------------------------------------------------
+-- Advanced interface
+-- ------------------------------------------------------------------------
+
+data FeastParams
+  = FeastParams
+    { feastDebug :: !Bool
+    , feastContourPoints :: !Int
+    , feastTolerance :: !Int
+    }
+
+defaultFeastParams :: FeastParams
+defaultFeastParams =
+  FeastParams
+    { feastDebug = False
+    , feastContourPoints = 8
+    , feastTolerance = 12
+    }
+
+eigSHParams
+  :: (Feast a)
+  => FeastParams
+  -> Int
+  -> (RealOf a, RealOf a)
+  -> Matrix Col a
+  -> (Vector (RealOf a), Dense.Matrix a)
+{-# INLINE eigSHParams #-}
+eigSHParams = \params m0 bounds matA ->
+  geigSHParams params m0 bounds matA (ident (odim matA))
+
+geigSHParams
+  :: Feast a
+  => FeastParams
+  -> Int
+  -> (RealOf a, RealOf a)
+  -> Matrix Col a
+  -> Matrix Col a
+  -> (Vector (RealOf a), Dense.Matrix a)
+{-# INLINE geigSHParams #-}
+geigSHParams = \params m0 bounds matA matB ->
+  let (m, evals, evecs) = geigSH_ params m0 bounds Nothing matA matB
+  in (V.take m evals, Dense.takeColumns m evecs)
 
 geigSH_
   :: (Feast a)
-  => Int -> (RealOf a, RealOf a)
+  => FeastParams
+  -> Int -> (RealOf a, RealOf a)
   -> Maybe (Dense.Matrix a) -- ^ subspace guess
   -> Matrix Col a -> Matrix Col a
   -> (Int, Vector (RealOf a), Dense.Matrix a)
-{-# NOINLINE geigSH_ #-}
-geigSH_ !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
+{-# INLINE geigSH_ #-}
+geigSH_ FeastParams{..} !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
   n = odim matA
   m0' = maybe m0 Dense.cols guess
   n' = maybe n Dense.rows guess
@@ -120,6 +170,9 @@ geigSH_ !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
           fpm <- feastinit
 
           when (isJust guess) (MV.unsafeWrite fpm 4 1)
+          MV.unsafeWrite fpm 0 (if feastDebug then 1 else 0)
+          MV.unsafeWrite fpm 1 (fromIntegral feastContourPoints)
+          MV.unsafeWrite fpm 2 (fromIntegral feastTolerance)
 
           let feast_go =
                 MV.unsafeWith fpm $ \_fpm ->
@@ -186,6 +239,10 @@ geigSH_ !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
             <*> V.unsafeFreeze _eigenvalues
             <*> (Dense.fromColumns <$> mapM V.unsafeFreeze _eigenvectors)
 
+-- ------------------------------------------------------------------------
+-- Utilities
+-- ------------------------------------------------------------------------
+
 geigSH__decodeInfo :: Ptr CInt -> IO ()
 geigSH__decodeInfo info = do
   peek info >>= \case
@@ -199,24 +256,29 @@ geigSH__decodeInfo info = do
     4 -> putStrLn "geigSH: only subspace returned"
     i -> error ("geigSH: unknown error, info = " ++ show i)
 
-geigSH
-  :: (Feast a)
-  => Int
-  -> (RealOf a, RealOf a)
-  -> Matrix Col a
-  -> Matrix Col a
-  -> (Vector (RealOf a), Dense.Matrix a)
-{-# INLINE geigSH #-}
-geigSH = \m0 bounds matA matB ->
-  let (m, evals, evecs) = geigSH_ m0 bounds Nothing matA matB
-  in (V.take m evals, Dense.takeColumns m evecs)
+error :: String -> a
+error = errorWithStackTrace
 
+parMapM_ :: MonadIO m => (a -> IO ()) -> [a] -> m ()
+parMapM_ f xs = liftIO $ do
+  ncap <- getNumCapabilities
+  qstart <- newQSem ncap
+  qend <- newQSemN 0
+  let parMapM__go n ys =
+        case ys of
+          [] -> return n
+          (y : ys') -> forkOn n (parMapM__worker y) >> parMapM__go (n + 1) ys'
+      parMapM__worker a =
+        bracket_
+          (waitQSem qstart)
+          (signalQSem qstart >> signalQSemN qend 1)
+          (f a)
+  len <- parMapM__go 0 xs
+  -- wait for all workers to finish
+  waitQSemN qend len
 
-eigSH
-  :: (Feast a)
-  => Int
-  -> (RealOf a, RealOf a)
-  -> Matrix Col a
-  -> (Vector (RealOf a), Dense.Matrix a)
-{-# INLINE eigSH #-}
-eigSH = \m0 bounds matA -> geigSH m0 bounds matA (ident (odim matA))
+doM :: Monad m => m a -> (a -> Bool) -> m ()
+doM body check = doM_go where
+  doM_go = do
+    a <- body
+    when (check a) doM_go
