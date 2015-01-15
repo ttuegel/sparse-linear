@@ -200,14 +200,14 @@ geigSH_ FeastParams{..} !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go wher
 
           let solveLinear m = do
                 Just (!mat, !fact) <- get
-                parMapM_
+                liftIO $ mapM_
                   (\work -> linearSolve_ fact m mat work >>= MV.copy work)
                   _work2
 
               multiplyWork mat = liftIO $ do
                 ndrop <- (+ (-1)) . fromIntegral <$> MV.unsafeRead fpm 23
                 ntake <- fromIntegral <$> MV.unsafeRead fpm 24
-                parMapM_
+                liftIO $ mapM_
                   (\(!dst, !x) -> MV.set dst 0 >> gaxpy_ mat x dst)
                   (take ntake (drop ndrop (zip _work1 _eigenvectors)))
 
