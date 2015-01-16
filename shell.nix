@@ -1,10 +1,6 @@
 with (import <nixpkgs> {});
+with haskell-ng.lib;
 let
-  atlas = atlasWithLapack;
-  gfortran = pkgs.gfortran.gcc;
-  lapack = null;
-  ptcblas = null;
-  ptf77blas = null;
   sparse-linear = haskellngPackages.callPackage ./sparse-linear {};
   suitesparse = haskellngPackages.callPackage ./suitesparse {
     inherit sparse-linear;
@@ -14,9 +10,15 @@ let
     suitesparseconfig = suitesparse_4_4_1;
     umfpack = null;
   };
-  global-lock = haskellngPackages.callPackage ./global-lock.nix {};
 in
-(haskellngPackages.callPackage ./. {
-  inherit atlas lapack gfortran global-lock ptcblas ptf77blas sparse-linear
-    suitesparse;
-}).env
+(haskellngPackages.callPackage
+  ./.
+  {
+    inherit sparse-linear suitesparse;
+    atlas = atlasWithLapack;
+    ptf77blas = null;
+    ptcblas = null;
+    lapack = null;
+    gfortran = gfortran.gcc;
+    global-lock = haskellngPackages.callPackage ./global-lock.nix {};
+  }).env
