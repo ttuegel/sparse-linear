@@ -1,19 +1,16 @@
-{ cabal, hspec, monoTraversable, QuickCheck, storableComplex
-, tagged, vector, vectorAlgorithms }:
-
-cabal.mkDerivation (self: {
+{ mkDerivation, base, hspec, mono-traversable, primitive
+, QuickCheck, stdenv, storable-complex, tagged, vector
+, vector-algorithms
+}:
+mkDerivation {
   pname = "sparse-linear";
   version = "0.1.0.0";
   src = ./.;
   buildDepends = [
-    monoTraversable storableComplex tagged vector vectorAlgorithms
+    base mono-traversable primitive storable-complex tagged vector
+    vector-algorithms
   ];
-  testDepends = [ hspec QuickCheck vector ];
-  extraLibraries = [ ];
-  configureFlags = [ "-O2" ];
-  meta = {
-    description = "Sparse linear algebra primitives in Haskell";
-    license = self.stdenv.lib.licenses.gpl2;
-    platforms = self.ghc.meta.platforms;
-  };
-})
+  testDepends = [ base hspec mono-traversable QuickCheck vector ];
+  description = "Sparse linear algebra primitives in Haskell";
+  license = stdenv.lib.licenses.bsd3;
+}

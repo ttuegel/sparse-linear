@@ -1,5 +1,4 @@
-{ pkgs ? (import <nixpkgs> {}) }:
-
-with pkgs;
-
-haskellPackages.callPackage ./. {}
+with (import <nixpkgs> {});
+let sparse-linear = haskellngPackages.callPackage ./. {};
+in
+sparse-linear.env
