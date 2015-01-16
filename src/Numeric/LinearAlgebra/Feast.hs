@@ -211,10 +211,14 @@ geigSH_ FeastParams{..} !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go wher
                   (\(!dst, !x) -> MV.set dst 0 >> gaxpy_ mat x dst)
                   (take ntake (drop ndrop (zip _work1 _eigenvectors)))
 
+              -- the shape of the result never changes, so the symbolic
+              -- analysis never needs to be repeated
+              analysis = analyze (lin (-1) matA 0 matB)
+
               factorMatrix = do
                 _ze <- liftIO (peek _ze)
                 let !mat = lin (-1) matA _ze matB
-                    !fact = factor mat
+                    !fact = factor mat analysis
                 put (Just (mat, fact))
 
           evalStateT
