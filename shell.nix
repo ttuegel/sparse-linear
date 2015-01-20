@@ -1,8 +1,8 @@
 with (import <nixpkgs> {});
 with stdenv.lib;
 let
-  enableOptimization = ttuegel.enableOptimization or id;
-  enableProfiling = ttuegel.enableProfiling or id;
+  enableOptimization = ttuegel.haskell.enableOptimization or id;
+  enableProfiling = ttuegel.haskell.enableProfiling or id;
   amd = null;
   cholmod = null;
   colamd = null;
