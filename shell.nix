@@ -1,4 +1,14 @@
 with (import <nixpkgs> {});
-let sparse-linear = haskellngPackages.callPackage ./. {};
+with stdenv.lib;
+with haskell-ng.lib;
+let
+  enableOptimization = ttuegel.haskell.enableOptimization or id;
+  enableProfiling = ttuegel.haskell.enableProfiling or id;
+  pkg =
+    fold (f: x: f x) (haskellngPackages.callPackage ./. {})
+      [
+        enableOptimization
+        enableProfiling
+      ];
 in
-sparse-linear.env
+  pkg.env
