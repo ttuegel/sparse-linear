@@ -1,0 +1,52 @@
+name:                suitesparse
+version:             0.1.0.0
+synopsis:
+  Haskell bindings to the SuiteSparse library of sparse linear algebra routines
+license:             GPL-2
+license-file:        LICENSE
+author:              Thomas Tuegel
+maintainer:          ttuegel@gmail.com
+copyright:           (c) 2014 Thomas Tuegel
+category:            Math
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  exposed-modules:
+    Numeric.LinearAlgebra.Umfpack
+    Numeric.LinearAlgebra.Umfpack.Internal
+  build-depends:
+      base >=4.7 && <4.8
+    , hmatrix >=0.16 && <1
+    , mono-traversable >=0.6 && <1
+    , primitive >=0.5 && <1
+    , sparse-linear >=0.1 && <1
+    , vector >=0.10 && <1
+    , vector-algorithms >=0.6 && <1
+  hs-source-dirs: src
+  default-language: Haskell2010
+  ghc-options: -Wall
+  ghc-prof-options: -fprof-auto
+  extra-libraries:
+    umfpack
+    suitesparseconfig
+    amd
+    cholmod
+    colamd
+
+test-suite test-umfpack
+  type: exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is: test-umfpack.hs
+  other-modules:
+    Test.LinearAlgebra
+  default-language: Haskell2010
+  ghc-options: -Wall
+  ghc-prof-options: -fprof-auto
+  build-depends:
+      base
+    , hspec >=2.1 && <3
+    , QuickCheck >=2.7 && <3
+    , sparse-linear
+    , suitesparse
+    , vector >=0.10 && <1
