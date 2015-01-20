@@ -2,8 +2,8 @@ with (import <nixpkgs> {});
 with haskell-ng.lib;
 with stdenv.lib;
 let
-  enableOptimization = ttuegel.enableOptimization or id;
-  enableProfiling = ttuegel.enableProfiling or id;
+  enableOptimization = ttuegel.haskell.enableOptimization or id;
+  enableProfiling = ttuegel.haskell.enableProfiling or id;
   sparse-linear = haskellngPackages.callPackage ./sparse-linear {};
   suitesparse = haskellngPackages.callPackage ./suitesparse {
     inherit sparse-linear;
