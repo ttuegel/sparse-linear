@@ -399,7 +399,7 @@ gaxpy_ mat@Matrix{..} xs ys =
       MG.unsafeWrite ys r $! y + a * x
 
 gaxpy
-  :: (G.Vector v a Orient or, Num a, Unbox a)
+  :: (G.Vector v a, Orient or, Num a, Unbox a)
   => Matrix or a -> v a -> v a -> v a
 {-# INLINE gaxpy #-}
 gaxpy = \a _x _y -> runST $ do
