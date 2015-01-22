@@ -399,22 +399,22 @@ gaxpy_ mat@Matrix{..} xs ys =
       MG.unsafeWrite ys r $! y + a * x
 
 gaxpy
-  :: (Orient or, Num a, Unbox a)
-  => Matrix or a -> Vector a -> Vector a -> Vector a
+  :: (G.Vector v a Orient or, Num a, Unbox a)
+  => Matrix or a -> v a -> v a -> v a
 {-# INLINE gaxpy #-}
 gaxpy = \a _x _y -> runST $ do
-  _y <- V.thaw _y
-  _x <- V.unsafeThaw _x
+  _y <- G.thaw _y
+  _x <- G.unsafeThaw _x
   gaxpy_ a _x _y
-  V.unsafeFreeze _y
+  G.unsafeFreeze _y
 
-mulV :: (Orient or, Num a, Unbox a) => Matrix or a -> Vector a -> Vector a
+mulV :: (Orient or, Num a, G.Vector v a, Unbox a) => Matrix or a -> v a -> v a
 {-# INLINE mulV #-}
 mulV = \a _x -> runST $ do
-  _x <- V.unsafeThaw _x
-  y <- MV.replicate (MV.length _x) 0
+  _x <- G.unsafeThaw _x
+  y <- MG.replicate (MG.length _x) 0
   gaxpy_ a _x y
-  V.unsafeFreeze y
+  G.unsafeFreeze y
 
 mjoin :: Unbox a => Matrix or a -> Matrix or a -> Matrix or a
 {-# INLINE mjoin #-}
