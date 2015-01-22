@@ -5,6 +5,7 @@
 module Data.Complex.Enhanced
        ( RealOf, ComplexOf, IsReal(..), IsImag(..)
        , Complex(..)
+       , realPart, imagPart
        ) where
 
 import Data.Complex
