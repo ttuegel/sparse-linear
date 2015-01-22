@@ -97,9 +97,7 @@ main = hspec $ do
       let addIdent
             :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
             => Matrix or a -> Bool
-          addIdent a =
-            let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
-            in a + zeros rdim cdim == a
+          addIdent a = a + zeros (rdim a) (cdim a) == a
       it "a + zeros == a :: Matrix Row Double"
         $ property (addIdent :: Matrix Row Double -> Bool)
       it "a + zeros == a :: Matrix Row (Complex Double)"
@@ -126,8 +124,7 @@ main = hspec $ do
             :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
             => Matrix or a -> Gen Bool
           addComm a = do
-            let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
-            b <- arbitraryMatrix rdim cdim
+            b <- arbitraryMatrix (rdim a) (cdim a)
             return $ a + b == b + a
       it "a + b == b + a :: Matrix Row Double"
         $ property (addComm :: Matrix Row Double -> Gen Bool)
@@ -142,9 +139,8 @@ main = hspec $ do
             :: (Arbitrary a, Eq a, Fractional a, Fractional (RealOf a), IsReal a, Num a, Num (Matrix or a), Ord (RealOf a), Orient or, Show a, Unbox a, Unbox (RealOf a))
             => Matrix or a -> Gen Property
           addAssoc a = do
-            let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
-            b <- arbitraryMatrix rdim cdim
-            c <- arbitraryMatrix rdim cdim
+            b <- arbitraryMatrix (rdim a) (cdim a)
+            c <- arbitraryMatrix (rdim a) (cdim a)
             return $ ((a + b) + c) ~== (a + (b + c))
       it "(a + b) + c == a + (b + c) :: Matrix Row Double"
         $ property (addAssoc :: Matrix Row Double -> Gen Property)
@@ -160,8 +156,7 @@ main = hspec $ do
             => Gen (Matrix or a)
           arbitraryAdd = do
             a <- arbitrary
-            let (rdim, cdim) = orientSwap (orient a) (odim a, idim a)
-            b <- arbitraryMatrix rdim cdim
+            b <- arbitraryMatrix (rdim a) (cdim a)
             return $ a + b
       checkMatrixRowR arbitraryAdd
       checkMatrixRowZ arbitraryAdd
@@ -209,8 +204,7 @@ main = hspec $ do
             :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
             => Matrix or a -> Gen Bool
           mulIdentL a = do
-            let (rdim, _) = orientSwap (orient a) (odim a, idim a)
-            return $ ident rdim * a == a
+            return $ ident (rdim a) * a == a
       it "ident * a == a :: Matrix Row Double"
         $ property (mulIdentL :: Matrix Row Double -> Gen Bool)
       it "ident * a == a :: Matrix Row (Complex Double)"
@@ -224,8 +218,7 @@ main = hspec $ do
             :: (Arbitrary a, Eq a, Num a, Num (Matrix or a), Orient or, Unbox a)
             => Matrix or a -> Gen Bool
           mulIdentR a = do
-            let (_, cdim) = orientSwap (orient a) (odim a, idim a)
-            return $ a * ident cdim == a
+            return $ a * ident (cdim a) == a
       it "ident * a == a :: Matrix Row Double"
         $ property (mulIdentR :: Matrix Row Double -> Gen Bool)
       it "ident * a == a :: Matrix Row (Complex Double)"

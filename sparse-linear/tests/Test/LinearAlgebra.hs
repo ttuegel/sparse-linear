@@ -28,13 +28,13 @@ arbdim = arbitrary `suchThat` (> 0)
 arbitraryMatrix
   :: (Arbitrary a, Num a, Orient or, Unbox a)
   => Int -> Int -> Gen (Matrix or a)
-arbitraryMatrix rdim cdim = do
-  triples <- vectorOf (rdim * cdim `div` 4) $ do
-    r <- choose (0, rdim - 1)
-    c <- choose (0, cdim - 1)
+arbitraryMatrix nr nc = do
+  triples <- vectorOf (nr * nc `div` 4) $ do
+    r <- choose (0, nr - 1)
+    c <- choose (0, nc - 1)
     x <- arbitrary
     return (r, c, x)
-  return $ (rdim >< cdim) triples
+  return $ (nr >< nc) triples
 
 checkMatrixRowR :: Gen (Matrix Row Double) -> SpecWith ()
 checkMatrixRowR =

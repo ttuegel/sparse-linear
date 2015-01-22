@@ -9,7 +9,7 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.Matrix.Sparse
-       ( Matrix(..), cmap, nonZero, slice
+       ( Matrix(..), cmap, nonZero, slice, cdim, rdim
        , OrientK(..), Orient(..), Transpose, orient
        , compress, decompress, dedupInPlace
        , fromTriples, (><)
@@ -86,6 +86,10 @@ data Matrix (or :: OrientK) a = Matrix
   , entries :: !(Vector (Int, a))
   }
   deriving (Eq, Read, Show)
+
+cdim, rdim :: Orient or => Matrix or a -> Int
+cdim mat@Matrix{..} = snd (orientSwap (orient mat) (odim, idim))
+rdim mat@Matrix{..} = fst (orientSwap (orient mat) (odim, idim))
 
 type instance Element (Matrix or a) = a
 
@@ -390,13 +394,18 @@ gaxpy_
   :: (MG.MVector v a, Orient or, Num a, PrimMonad m, Unbox a)
   => Matrix or a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 {-# INLINE gaxpy_ #-}
-gaxpy_ mat@Matrix{..} xs ys =
-  V.forM_ (V.enumFromN 0 odim) $ \m -> do
-    V.forM_ (unsafeSlice pointers m entries) $ \(n, a) -> do
-      let (r, c) = orientSwap (orient mat) (m, n)
-      x <- MG.unsafeRead xs c
-      y <- MG.unsafeRead ys r
-      MG.unsafeWrite ys r $! y + a * x
+gaxpy_ mat@Matrix{..} xs ys
+  | MG.length xs /= cdim mat =
+      errorWithStackTrace "gaxpy_: matrix column dim does not match operand"
+  | MG.length ys /= rdim mat =
+      errorWithStackTrace "gaxpy_: matrix row dim does not match result"
+  | otherwise =
+      V.forM_ (V.enumFromN 0 odim) $ \m -> do
+        V.forM_ (unsafeSlice pointers m entries) $ \(n, a) -> do
+          let (r, c) = orientSwap (orient mat) (m, n)
+          x <- MG.unsafeRead xs c
+          y <- MG.unsafeRead ys r
+          MG.unsafeWrite ys r $! y + a * x
 
 gaxpy
   :: (G.Vector v a, Orient or, Num a, Unbox a)
@@ -412,7 +421,7 @@ mulV :: (Orient or, Num a, G.Vector v a, Unbox a) => Matrix or a -> v a -> v a
 {-# INLINE mulV #-}
 mulV = \a _x -> runST $ do
   _x <- G.unsafeThaw _x
-  y <- MG.replicate (MG.length _x) 0
+  y <- MG.replicate (rdim a) 0
   gaxpy_ a _x y
   G.unsafeFreeze y
 
