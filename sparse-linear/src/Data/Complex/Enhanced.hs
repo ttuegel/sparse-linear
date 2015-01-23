@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Complex.Enhanced
        ( RealOf, ComplexOf, IsReal(..), IsImag(..)
@@ -8,6 +9,8 @@ module Data.Complex.Enhanced
        , realPart, imagPart
        ) where
 
+import Control.Applicative
+import Data.Binary (Binary(..))
 import Data.Complex
 import Foreign.Storable.Complex ()
 
@@ -46,3 +49,11 @@ instance IsReal (Complex Double) where
 instance IsImag (Complex Double) where
   {-# INLINE imag #-}
   imag = (0 :+)
+
+instance (Binary a, RealFloat a) => Binary (Complex a) where
+  {-# INLINE put #-}
+  {-# INLINE get #-}
+  put a = do
+    put (realPart a)
+    put (imagPart a)
+  get = (:+) <$> get <*> get
