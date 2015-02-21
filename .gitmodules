@@ -1,0 +1,3 @@
+[submodule "feast/parallel-io-simple"]
+	path = feast/parallel-io-simple
+	url = https://github.com/ttuegel/parallel-io-simple.git

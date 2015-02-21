@@ -1,5 +1,6 @@
 with (import <nixpkgs> {});
 let
+  parallel-io-simple = haskellngPackages.callPackage ./parallel-io-simple {};
   sparse-linear = haskellngPackages.callPackage ../sparse-linear {};
   suitesparse = haskellngPackages.callPackage ../suitesparse {
     inherit sparse-linear;
@@ -13,10 +14,10 @@ in
   (haskellngPackages.callPackage
     ./.
     {
-      inherit sparse-linear suitesparse;
+      inherit parallel-io-simple sparse-linear suitesparse;
       atlas = atlasWithLapack;
       ptf77blas = null;
       ptcblas = null;
       lapack = null;
-      gfortran = gfortran.gcc;
+      gfortran = gfortran.cc;
     }).env
