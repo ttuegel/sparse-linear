@@ -3,9 +3,9 @@ module Data.Matrix.Sparse.Slice where
 import Data.Vector.Fusion.Stream (Stream)
 import qualified Data.Vector.Generic as G
 import Data.Vector.Unboxed (Unbox, Vector)
-import qualified Data.Vector.Unboxed as V
+import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
-import qualified Data.Vector.Unboxed.Mutable as MV
+import qualified Data.Vector.Unboxed.Mutable as UM
 
 -- | Given a vector of pointers to slices in an array, return the indexed slice.
 -- The following requirements are not checked:
@@ -20,9 +20,9 @@ unsafeSlice
   -> Vector a
 {-# INLINE unsafeSlice #-}
 unsafeSlice = \ptrs ix dat ->
-  let start = V.unsafeIndex ptrs ix
-      end = V.unsafeIndex ptrs (ix + 1)
-  in V.unsafeSlice start (end - start) dat
+  let start = U.unsafeIndex ptrs ix
+      end = U.unsafeIndex ptrs (ix + 1)
+  in U.unsafeSlice start (end - start) dat
 
 -- | Given a vector of pointers to slices in an array, return the indexed slice.
 -- The following requirements are not checked:
@@ -37,9 +37,9 @@ unsafeMSlice
   -> MVector s a
 {-# INLINE unsafeMSlice #-}
 unsafeMSlice = \ptrs ix dat ->
-  let start = V.unsafeIndex ptrs ix
-      end = V.unsafeIndex ptrs (ix + 1)
-  in MV.unsafeSlice start (end - start) dat
+  let start = U.unsafeIndex ptrs ix
+      end = U.unsafeIndex ptrs (ix + 1)
+  in UM.unsafeSlice start (end - start) dat
 
 streamSlice
   :: Unbox a

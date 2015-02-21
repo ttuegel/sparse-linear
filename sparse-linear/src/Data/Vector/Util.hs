@@ -13,9 +13,9 @@ module Data.Vector.Util
 import Control.Monad (liftM)
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import Data.Vector.Generic (Vector)
-import qualified Data.Vector.Generic as V
+import qualified Data.Vector.Generic as G
 import Data.Vector.Generic.Mutable (MVector)
-import qualified Data.Vector.Generic.Mutable as MV
+import qualified Data.Vector.Generic.Mutable as GM
 import qualified Data.Vector.Unboxed as U
 
 zipWithM3_
@@ -23,11 +23,11 @@ zipWithM3_
   => (a -> b -> c -> m d) -> u a -> v b -> w c -> m ()
 {-# INLINE zipWithM3_ #-}
 zipWithM3_ f as bs cs = do
-  let len = minimum [V.length as, V.length bs, V.length cs]
+  let len = minimum [G.length as, G.length bs, G.length cs]
   U.forM_ (U.enumFromN 0 len) $ \ix -> do
-    a <- V.unsafeIndexM as ix
-    b <- V.unsafeIndexM bs ix
-    c <- V.unsafeIndexM cs ix
+    a <- G.unsafeIndexM as ix
+    b <- G.unsafeIndexM bs ix
+    c <- G.unsafeIndexM cs ix
     f a b c
 
 -- | Shift the right part (relative to the given index) of a mutable vector by
@@ -40,21 +40,21 @@ shiftR
   -> m ()
 {-# INLINE shiftR #-}
 shiftR = \v ix off -> do
-  let len' = MV.length v - ix - abs off
+  let len' = GM.length v - ix - abs off
       src
-        | off >= 0 = MV.unsafeSlice ix len' v
-        | otherwise = MV.unsafeSlice (ix + abs off) len' v
+        | off >= 0 = GM.unsafeSlice ix len' v
+        | otherwise = GM.unsafeSlice (ix + abs off) len' v
       dst
-        | off >= 0 = MV.unsafeSlice (ix + abs off) len' v
-        | otherwise = MV.unsafeSlice ix len' v
-  MV.move dst src
+        | off >= 0 = GM.unsafeSlice (ix + abs off) len' v
+        | otherwise = GM.unsafeSlice ix len' v
+  GM.move dst src
 
 preincrement
   :: (Num a, PrimMonad m, MVector v a) => v (PrimState m) a -> Int -> m a
 {-# INLINE preincrement #-}
 preincrement = \v ix -> do
-  count <- MV.unsafeRead v ix
-  MV.unsafeWrite v ix $! count + 1
+  count <- GM.unsafeRead v ix
+  GM.unsafeWrite v ix $! count + 1
   return count
 
 forSlicesM2_
@@ -62,19 +62,19 @@ forSlicesM2_
   => u i -> v a -> w b -> (Int -> v a -> w b -> m c) -> m ()
 {-# INLINE forSlicesM2_ #-}
 forSlicesM2_ = \ptrs as bs f -> do
-  U.forM_ (U.enumFromN 0 $ V.length ptrs - 1) $ \c -> do
-    start <- liftM fromIntegral $ V.unsafeIndexM ptrs c
-    end <- liftM fromIntegral $ V.unsafeIndexM ptrs (c + 1)
-    let as' = V.unsafeSlice start (end - start) as
-        bs' = V.unsafeSlice start (end - start) bs
+  U.forM_ (U.enumFromN 0 $ G.length ptrs - 1) $ \c -> do
+    start <- liftM fromIntegral $ G.unsafeIndexM ptrs c
+    end <- liftM fromIntegral $ G.unsafeIndexM ptrs (c + 1)
+    let as' = G.unsafeSlice start (end - start) as
+        bs' = G.unsafeSlice start (end - start) bs
     f c as' bs'
 
 nondecreasing :: (Ord a, Vector v Bool, Vector v a) => v a -> Bool
 nondecreasing vec
-  | V.null vec = True
-  | otherwise = V.and $ V.zipWith (<=) (V.init vec) (V.tail vec)
+  | G.null vec = True
+  | otherwise = G.and $ G.zipWith (<=) (G.init vec) (G.tail vec)
 
 increasing :: (Ord a, Vector v Bool, Vector v a) => v a -> Bool
 increasing vec
-  | V.null vec = True
-  | otherwise = V.and $ V.zipWith (<) (V.init vec) (V.tail vec)
+  | G.null vec = True
+  | otherwise = G.and $ G.zipWith (<) (G.init vec) (G.tail vec)
