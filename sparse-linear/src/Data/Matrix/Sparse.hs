@@ -35,6 +35,7 @@ import qualified Data.Foldable as F
 import Data.Function (fix)
 import qualified Data.List as L
 import Data.Maybe (catMaybes)
+import Data.Monoid ((<>), Monoid(..), First(..))
 import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import Data.Ord (comparing)
 import Data.Proxy
@@ -202,6 +203,25 @@ compress nRows nColumns _triples = fix $ \mat -> runST $ do
       (odim, idim) = orientSwap (orient mat) (nRows, nColumns)
       (_out, _inn) = orientSwap (orient mat) (_rows, _cols)
       ptrs = computePtrs odim _out
+
+  let checkBounds bound prev ix this =
+        prev <> (if this >= 0 && this < bound then mempty else First (Just ix))
+
+  -- check bounds of row indices
+  case getFirst (U.ifoldl' (checkBounds nRows) mempty _rows) of
+    Nothing -> return ()
+    Just ix ->
+      errorWithStackTrace
+      ("compress: row index out of bounds "
+       ++ show (0 :: Int, nRows) ++ " at " ++ show ix)
+
+  -- check bounds of column indices
+  case getFirst (U.ifoldl' (checkBounds nColumns) mempty _cols) of
+    Nothing -> return ()
+    Just ix ->
+      errorWithStackTrace
+      ("compress: column index out of bounds "
+       ++ show (0 :: Int, nColumns) ++ " at " ++ show ix)
 
   _out <- U.unsafeThaw _out
   _inn <- U.unsafeThaw _inn
