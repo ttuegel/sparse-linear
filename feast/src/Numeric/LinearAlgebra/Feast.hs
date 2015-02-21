@@ -22,9 +22,7 @@ module Numeric.LinearAlgebra.Feast
     ) where
 
 import Control.Applicative
-import Control.Concurrent.QSem
-import Control.Concurrent.QSemN
-import Control.Exception (bracket_)
+import Control.Concurrent.IO (parMapM_)
 import Control.Monad (when)
 import Control.Monad.State.Strict (MonadState(..), evalStateT)
 import Control.Monad.IO.Class
@@ -37,7 +35,6 @@ import Foreign.C.Types (CInt)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr (Ptr)
 import Foreign.Storable
-import GHC.Conc (forkOn, getNumCapabilities)
 import GHC.Stack (errorWithStackTrace)
 import Prelude hiding (concat, error, mapM)
 import System.GlobalLock (lock)
@@ -262,24 +259,6 @@ geigSH__decodeInfo info = do
 
 error :: String -> a
 error = errorWithStackTrace
-
-parMapM_ :: MonadIO m => (a -> IO ()) -> [a] -> m ()
-parMapM_ f xs = liftIO $ do
-  ncap <- getNumCapabilities
-  qstart <- newQSem ncap
-  qend <- newQSemN 0
-  let parMapM__go n ys =
-        case ys of
-          [] -> return n
-          (y : ys') -> forkOn n (parMapM__worker y) >> parMapM__go (n + 1) ys'
-      parMapM__worker a =
-        bracket_
-          (waitQSem qstart)
-          (signalQSem qstart >> signalQSemN qend 1)
-          (f a)
-  len <- parMapM__go 0 xs
-  -- wait for all workers to finish
-  waitQSemN qend len
 
 doM :: Monad m => m a -> (a -> Bool) -> m ()
 doM body check = doM_go where
