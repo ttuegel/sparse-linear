@@ -83,7 +83,7 @@ data Matrix (or :: OrientK) a = Matrix
   , pointers :: !(Vector Int)
                 -- ^ starting index of each slice,
                 -- last element is non-zero length
-  , entries :: !(Vector (Int, a))
+  , entries :: Vector (Int, a)
   }
   deriving (Eq, Read, Show)
 
