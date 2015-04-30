@@ -15,7 +15,8 @@ module Data.Matrix.Sparse
        , outer
        , gaxpy_, gaxpy, mulV
        , lin, add
-       , hjoin, hcat
+       , hjoin, hcat, vjoin, vcat
+       , fromBlocks, fromBlocksDiag
        , kronecker
        , takeDiag, diag
        , ident, zeros
@@ -27,14 +28,11 @@ import Control.Monad (when)
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import Control.Monad.ST (runST)
 import qualified Data.Foldable as F
-import Data.Function (fix)
 import qualified Data.List as L
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>), Monoid(..), First(..))
 import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import Data.Ord (comparing)
-import Data.Proxy
-import Data.Tuple (swap)
 import qualified Data.Vector.Algorithms.Intro as Intro
 import qualified Data.Vector.Fusion.Stream as S
 import Data.Vector.Fusion.Stream.Size
@@ -374,18 +372,7 @@ mulV = \a _x -> runST $ do
 
 hjoin :: Unbox a => Matrix a -> Matrix a -> Matrix a
 {-# INLINE hjoin #-}
-hjoin a b
-  | nrows a /= ncols b = oops "nrows mismatch"
-  | otherwise = Matrix
-      { ncols = _ncols
-      , nrows = ncols a
-      , pointers = U.init (pointers a) U.++ (U.map (+ nza) $ pointers b)
-      , entries = entries a U.++ entries b
-      }
-  where
-    _ncols = ncols a + ncols b
-    nza = nonZero a
-    oops str = errorWithStackTrace ("mjoin: " ++ str)
+hjoin a b = hcat [a, b]
 
 hcat :: Unbox a => [Matrix a] -> Matrix a
 {-# INLINE hcat #-}
@@ -404,23 +391,40 @@ hcat mats
     lengths m = let ptrs = pointers m in U.zipWith (-) (U.tail ptrs) ptrs
     oops str = errorWithStackTrace ("hcat: " ++ str)
 
-{-
-vcat :: Unbox a => [Matrix Row a] -> Matrix Row a
-{-# INLINE vcat #-}
-vcat = mcat
-
-hjoin :: Unbox a => Matrix Col a -> Matrix Col a -> Matrix Col a
-{-# INLINE hjoin #-}
-hjoin = mjoin
-
-vjoin :: Unbox a => Matrix Row a -> Matrix Row a -> Matrix Row a
+vjoin :: Unbox a => Matrix a -> Matrix a -> Matrix a
 {-# INLINE vjoin #-}
-vjoin = mjoin
+vjoin a b = vcat [a, b]
 
-fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix Col a)]] -> Matrix Row a
-{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Col Double)]] -> Matrix Row Double #-}
-{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Col (Complex Double))]] -> Matrix Row (Complex Double) #-}
-fromBlocks = vcat . map (reorient . hcat) . adjustDims
+vcat :: Unbox a => [Matrix a] -> Matrix a
+{-# INLINE vcat #-}
+vcat mats
+  | null mats = oops "empty list"
+  | any (/= _ncols) (map ncols mats) = oops "ncols mismatch"
+  | otherwise =
+      Matrix
+      { ncols = _ncols
+      , nrows = F.foldl' (+) 0 (map nrows mats)
+      , pointers = _pointers
+      , entries = U.create $ do
+          _entries <- UM.new (U.last _pointers)
+          ccount <- U.thaw (U.init _pointers)
+          F.forM_ mats $ \Matrix {..} -> do
+            U.forM_ (U.enumFromN 0 ncols) $ \c -> do
+              let sl = unsafeSlice pointers c entries
+              dst <- UM.unsafeRead ccount c
+              U.copy (UM.slice dst (U.length sl) _entries) sl
+              UM.unsafeWrite ccount c (dst + U.length sl)
+          return _entries
+      }
+  where
+    oops str = errorWithStackTrace ("vcat: " ++ str)
+    _ncols = ncols (head mats)
+    _pointers = F.foldr1 (U.zipWith (+)) (map pointers mats)
+
+fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix a)]] -> Matrix a
+{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Double)]] -> Matrix Double #-}
+{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix (Complex Double))]] -> Matrix (Complex Double) #-}
+fromBlocks = vcat . map hcat . adjustDims
   where
     adjustDims rows = do
       (r, row) <- zip [0..] rows
@@ -433,27 +437,23 @@ fromBlocks = vcat . map (reorient . hcat) . adjustDims
         cols = L.transpose rows
         incompatible = any (\xs -> let x = head xs in any (/= x) xs)
         underspecified = any null
-        heightSpecs = map (map idim . catMaybes) rows
-        widthSpecs = map (map odim . catMaybes) cols
+        heightSpecs = map (map nrows . catMaybes) rows
+        widthSpecs = map (map ncols . catMaybes) cols
+        oops str = errorWithStackTrace ("fromBlocks: " ++ str)
         heights
-          | underspecified heightSpecs =
-              errorWithStackTrace "fixDimsByRow: underspecified heights"
-          | incompatible heightSpecs =
-              errorWithStackTrace "fixDimsByRow: incompatible heights"
+          | underspecified heightSpecs = oops "underspecified heights"
+          | incompatible heightSpecs = oops "incompatible heights"
           | otherwise = U.fromList $ map head heightSpecs
         widths
-          | underspecified widthSpecs =
-              errorWithStackTrace "fixDimsByRow: underspecified widths"
-          | incompatible widthSpecs =
-              errorWithStackTrace "fixDimsByRow: incompatible widths"
+          | underspecified widthSpecs = oops "underspecified widths"
+          | incompatible widthSpecs = oops "incompatible widths"
           | otherwise = U.fromList $ map head widthSpecs
 
 fromBlocksDiag
-  :: (Num a, Unbox a) => [[Maybe (Matrix Col a)]] -> Matrix Row a
+  :: (Num a, Unbox a) => [[Maybe (Matrix a)]] -> Matrix a
 {-# INLINE fromBlocksDiag #-}
 fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . L.transpose where
   rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
--}
 
 kronecker :: (Num a, Unbox a) => Matrix a -> Matrix a -> Matrix a
 {-# SPECIALIZE kronecker :: Matrix Double -> Matrix Double -> Matrix Double #-}

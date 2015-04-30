@@ -207,19 +207,16 @@ main = hspec $ do
       checkMatrixR arbitraryMul
       checkMatrixZ arbitraryMul
 
-    {-
     describe "fromBlocksDiag" $ do
-      let arbitraryFromBlocksDiag
-            :: (Arbitrary a, Num a, Unbox a) => Gen (Matrix Row a)
+      let arbitraryFromBlocksDiag :: (Arbitrary a, Num a, Unbox a) => Gen (Matrix a)
           arbitraryFromBlocksDiag = do
             n <- arbdim
             mats <- vectorOf n arbitrary
             return $ fromBlocksDiag
               $ (map Just mats)
               : replicate (n - 1) (replicate n Nothing)
-      checkMatrixRowR arbitraryFromBlocksDiag
-      checkMatrixRowZ arbitraryFromBlocksDiag
-    -}
+      checkMatrixR arbitraryFromBlocksDiag
+      checkMatrixZ arbitraryFromBlocksDiag
 
   describe "Data.Matrix.Sparse.Foreign" $ do
     it "fromForeign . withConstMatrix == id (Double)"
