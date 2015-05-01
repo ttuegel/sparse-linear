@@ -1,6 +1,10 @@
+{-# LANGUAGE CPP #-}
+
 module Data.Matrix.Sparse.Mul where
 
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
 import Control.Monad.ST (runST)
 import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U
@@ -56,6 +60,6 @@ unsafeMul = \rdim cdim ptrsA entriesA ptrsB entriesB -> runST $ do
   _ptrs <- U.unsafeFreeze _ptrs
   let nz' = U.last _ptrs
 
-  _entries <- U.unsafeFreeze $ UM.unsafeSlice 0 nz' _entries
+  _entries <- U.force <$> U.unsafeFreeze (UM.unsafeSlice 0 nz' _entries)
 
   return (_ptrs, _entries)

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -9,7 +10,9 @@ module Data.Complex.Enhanced
        , realPart, imagPart
        ) where
 
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
 import Data.Binary (Binary(..))
 import Data.Complex
 import Foreign.Storable.Complex ()
@@ -53,7 +56,5 @@ instance IsImag (Complex Double) where
 instance (Binary a, RealFloat a) => Binary (Complex a) where
   {-# INLINE put #-}
   {-# INLINE get #-}
-  put a = do
-    put (realPart a)
-    put (imagPart a)
+  put a = \(x :+ y) -> put x >> put y
   get = (:+) <$> get <*> get

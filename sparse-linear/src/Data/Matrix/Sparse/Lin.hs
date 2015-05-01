@@ -1,6 +1,10 @@
+{-# LANGUAGE CPP #-}
+
 module Data.Matrix.Sparse.Lin where
 
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
 import Control.Monad.ST (runST)
 import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U

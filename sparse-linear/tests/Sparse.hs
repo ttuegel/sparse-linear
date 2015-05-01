@@ -1,9 +1,12 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 module Main where
 
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
 import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as V
 import System.IO.Unsafe (unsafePerformIO)

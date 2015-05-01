@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -23,14 +24,20 @@ module Data.Matrix.Sparse
        , module Data.Complex.Enhanced
        ) where
 
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
 import Control.Monad (when)
 import Control.Monad.Primitive (PrimMonad, PrimState)
 import Control.Monad.ST (runST)
 import qualified Data.Foldable as F
 import qualified Data.List as L
 import Data.Maybe (catMaybes)
+#if __GLASGOW_HASKELL__ < 710
 import Data.Monoid ((<>), Monoid(..), First(..))
+#else
+import Data.Monoid ((<>), First(..))
+#endif
 import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import Data.Ord (comparing)
 import qualified Data.Vector.Algorithms.Intro as Intro
