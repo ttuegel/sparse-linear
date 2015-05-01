@@ -56,5 +56,5 @@ instance IsImag (Complex Double) where
 instance (Binary a, RealFloat a) => Binary (Complex a) where
   {-# INLINE put #-}
   {-# INLINE get #-}
-  put a = \(x :+ y) -> put x >> put y
+  put = \(x :+ y) -> put x >> put y
   get = (:+) <$> get <*> get

@@ -14,7 +14,7 @@ module Data.Matrix.Sparse
        , fromTriples, (><)
        , transpose, ctrans, hermitian
        , outer
-       , gaxpy_, gaxpy, mulV
+       , axpy_, axpy, mulV
        , lin, add
        , hjoin, hcat, vjoin, vcat
        , fromBlocks, fromBlocksDiag
@@ -44,7 +44,6 @@ import qualified Data.Vector.Algorithms.Intro as Intro
 import qualified Data.Vector.Fusion.Stream as S
 import Data.Vector.Fusion.Stream.Size
 import qualified Data.Vector.Generic as G
-import qualified Data.Vector.Generic.Mutable as GM
 import Data.Vector.Unboxed (Vector, Unbox)
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
@@ -52,8 +51,8 @@ import qualified Data.Vector.Unboxed.Mutable as UM
 import GHC.Stack (errorWithStackTrace)
 
 import Data.Complex.Enhanced
-import Data.Matrix.Sparse.Lin
 import Data.Matrix.Sparse.Mul
+import Data.Matrix.Sparse.ScatterGather
 import Data.Matrix.Sparse.Slice
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util
@@ -88,6 +87,12 @@ instance Unbox a => MonoFoldable (Matrix a) where
   ofoldl1Ex' = \f Matrix {..} -> U.foldl1' f $ snd $ U.unzip entries
 
 instance (Num a, Unbox a) => Num (Matrix a) where
+  {-# INLINE (+) #-}
+  {-# INLINE (-) #-}
+  {-# INLINE (*) #-}
+  {-# INLINE negate #-}
+  {-# INLINE abs #-}
+  {-# INLINE signum #-}
   (+) = add
   (-) = \a b -> lin 1 a (-1) b
   (*) = \a b ->
@@ -213,7 +218,7 @@ dedupInPlace idim _entries = do
                 UM.unsafeWrite ixs r idim
                 x <- UM.unsafeRead xs r
                 x' <- UM.unsafeRead xs w
-                UM.unsafeWrite xs w $! x' + x
+                UM.unsafeWrite xs w (x' + x)
                 dedup_go w (r + 1) (del + 1)
               else dedup_go r (r + 1) del
         | otherwise = return del
@@ -228,7 +233,7 @@ computePtrs n indices = runST $ do
   -- scan the indices once, counting the occurrences of each index
   U.forM_ indices $ \ix -> do
     count <- UM.unsafeRead counts ix
-    UM.unsafeWrite counts ix $! count + 1
+    UM.unsafeWrite counts ix (count + 1)
   -- compute the index pointers by prefix-summing the occurrence counts
   U.scanl (+) 0 <$> U.unsafeFreeze counts
 
@@ -328,11 +333,7 @@ lin a matA b matB
   | nrows matA /= nrows matB = oops "nrows mismatch"
   | ncols matA /= ncols matB = oops "ncols mismatch"
   | otherwise =
-      let (ptrs, ents) =
-            unsafeLin (ncols matA) (nrows matA)
-              a (pointers matA) (entries matA)
-              b (pointers matB) (entries matB)
-      in Matrix
+      Matrix
       { ncols = ncols matA
       , nrows = nrows matA
       , pointers = ptrs
@@ -341,48 +342,95 @@ lin a matA b matB
   where
     oops str = errorWithStackTrace ("lin: " ++ str)
 
+    ptrsA = pointers matA
+    entriesA = entries matA
+    ptrsB = pointers matB
+    entriesB = entries matB
+    odim = ncols matA
+    idim = nrows matA
+
+    (ptrs, ents) = runST $ do
+      _ptrs <- UM.new (odim + 1)
+      UM.unsafeWrite _ptrs 0 0
+
+      -- This may allocate more memory than required (if the matrix patterns
+      -- overlap), but at worst it only allocates min(U.last ptrsA, U.last ptrsB)
+      -- more than required. This is much better than incremental allocation with
+      -- copying!
+      _entries <- UM.new (U.last ptrsA + U.last ptrsB)
+
+      _work <- UM.zip <$> UM.replicate idim False <*> UM.new idim
+
+      let unsafeLin_go n = do
+            let sliceA = unsafeSlice ptrsA n entriesA
+                sliceB = unsafeSlice ptrsB n entriesB
+                dlen = U.length sliceA + U.length sliceB
+
+            -- find the start of the current destination slice
+            start <- UM.unsafeRead _ptrs n
+            let (ixs, xs) = UM.unzip $ UM.slice start dlen _entries
+
+            -- scatter/gather
+            _pop <- unsafeScatter _work a sliceA ixs 0
+            _pop <- unsafeScatter _work b sliceB ixs _pop
+            unsafeGather _work ixs xs _pop
+
+            -- record the start of the next slice
+            UM.unsafeWrite _ptrs (n + 1) (start + _pop)
+
+      U.mapM_ unsafeLin_go $ U.enumFromN 0 odim
+
+      _ptrs <- U.unsafeFreeze _ptrs
+      let nz' = U.last _ptrs
+      _entries <- U.force <$> U.unsafeFreeze (UM.unsafeSlice 0 nz' _entries)
+
+      return (_ptrs, _entries)
+
 add :: (Num a, Unbox a) => Matrix a -> Matrix a -> Matrix a
 {-# INLINE add #-}
 add a b = lin 1 a 1 b
 
-gaxpy_
-  :: (GM.MVector v a, Num a, PrimMonad m, Unbox a)
-  => Matrix a -> v (PrimState m) a -> v (PrimState m) a -> m ()
-{-# INLINE gaxpy_ #-}
-gaxpy_ Matrix {..} xs ys
-  | GM.length xs /= ncols = oops "column dimension does not match operand"
-  | GM.length ys /= nrows = oops "row dimension does not match result"
+axpy_
+  :: (Num a, PrimMonad m, Unbox a)
+  => Matrix a -> MVector (PrimState m) a -> MVector (PrimState m) a -> m ()
+{-# INLINE axpy_ #-}
+axpy_ Matrix {..} xs ys
+  | UM.length xs /= ncols = oops "column dimension does not match operand"
+  | UM.length ys /= nrows = oops "row dimension does not match result"
   | otherwise =
       U.forM_ (U.enumFromN 0 ncols) $ \c -> do
         U.forM_ (unsafeSlice pointers c entries) $ \(r, a) -> do
-          x <- GM.unsafeRead xs c
-          y <- GM.unsafeRead ys r
-          GM.unsafeWrite ys r $! y + a * x
+          x <- UM.unsafeRead xs c
+          y <- UM.unsafeRead ys r
+          UM.unsafeWrite ys r (a * x + y)
   where
     oops str = errorWithStackTrace ("gaxpy_: " ++ str)
 
-gaxpy :: (G.Vector v a, Num a, Unbox a) => Matrix a -> v a -> v a -> v a
-{-# INLINE gaxpy #-}
-gaxpy = \a _x _y -> runST $ do
-  _y <- G.thaw _y
-  _x <- G.unsafeThaw _x
-  gaxpy_ a _x _y
-  G.unsafeFreeze _y
+axpy :: (Num a, Unbox a) => Matrix a -> Vector a -> Vector a -> Vector a
+{-# SPECIALIZE axpy :: Matrix Double -> Vector Double -> Vector Double -> Vector Double #-}
+{-# SPECIALIZE axpy :: Matrix (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
+axpy = \a _x _y -> runST $ do
+  _y <- U.thaw _y
+  _x <- U.unsafeThaw _x
+  axpy_ a _x _y
+  U.unsafeFreeze _y
 
-mulV :: (Num a, G.Vector v a, Unbox a) => Matrix a -> v a -> v a
-{-# INLINE mulV #-}
+mulV :: (Num a, Unbox a) => Matrix a -> Vector a -> Vector a
+{-# SPECIALIZE mulV :: Matrix Double -> Vector Double -> Vector Double #-}
+{-# SPECIALIZE mulV :: Matrix (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
 mulV = \a _x -> runST $ do
-  _x <- G.unsafeThaw _x
-  y <- GM.replicate (nrows a) 0
-  gaxpy_ a _x y
-  G.unsafeFreeze y
+  _x <- U.unsafeThaw _x
+  y <- UM.replicate (nrows a) 0
+  axpy_ a _x y
+  U.unsafeFreeze y
 
 hjoin :: Unbox a => Matrix a -> Matrix a -> Matrix a
 {-# INLINE hjoin #-}
 hjoin a b = hcat [a, b]
 
 hcat :: Unbox a => [Matrix a] -> Matrix a
-{-# INLINE hcat #-}
+{-# SPECIALIZE hcat :: [Matrix Double] -> Matrix Double #-}
+{-# SPECIALIZE hcat :: [Matrix (Complex Double)] -> Matrix (Complex Double) #-}
 hcat mats
   | null mats = oops "empty list"
   | any (/= _nrows) (map nrows mats) = oops "nrows mismatch"
@@ -403,7 +451,8 @@ vjoin :: Unbox a => Matrix a -> Matrix a -> Matrix a
 vjoin a b = vcat [a, b]
 
 vcat :: Unbox a => [Matrix a] -> Matrix a
-{-# INLINE vcat #-}
+{-# SPECIALIZE vcat :: [Matrix Double] -> Matrix Double #-}
+{-# SPECIALIZE vcat :: [Matrix (Complex Double)] -> Matrix (Complex Double) #-}
 vcat mats
   | null mats = oops "empty list"
   | any (/= _ncols) (map ncols mats) = oops "ncols mismatch"
