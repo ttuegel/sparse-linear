@@ -416,14 +416,14 @@ axpy = \a _x _y -> runST $ do
   axpy_ a _x _y
   U.unsafeFreeze _y
 
-mulV :: (Num a, Unbox a) => Matrix a -> Vector a -> Vector a
+mulV :: (G.Vector v a, Num a, Unbox a) => Matrix a -> v a -> v a
 {-# SPECIALIZE mulV :: Matrix Double -> Vector Double -> Vector Double #-}
 {-# SPECIALIZE mulV :: Matrix (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
 mulV = \a _x -> runST $ do
-  _x <- U.unsafeThaw _x
-  y <- UM.replicate (nrows a) 0
+  _x <- G.unsafeThaw _x
+  y <- GM.replicate (nrows a) 0
   axpy_ a _x y
-  U.unsafeFreeze y
+  G.unsafeFreeze y
 
 hjoin :: Unbox a => Matrix a -> Matrix a -> Matrix a
 {-# INLINE hjoin #-}
