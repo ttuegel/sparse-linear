@@ -16,7 +16,7 @@ import Data.Vector.Util (increasing, nondecreasing)
 instance (Arbitrary a, Unbox a) => Arbitrary (Vector a) where
     arbitrary = fmap V.fromList $ suchThat arbitrary $ \v -> length v > 0
 
-instance (Arbitrary a, Num a, Orient or, Unbox a) => Arbitrary (Matrix or a) where
+instance (Arbitrary a, Num a, Unbox a) => Arbitrary (Matrix a) where
     arbitrary = do
       nr <- arbitrary `suchThat` (> 0)
       let nc = nr
@@ -27,30 +27,30 @@ instance (Arbitrary a, Num a, Orient or, Unbox a) => Arbitrary (Matrix or a) whe
         return (r, c, x)
       return $ fromTriples nr nc triples
 
-prop_pointersNondecreasing :: Matrix or a -> Bool
+prop_pointersNondecreasing :: Matrix a -> Bool
 prop_pointersNondecreasing Matrix{..} = nondecreasing pointers
 
-prop_pointersLength :: Matrix or a -> Bool
-prop_pointersLength Matrix{..} = V.length pointers == odim + 1
+prop_pointersLength :: Matrix a -> Bool
+prop_pointersLength Matrix{..} = V.length pointers == ncols + 1
 
-prop_valuesLength :: Unbox a => Matrix or a -> Bool
+prop_valuesLength :: Unbox a => Matrix a -> Bool
 prop_valuesLength Matrix{..} =
   V.length entries == fromIntegral (V.last pointers)
 
-prop_indicesIncreasing :: Unbox a => Matrix or a -> Bool
+prop_indicesIncreasing :: Unbox a => Matrix a -> Bool
 prop_indicesIncreasing mat =
   all (increasing . fst . V.unzip . S.entries)
-  $ map (slice mat) [0..(odim mat - 1)]
+  $ map (slice mat) [0..(ncols mat - 1)]
 
-prop_indicesNonNegative :: Unbox a => Matrix or a -> Bool
+prop_indicesNonNegative :: Unbox a => Matrix a -> Bool
 prop_indicesNonNegative = V.all (>= 0) . fst . V.unzip . entries
 
-prop_indicesInRange :: Unbox a => Matrix or a -> Bool
-prop_indicesInRange Matrix{..} = V.all (< idim) $ fst $ V.unzip entries
+prop_indicesInRange :: Unbox a => Matrix a -> Bool
+prop_indicesInRange Matrix{..} = V.all (< nrows) $ fst $ V.unzip entries
 
 checkFunMat1
-  :: (Arbitrary a, Num a, Orient or, Orient or', Show a, Unbox a)
-  => (Matrix or a -> Matrix or' a) -> SpecWith ()
+  :: (Arbitrary a, Num a, Show a, Unbox a)
+  => (Matrix a -> Matrix a) -> SpecWith ()
 checkFunMat1 f = do
   it "nondecreasing pointers" $ property $ prop_pointersNondecreasing . f
   it "pointers length" $ property $ prop_pointersLength . f
@@ -60,8 +60,8 @@ checkFunMat1 f = do
   it "indices < dim" $ property $ prop_indicesInRange . f
 
 checkFunMat2
-  :: (Arbitrary a, Num a, Orient or, Show a, Unbox a)
-  => (Matrix or a -> Matrix or a -> Matrix or a) -> SpecWith ()
+  :: (Arbitrary a, Num a, Show a, Unbox a)
+  => (Matrix a -> Matrix a -> Matrix a) -> SpecWith ()
 checkFunMat2 f = do
   it "nondecreasing pointers" $ property $ \a b ->
     prop_pointersNondecreasing (f a b)

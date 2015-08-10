@@ -16,23 +16,20 @@ library
     Numeric.LinearAlgebra.Umfpack
     Numeric.LinearAlgebra.Umfpack.Internal
   build-depends:
-      base >=4.7 && <4.8
-    , hmatrix >=0.16 && <1
-    , mono-traversable >=0.6 && <1
-    , primitive >=0.5 && <1
-    , sparse-linear >=0.1 && <1
-    , vector >=0.10 && <1
-    , vector-algorithms >=0.6 && <1
+      base >= 4.7 && < 5
+    , hmatrix >= 0.16 && < 1
+    , mono-traversable >= 0.6 && < 1
+    , primitive >= 0.5 && < 1
+    , sparse-linear >= 0.1 && < 1
+    , vector >= 0.10 && < 1
+    , vector-algorithms >= 0.6 && < 1
   hs-source-dirs: src
   default-language: Haskell2010
   ghc-options: -Wall
   ghc-prof-options: -fprof-auto
   extra-libraries:
-    umfpack
-    suitesparseconfig
-    amd
-    cholmod
-    colamd
+    openblas
+    suitesparse
 
 test-suite test-umfpack
   type: exitcode-stdio-1.0

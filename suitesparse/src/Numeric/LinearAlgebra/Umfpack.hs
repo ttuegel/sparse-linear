@@ -35,7 +35,7 @@ import Numeric.LinearAlgebra.Umfpack.Internal
 -- Simple interface
 -- ------------------------------------------------------------------------
 
-linearSolve :: (Vector v a, Umfpack a) => Matrix Col a -> [v a] -> [v a]
+linearSolve :: (Vector v a, Umfpack a) => Matrix a -> [v a] -> [v a]
 {-# INLINE linearSolve #-}
 linearSolve mat@Matrix{..} bs =
   unsafePerformIO $ do
@@ -45,7 +45,7 @@ linearSolve mat@Matrix{..} bs =
       linearSolve_ fact UmfpackNormal mat _b
     map V.convert <$> mapM V.unsafeFreeze xs
 
-(<\>) :: (Vector v a, Umfpack a) => Matrix Col a -> v a -> v a
+(<\>) :: (Vector v a, Umfpack a) => Matrix a -> v a -> v a
 {-# INLINE (<\>) #-}
 (<\>) mat b = head $ linearSolve mat [b]
 
@@ -57,7 +57,7 @@ newtype Analysis a = Analysis { fsym :: ForeignPtr (Symbolic a) }
 
 newtype Factors a = Factors { fnum :: ForeignPtr (Numeric a) }
 
-analyze :: Umfpack a => Matrix Col a -> Analysis a
+analyze :: Umfpack a => Matrix a -> Analysis a
 {-# INLINE analyze #-}
 analyze mat = unsafePerformIO $ withConstMatrix mat $ \m n p i x -> do
   sym <- malloc
@@ -68,7 +68,7 @@ analyze mat = unsafePerformIO $ withConstMatrix mat $ \m n p i x -> do
 
   return Analysis{..}
 
-factor :: Umfpack a => Matrix Col a -> Analysis a -> Factors a
+factor :: Umfpack a => Matrix a -> Analysis a -> Factors a
 {-# INLINE factor #-}
 factor mat Analysis{..} =
   unsafePerformIO $ withConstMatrix mat $ \_ _ p i x -> do
@@ -86,11 +86,11 @@ data UmfpackMode = UmfpackNormal | UmfpackTrans
 
 linearSolve_
   :: Umfpack a
-  => Factors a -> UmfpackMode -> Matrix Col a -> IOVector a -> IO (IOVector a)
+  => Factors a -> UmfpackMode -> Matrix a -> IOVector a -> IO (IOVector a)
 {-# INLINE linearSolve_ #-}
 linearSolve_ fact mode mat@Matrix{..} _b =
   withConstMatrix mat $ \_ _ p i x -> do
-    _soln <- MV.replicate odim 0
+    _soln <- MV.replicate ncols 0
     _ <- MV.unsafeWith _b $ \_b -> MV.unsafeWith _soln $ \_soln -> do
       let m = case mode of
                 UmfpackNormal -> 0

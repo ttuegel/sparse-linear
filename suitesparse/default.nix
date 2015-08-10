@@ -1,6 +1,6 @@
-{ mkDerivation, amd, base, cholmod, colamd, hmatrix, hspec
-, mono-traversable, primitive, QuickCheck, sparse-linear, stdenv
-, suitesparseconfig, umfpack, vector, vector-algorithms
+{ mkDerivation, base, hmatrix, hspec, mono-traversable, openblas
+, primitive, QuickCheck, sparse-linear, stdenv, suitesparse, vector
+, vector-algorithms
 }:
 mkDerivation {
   pname = "suitesparse";
@@ -11,7 +11,7 @@ mkDerivation {
     vector-algorithms
   ];
   testDepends = [ base hspec QuickCheck sparse-linear vector ];
-  extraLibraries = [ amd cholmod colamd suitesparseconfig umfpack ];
+  extraLibraries = [ openblas suitesparse ];
   description = "Haskell bindings to the SuiteSparse library of sparse linear algebra routines";
   license = stdenv.lib.licenses.gpl2;
 }

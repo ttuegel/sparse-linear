@@ -63,7 +63,7 @@ class (Num a, Storable a, Unbox a) => Umfpack a where
     umfpack_solve :: UmfpackSolve a
     umfpack_free_symbolic :: FinalizerPtr (Symbolic a)
     umfpack_free_numeric :: FinalizerPtr (Numeric a)
-    umfpack_report_status :: Matrix or a -> UmfpackReport
+    umfpack_report_status :: Matrix a -> UmfpackReport
 
 foreign import ccall "umfpack.h umfpack_zi_symbolic"
   umfpack_zi_symbolic

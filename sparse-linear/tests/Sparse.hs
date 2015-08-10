@@ -24,10 +24,11 @@ import Test.LinearAlgebra
   && nrows a == nrows b
   && pointers a == pointers b
   && indices a == indices b
-  && V.all (< 1E-10) (V.map (\x -> 1 - mag x) $ V.zipWith (/) (values a) (values b))
+  && V.and (V.zipWith (\x y -> x == y || x `closeEnoughTo` y) (values a) (values b))
   where
     indices = fst . V.unzip . entries
     values = snd . V.unzip . entries
+    closeEnoughTo x y = mag (x - y) / mag (x + y) < 1E-10
 
 main :: IO ()
 main = hspec $ do
