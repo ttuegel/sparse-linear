@@ -55,7 +55,7 @@ eigSH
   :: (Feast a)
   => Int
   -> (RealOf a, RealOf a)
-  -> Matrix Col a
+  -> Matrix a
   -> (Vector (RealOf a), Dense.Matrix a)
 {-# INLINE eigSH #-}
 eigSH = eigSHParams defaultFeastParams
@@ -64,8 +64,8 @@ geigSH
   :: (Feast a)
   => Int
   -> (RealOf a, RealOf a)
-  -> Matrix Col a
-  -> Matrix Col a
+  -> Matrix a
+  -> Matrix a
   -> (Vector (RealOf a), Dense.Matrix a)
 {-# INLINE geigSH #-}
 geigSH = geigSHParams defaultFeastParams
@@ -94,19 +94,19 @@ eigSHParams
   => FeastParams
   -> Int
   -> (RealOf a, RealOf a)
-  -> Matrix Col a
+  -> Matrix a
   -> (Vector (RealOf a), Dense.Matrix a)
 {-# INLINE eigSHParams #-}
 eigSHParams = \params m0 bounds matA ->
-  geigSHParams params m0 bounds matA (ident (odim matA))
+  geigSHParams params m0 bounds matA (ident (ncols matA))
 
 geigSHParams
   :: Feast a
   => FeastParams
   -> Int
   -> (RealOf a, RealOf a)
-  -> Matrix Col a
-  -> Matrix Col a
+  -> Matrix a
+  -> Matrix a
   -> (Vector (RealOf a), Dense.Matrix a)
 {-# INLINE geigSHParams #-}
 geigSHParams = \params m0 bounds matA matB ->
@@ -118,18 +118,18 @@ geigSH_
   => FeastParams
   -> Int -> (RealOf a, RealOf a)
   -> Maybe (Dense.Matrix a) -- ^ subspace guess
-  -> Matrix Col a -> Matrix Col a
+  -> Matrix a -> Matrix a
   -> (Int, Vector (RealOf a), Dense.Matrix a)
 {-# INLINE geigSH_ #-}
 geigSH_ FeastParams{..} !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
-  n = odim matA
+  n = ncols matA
   m0' = maybe m0 Dense.cols guess
   n' = maybe n Dense.rows guess
 
   geigSH_go
     | not (hermitian matA) = error "geigSH: matrix A not hermitian"
     | not (hermitian matB) = error "geigSH: matrix B not hermitian"
-    | odim matA /= odim matB = error "geigSH: matrix sizes do not match"
+    | ncols matA /= ncols matB = error "geigSH: matrix sizes do not match"
     | m0 /= m0' = error "geigSH: subspace guess has wrong column dimension"
     | n /= n' = error "geigSH: subspace guess has wrong row dimension"
     | otherwise = unsafePerformIO $ lock $
@@ -205,7 +205,7 @@ geigSH_ FeastParams{..} !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go wher
                 ndrop <- (+ (-1)) . fromIntegral <$> MV.unsafeRead fpm 23
                 ntake <- fromIntegral <$> MV.unsafeRead fpm 24
                 parMapM_
-                  (\(!dst, !x) -> MV.set dst 0 >> gaxpy_ mat x dst)
+                  (\(!dst, !x) -> MV.set dst 0 >> axpy_ mat x dst)
                   (take ntake (drop ndrop (zip _work1 _eigenvectors)))
 
               -- the shape of the result never changes, so the symbolic

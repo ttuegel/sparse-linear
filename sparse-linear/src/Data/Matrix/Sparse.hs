@@ -44,6 +44,7 @@ import qualified Data.Vector.Algorithms.Intro as Intro
 import qualified Data.Vector.Fusion.Stream as S
 import Data.Vector.Fusion.Stream.Size
 import qualified Data.Vector.Generic as G
+import qualified Data.Vector.Generic.Mutable as GM
 import Data.Vector.Unboxed (Vector, Unbox)
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
@@ -391,20 +392,20 @@ add :: (Num a, Unbox a) => Matrix a -> Matrix a -> Matrix a
 add a b = lin 1 a 1 b
 
 axpy_
-  :: (Num a, PrimMonad m, Unbox a)
-  => Matrix a -> MVector (PrimState m) a -> MVector (PrimState m) a -> m ()
+  :: (GM.MVector v a, Num a, PrimMonad m, Unbox a)
+  => Matrix a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 {-# INLINE axpy_ #-}
 axpy_ Matrix {..} xs ys
-  | UM.length xs /= ncols = oops "column dimension does not match operand"
-  | UM.length ys /= nrows = oops "row dimension does not match result"
+  | GM.length xs /= ncols = oops "column dimension does not match operand"
+  | GM.length ys /= nrows = oops "row dimension does not match result"
   | otherwise =
       U.forM_ (U.enumFromN 0 ncols) $ \c -> do
         U.forM_ (unsafeSlice pointers c entries) $ \(r, a) -> do
-          x <- UM.unsafeRead xs c
-          y <- UM.unsafeRead ys r
-          UM.unsafeWrite ys r (a * x + y)
+          x <- GM.unsafeRead xs c
+          y <- GM.unsafeRead ys r
+          GM.unsafeWrite ys r (a * x + y)
   where
-    oops str = errorWithStackTrace ("gaxpy_: " ++ str)
+    oops str = errorWithStackTrace ("axpy_: " ++ str)
 
 axpy :: (Num a, Unbox a) => Matrix a -> Vector a -> Vector a -> Vector a
 {-# SPECIALIZE axpy :: Matrix Double -> Vector Double -> Vector Double -> Vector Double #-}

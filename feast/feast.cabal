@@ -15,7 +15,7 @@ library
     Numeric.LinearAlgebra.Feast
     Numeric.LinearAlgebra.Feast.Internal
   build-depends:
-      base >=4.7 && <4.8
+      base >= 4.7 && < 5
     , global-lock >=0.1 && <1
     , hmatrix >=0.16 && <1
     , mtl >= 2.1 && <3
@@ -31,11 +31,8 @@ library
   ghc-prof-options: -fprof-auto
   extra-libraries:
     feast
-    lapack
-    ptf77blas
-    ptcblas
-    atlas
     gfortran
+    openblas
 
 test-suite test-feast
   type: exitcode-stdio-1.0
