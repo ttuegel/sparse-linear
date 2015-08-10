@@ -1,14 +1,13 @@
-{ mkDerivation, base, binary, hspec, mono-traversable, primitive
-, QuickCheck, stdenv, storable-complex, tagged, vector
-, vector-algorithms
+{ mkDerivation, base, base-orphans, binary, hspec, mono-traversable
+, primitive, QuickCheck, stdenv, tagged, vector, vector-algorithms
 }:
 mkDerivation {
   pname = "sparse-linear";
   version = "0.1.0.0";
   src = ./.;
   buildDepends = [
-    base binary mono-traversable primitive storable-complex tagged
-    vector vector-algorithms
+    base base-orphans binary mono-traversable primitive tagged vector
+    vector-algorithms
   ];
   testDepends = [ base hspec mono-traversable QuickCheck vector ];
   description = "Sparse linear algebra primitives in Haskell";

@@ -15,7 +15,7 @@ import Control.Applicative
 #endif
 import Data.Binary (Binary(..))
 import Data.Complex
-import Foreign.Storable.Complex ()
+import Data.Orphans ()
 
 type family RealOf a where
   RealOf (Complex a) = a
