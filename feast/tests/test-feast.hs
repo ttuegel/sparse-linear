@@ -14,7 +14,8 @@ main = hspec $ do
     it "ident :: Matrix Col (Complex Double)" $ do
       let m :: Matrix (Complex Double)
           m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
-          eigenvalues = fst $ eigSH 2 (0, 4) m
+          params = defaultFeastParams { feastDebug = True }
+          eigenvalues = fst $ eigSHParams params 2 (0, 4) m
           correct = V.fromList [1, 3]
       V.length eigenvalues `shouldBe` V.length correct
       V.all (< 1E-12) (V.map abs $ V.zipWith (-) eigenvalues correct) `shouldBe` True
