@@ -31,8 +31,6 @@ library
   ghc-prof-options: -fprof-auto
   extra-libraries:
     feast
-    gfortran
-    openblas
 
 test-suite test-feast
   type: exitcode-stdio-1.0
