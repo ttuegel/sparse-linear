@@ -24,6 +24,7 @@ library
       base >=4.6 && <4.9
     , base-orphans >= 0.4 && < 1
     , binary ==0.7.*
+    , hmatrix >=0.16 && <1
     , mono-traversable >=0.6 && <1
     , primitive >=0.5 && <1
     , tagged >=0.7 && <1

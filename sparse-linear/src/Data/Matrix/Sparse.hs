@@ -21,6 +21,7 @@ module Data.Matrix.Sparse
        , kronecker
        , takeDiag, diag
        , ident, zeros
+       , pack
        , module Data.Complex.Enhanced
        ) where
 
@@ -49,7 +50,9 @@ import Data.Vector.Unboxed (Vector, Unbox)
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
 import qualified Data.Vector.Unboxed.Mutable as UM
+import Foreign.Storable (Storable)
 import GHC.Stack (errorWithStackTrace)
+import qualified Numeric.LinearAlgebra.HMatrix as Dense
 
 import Data.Complex.Enhanced
 import Data.Matrix.Sparse.Mul
@@ -588,3 +591,14 @@ zeros nrows ncols = Matrix {..}
     indices = U.empty
     values = U.empty
     entries = U.zip indices values
+
+pack :: (Dense.Container Dense.Vector a, Num a, Storable a, Unbox a) => Matrix a -> Dense.Matrix a
+{-# INLINE pack #-}
+pack Matrix {..} =
+  Dense.assoc (nrows, ncols) 0 $ do
+    c <- [0..(ncols - 1)]
+    begin <- U.unsafeIndexM pointers c
+    end <- U.unsafeIndexM pointers (c + 1)
+    let len = end - begin
+        col = U.slice begin len entries
+    U.toList (U.map (\(r, x) -> ((r, c), x)) col)
