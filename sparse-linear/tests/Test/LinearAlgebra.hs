@@ -29,7 +29,7 @@ arbitraryMatrix
   :: (Arbitrary a, Num a, Unbox a)
   => Int -> Int -> Gen (Matrix a)
 arbitraryMatrix nr nc = do
-  triples <- vectorOf (nr * nc `div` 4) $ do
+  triples <- vectorOf (nr * nc `div` 4 + 1) $ do
     r <- choose (0, nr - 1)
     c <- choose (0, nc - 1)
     x <- arbitrary
