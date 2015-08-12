@@ -587,10 +587,10 @@ diag values = Matrix{..}
     indices = U.iterateN ncols (+1) 0
     entries = U.zip indices values
 
-blockDiag :: (Num a, Unbox a) => [Maybe (Matrix a)] -> Matrix a
+blockDiag :: (Num a, Unbox a) => [Matrix a] -> Matrix a
 {-# INLINE blockDiag #-}
 blockDiag mats
-  = fromBlocksDiag (mats : replicate (len - 1) (replicate len Nothing))
+  = fromBlocksDiag ((Just <$> mats) : replicate (len - 1) (replicate len Nothing))
   where
     len = length mats
 
