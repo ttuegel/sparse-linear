@@ -9,7 +9,7 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.Matrix.Sparse
-       ( Matrix(..), cmap, nonZero, slice
+       ( Matrix(..), cmap, scale, nonZero, slice
        , compress, decompress, dedupInPlace
        , fromTriples, (><)
        , transpose, ctrans, hermitian
@@ -127,6 +127,10 @@ cmap :: (Unbox a, Unbox b) => (a -> b) -> Matrix a -> Matrix b
 cmap = \f m ->
   let (indices, values) = U.unzip $ entries m
   in m { entries = U.zip indices $ U.map f values }
+
+scale :: (Num a, Unbox a) => a -> Matrix a -> Matrix a
+{-# INLINE scale #-}
+scale = \x -> cmap (* x)
 
 slice :: Unbox a => Matrix a -> Int -> S.Vector a
 {-# INLINE slice #-}
