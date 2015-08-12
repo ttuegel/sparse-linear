@@ -472,9 +472,10 @@ vcat mats
       , entries = U.create $ do
           _entries <- UM.new (U.last _pointers)
           ccount <- U.thaw (U.init _pointers)
-          F.forM_ mats $ \Matrix {..} -> do
+          F.forM_ (zip mats rowOffsets) $ \(Matrix {..}, rowOff) -> do
             U.forM_ (U.enumFromN 0 ncols) $ \c -> do
-              let sl = unsafeSlice pointers c entries
+              let sl = U.map (\(row, x) -> (rowOff + row, x))
+                       (unsafeSlice pointers c entries)
               dst <- UM.unsafeRead ccount c
               U.copy (UM.slice dst (U.length sl) _entries) sl
               UM.unsafeWrite ccount c (dst + U.length sl)
@@ -484,6 +485,9 @@ vcat mats
     oops str = errorWithStackTrace ("vcat: " ++ str)
     _ncols = ncols (head mats)
     _pointers = F.foldr1 (U.zipWith (+)) (map pointers mats)
+    -- when concatenating matrices vertically, their row indices must be
+    -- offset according to their position in the final matrix
+    rowOffsets = L.scanl' (+) 0 (map nrows mats)
 
 fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix a)]] -> Matrix a
 {-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Double)]] -> Matrix Double #-}
