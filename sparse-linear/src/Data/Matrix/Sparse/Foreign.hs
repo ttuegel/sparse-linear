@@ -42,45 +42,39 @@ fromForeign
   => Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr a -> IO (Matrix a)
 {-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO (Matrix Double) #-}
 {-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO (Matrix (Complex Double)) #-}
-fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals = do
-  _ptrs <- if copy
-           then do _ptrs <- mallocArray (ncols + 1)
-                   copyArray _ptrs ptrs (ncols + 1)
-                   return _ptrs
-           else return ptrs
-  _ptrs <- newForeignPtr finalizerFree _ptrs
+fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals
+  = do
+    let maybeCopyArray src len
+          | copy = do
+              dst <- mallocArray len
+              copyArray dst src len
+              return dst
+          | otherwise = return src
+        toForeignPtr src len
+          = maybeCopyArray src len >>= newForeignPtr finalizerFree
 
-  let pointers = U.convert . VS.map fromIntegral
-                 $ VS.unsafeFromForeignPtr0 _ptrs (ncols + 1)
-      nz = U.last pointers
+    let nptrs = ncols + 1
+    _ptrs <- toForeignPtr ptrs nptrs
+    let pointers
+          = (U.convert . VS.map fromIntegral)
+            (VS.unsafeFromForeignPtr0 _ptrs nptrs)
 
-  _rows <- if copy
-           then do _rows <- mallocArray nz
-                   copyArray _rows rows nz
-                   return _rows
-           else return rows
-  _rows <- newForeignPtr finalizerFree _rows
-  _rows <- U.unsafeThaw
-           $ U.convert . VS.map fromIntegral
-           $ VS.unsafeFromForeignPtr0 _rows nz
+    let nz = U.last pointers
+    _rows <- toForeignPtr rows nz
+    _rows <- (U.unsafeThaw . U.convert . VS.map fromIntegral)
+             (VS.unsafeFromForeignPtr0 _rows nz)
 
-  _vals <- if copy
-           then do _vals <- mallocArray nz
-                   copyArray _vals vals nz
-                   return _vals
-           else return vals
-  _vals <- newForeignPtr finalizerFree _vals
-  _vals <- U.unsafeThaw
-           $ U.convert
-           $ VS.unsafeFromForeignPtr0 _vals nz
+    _vals <- toForeignPtr vals nz
+    _vals <- (U.unsafeThaw . U.convert)
+             (VS.unsafeFromForeignPtr0 _vals nz)
 
-  let _entries = UM.zip _rows _vals
+    let _entries = UM.zip _rows _vals
 
-  U.forM_ (U.enumFromN 0 ncols) $ \m -> do
-    start <- U.unsafeIndexM pointers m
-    end <- U.unsafeIndexM pointers (m + 1)
-    let len = end - start
-    dedupInPlace nrows $ UM.unsafeSlice start len _entries
+    U.forM_ (U.enumFromN 0 ncols) $ \m -> do
+      start <- U.unsafeIndexM pointers m
+      end <- U.unsafeIndexM pointers (m + 1)
+      let len = end - start
+      dedupInPlace nrows (UM.unsafeSlice start len _entries)
 
-  entries <- U.unsafeFreeze _entries
-  return Matrix {..}
+    entries <- U.unsafeFreeze _entries
+    return Matrix {..}
