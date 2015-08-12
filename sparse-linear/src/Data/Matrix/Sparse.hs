@@ -19,7 +19,7 @@ module Data.Matrix.Sparse
        , hjoin, hcat, vjoin, vcat
        , fromBlocks, fromBlocksDiag
        , kronecker
-       , takeDiag, diag
+       , takeDiag, diag, blockDiag
        , ident, zeros
        , pack
        , module Data.Complex.Enhanced
@@ -582,6 +582,13 @@ diag values = Matrix{..}
     pointers = U.iterateN (ncols + 1) (+1) 0
     indices = U.iterateN ncols (+1) 0
     entries = U.zip indices values
+
+blockDiag :: (Num a, Unbox a) => [Maybe (Matrix a)] -> Matrix a
+{-# INLINE blockDiag #-}
+blockDiag mats
+  = fromBlocksDiag (mats : replicate (len - 1) (replicate len Nothing))
+  where
+    len = length mats
 
 ident :: (Num a, Unbox a) => Int -> Matrix a
 {-# INLINE ident #-}
