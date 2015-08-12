@@ -7,7 +7,6 @@ module Data.Matrix.Sparse.Foreign
        , fromForeign
        ) where
 
-import Data.Vector.Unboxed (Unbox)
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Unboxed.Mutable as UM
 import Data.Vector.Storable (Storable)

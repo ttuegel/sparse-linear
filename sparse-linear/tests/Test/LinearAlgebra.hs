@@ -5,7 +5,7 @@
 module Test.LinearAlgebra where
 
 import qualified Data.Vector.Generic as V
-import Data.Vector.Unboxed (Vector, Unbox)
+import Data.Vector.Unboxed (Vector)
 import Test.Hspec
 import Test.QuickCheck hiding ((><))
 

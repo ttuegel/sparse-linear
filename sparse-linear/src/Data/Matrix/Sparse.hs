@@ -22,7 +22,7 @@ module Data.Matrix.Sparse
        , takeDiag, diag, blockDiag
        , ident, zeros
        , pack
-       , module Data.Complex.Enhanced
+       , Unbox, module Data.Complex.Enhanced
        ) where
 
 #if __GLASGOW_HASKELL__ < 710
