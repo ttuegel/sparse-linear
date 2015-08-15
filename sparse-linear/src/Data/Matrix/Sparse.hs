@@ -499,14 +499,16 @@ vcat mats
       , pointers = _pointers
       , entries = U.create $ do
           _entries <- UM.new (U.last _pointers)
-          ccount <- U.thaw (U.init _pointers)
-          F.forM_ (zip mats rowOffsets) $ \(Matrix {..}, rowOff) -> do
+          F.forM_ (zip mats offsets) $ \(Matrix {..}, off) -> do
             U.forM_ (U.enumFromN 0 ncols) $ \c -> do
-              let sl = U.map (\(row, x) -> (rowOff + row, x))
-                       (unsafeSlice pointers c entries)
-              dst <- UM.unsafeRead ccount c
-              U.copy (UM.slice dst (U.length sl) _entries) sl
-              UM.unsafeWrite ccount c (dst + U.length sl)
+              start <- U.unsafeIndexM _pointers c
+              end <- U.unsafeIndexM _pointers (c + 1)
+              let len = end - start
+                  dst = UM.slice start len _entries
+                  copyWithOffset !ix (row, x) = do
+                    UM.unsafeWrite dst ix (row + off, x)
+                    return (ix + 1)
+              S.foldM copyWithOffset 0 (streamSlice pointers c entries)
           return _entries
       }
   where
@@ -515,7 +517,7 @@ vcat mats
     _pointers = F.foldr1 (U.zipWith (+)) (map pointers mats)
     -- when concatenating matrices vertically, their row indices must be
     -- offset according to their position in the final matrix
-    rowOffsets = L.scanl' (+) 0 (map nrows mats)
+    offsets = L.scanl' (+) 0 (map nrows mats)
 
 fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix a)]] -> Matrix a
 {-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Double)]] -> Matrix Double #-}
