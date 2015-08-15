@@ -212,6 +212,36 @@ main = hspec $ do
       checkMatrixZ arbitraryMul
 
     describe "fromBlocksDiag" $ do
+
+      it "assembles identity matrices" $ property $ do
+        m <- arbdim
+        n <- arbdim
+        let assembled = fromBlocksDiag
+                        [ [Just (ident m), Just (ident n)]
+                        , [Nothing, Nothing]
+                        ]
+        return $ assembled === (ident (m + n) :: Matrix Double)
+
+      let arbSymBlock
+            :: (Arbitrary a, Eq a, Fractional a, Fractional (RealOf a), IsReal a, Num a, Num (Matrix a), Ord (RealOf a), Show a, Unbox a, Unbox (RealOf a))
+            => Matrix a -> Gen Property
+          arbSymBlock arbMN = do
+            arbM <- arbitraryMatrix (nrows arbMN) (nrows arbMN)
+            arbN <- arbitraryMatrix (ncols arbMN) (ncols arbMN)
+            let arbSymM = arbM + ctrans arbM
+                arbSymN = arbN + ctrans arbN
+                assembled = fromBlocksDiag
+                            [ [Just arbSymM, Just arbSymN]
+                            , [Just arbMN, Just (ctrans arbMN)]
+                            ]
+            return $ assembled === ctrans assembled
+
+      it "symmetric blockwise :: Matrix Double"
+        $ property (arbSymBlock :: Matrix Double -> Gen Property)
+
+      it "symmetric blockwise :: Matrix (Complex Double)"
+        $ property (arbSymBlock :: Matrix (Complex Double) -> Gen Property)
+
       let arbitraryFromBlocksDiag :: (Arbitrary a, Num a, Unbox a) => Gen (Matrix a)
           arbitraryFromBlocksDiag = do
             n <- arbdim
