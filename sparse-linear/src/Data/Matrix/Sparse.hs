@@ -43,7 +43,9 @@ import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import Data.Ord (comparing)
 import qualified Data.Vector.Algorithms.Intro as Intro
 import qualified Data.Vector.Fusion.Stream as S
+import Data.Vector.Fusion.Stream.Monadic (Stream(..), Step(..))
 import Data.Vector.Fusion.Stream.Size
+import Data.Vector.Fusion.Util (Id(..))
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
 import Data.Vector.Unboxed (Vector, Unbox)
@@ -337,66 +339,92 @@ hermitian m = (ctrans m) == m
 lin :: (Num a, Unbox a) => a -> Matrix a -> a -> Matrix a -> Matrix a
 {-# SPECIALIZE lin :: Double -> Matrix Double -> Double -> Matrix Double -> Matrix Double #-}
 {-# SPECIALIZE lin :: (Complex Double) -> Matrix (Complex Double) -> (Complex Double) -> Matrix (Complex Double) -> Matrix (Complex Double) #-}
-lin a matA b matB
+lin a matA b matB = add (cmap (* a) matA) (cmap (* b) matB)
+
+add :: (Num a, Unbox a) => Matrix a -> Matrix a -> Matrix a
+{-# INLINE add #-}
+add matA matB
   | nrows matA /= nrows matB = oops "nrows mismatch"
   | ncols matA /= ncols matB = oops "ncols mismatch"
   | otherwise =
       Matrix
       { ncols = ncols matA
       , nrows = nrows matA
-      , pointers = ptrs
-      , entries = ents
+      , pointers = _pointers
+      , entries = _entries
       }
   where
-    oops str = errorWithStackTrace ("lin: " ++ str)
+    oops str = errorWithStackTrace ("add: " ++ str)
 
-    ptrsA = pointers matA
     entriesA = entries matA
-    ptrsB = pointers matB
     entriesB = entries matB
+    ptrsA = pointers matA
+    ptrsB = pointers matB
     odim = ncols matA
     idim = nrows matA
 
-    (ptrs, ents) = runST $ do
-      _ptrs <- UM.new (odim + 1)
-      UM.unsafeWrite _ptrs 0 0
+    _pointers =
+      let count2 :: (s -> Id (Step s Int)) -> Either s (Step s Int)
+                 -> (t -> Id (Step t Int)) -> Either t (Step t Int)
+                 -> Int -> Id Int
+          count2 nextA tokA nextB tokB !n = do
+            stepA <- either nextA return tokA
+            case stepA of
+              Done -> count1 nextB tokB n
+              Skip tokA' -> count2 nextA (Left tokA') nextB tokB n
+              Yield a tokA' -> do
+                stepB <- either nextB return tokB
+                case stepB of
+                  Done -> count1 nextA (Left tokA') (n + 1)
+                  Skip tokB' -> count2 nextA (Right stepA) nextB (Left tokB') n
+                  Yield b tokB' ->
+                    case compare a b of
+                      LT -> count2 nextA (Left tokA') nextB (Right stepB) (n + 1)
+                      EQ -> count2 nextA (Left tokA') nextB (Left tokB') (n + 1)
+                      GT -> count2 nextA (Right stepA) nextB (Left tokB') (n + 1)
 
-      -- This may allocate more memory than required (if the matrix patterns
-      -- overlap), but at worst it only allocates min(U.last ptrsA, U.last ptrsB)
-      -- more than required. This is much better than incremental allocation with
-      -- copying!
-      _entries <- UM.new (U.last ptrsA + U.last ptrsB)
+          count1 :: (s -> Id (Step s Int)) -> Either s (Step s Int)
+                 -> Int -> Id Int
+          count1 next tok !n = do
+            step <- either next return tok
+            case step of
+              Yield _ tok' -> count1 next (Left tok') (n + 1)
+              Skip tok' -> count1 next (Left tok') n
+              Done -> return n
+
+          countColumn :: Int -> Id Int
+          countColumn n =
+            case (streamSlice ptrsA n . fst . U.unzip) entriesA of
+              Stream nextA tokA _ ->
+                case (streamSlice ptrsB n . fst . U.unzip) entriesB of
+                  Stream nextB tokB _ ->
+                    count2 nextA (Left tokA) nextB (Left tokB) 0
+
+      in unId (U.scanl' (+) 0 <$> U.generateM (ncols matA) countColumn)
+
+    _entries = runST $ do
+      _entries <- UM.new (U.last _pointers)
 
       _work <- UM.zip <$> UM.replicate idim False <*> UM.new idim
 
       let unsafeLin_go n = do
             let sliceA = unsafeSlice ptrsA n entriesA
                 sliceB = unsafeSlice ptrsB n entriesB
-                dlen = U.length sliceA + U.length sliceB
 
-            -- find the start of the current destination slice
-            start <- UM.unsafeRead _ptrs n
-            let (ixs, xs) = UM.unzip $ UM.slice start dlen _entries
+            -- find the destination slice
+            start <- U.unsafeIndexM _pointers n
+            end <- U.unsafeIndexM _pointers (n + 1)
+            let len = end - start
+                (ixs, xs) = UM.unzip $ UM.slice start len _entries
 
             -- scatter/gather
-            _pop <- unsafeScatter _work a sliceA ixs 0
-            _pop <- unsafeScatter _work b sliceB ixs _pop
+            _pop <- unsafeScatter _work 1 sliceA ixs 0
+            _pop <- unsafeScatter _work 1 sliceB ixs _pop
             unsafeGather _work ixs xs _pop
-
-            -- record the start of the next slice
-            UM.unsafeWrite _ptrs (n + 1) (start + _pop)
 
       U.mapM_ unsafeLin_go $ U.enumFromN 0 odim
 
-      _ptrs <- U.unsafeFreeze _ptrs
-      let nz' = U.last _ptrs
-      _entries <- U.force <$> U.unsafeFreeze (UM.unsafeSlice 0 nz' _entries)
-
-      return (_ptrs, _entries)
-
-add :: (Num a, Unbox a) => Matrix a -> Matrix a -> Matrix a
-{-# INLINE add #-}
-add a b = lin 1 a 1 b
+      U.unsafeFreeze _entries
 
 axpy_
   :: (GM.MVector v a, Num a, PrimMonad m, Unbox a)
