@@ -1,16 +1,17 @@
-{ mkDerivation, base, hmatrix, hspec, mono-traversable
-, primitive, QuickCheck, stdenv, suitesparse, vector
+{ mkDerivation, base, hmatrix, hspec, mono-traversable, openblas
+, primitive, QuickCheck, sparse-linear, stdenv, suitesparse, vector
 , vector-algorithms
-, openblasCompat, haskellPackages
 }:
-
-let
-  inherit (haskellPackages) callPackage;
-  sparse-linear = callPackage ../sparse-linear {};
-  openblas = openblasCompat;
-in
-callPackage ./suitesparse.nix {
-  inherit mkDerivation base hmatrix hspec mono-traversable openblas
-          primitive QuickCheck sparse-linear stdenv suitesparse vector
-          vector-algorithms;
+mkDerivation {
+  pname = "suitesparse";
+  version = "0.1.0.0";
+  src = ./.;
+  buildDepends = [
+    base hmatrix mono-traversable primitive sparse-linear vector
+    vector-algorithms
+  ];
+  testDepends = [ base hspec QuickCheck sparse-linear vector ];
+  extraLibraries = [ openblas suitesparse ];
+  description = "Haskell bindings to the SuiteSparse library of sparse linear algebra routines";
+  license = stdenv.lib.licenses.gpl2;
 }
