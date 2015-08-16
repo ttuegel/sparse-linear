@@ -3,7 +3,11 @@ let
   haskellPackages = pkgs.haskellPackages.override {
     overrides = self: super: {
       sparse-linear = self.callPackage ../sparse-linear {};
+      suitesparse = self.callPackage ../suitesparse {
+        inherit (pkgs) suitesparse;
+        openblas = pkgs.openblasCompat;
+      };
     };
   };
 in
-(haskellPackages.callPackage ./. { openblas = pkgs.openblasCompat; }).env
+haskellPackages.suitesparse.env

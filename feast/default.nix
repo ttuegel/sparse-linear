@@ -1,16 +1,19 @@
 { mkDerivation, base, feast, global-lock, hmatrix, hspec, mtl
-, primitive, QuickCheck, stdenv, transformers, vector
-, openblasCompat, haskellPackages
+, parallel-io-simple, primitive, QuickCheck, sparse-linear, stdenv
+, suitesparse, transformers, vector
 }:
-
-let
-  inherit (haskellPackages) callPackage;
-  parallel-io-simple = callPackage ./parallel-io-simple {};
-  sparse-linear = callPackage ../sparse-linear {};
-  suitesparse = callPackage ../suitesparse {};
-in
-import ./feast.nix {
-  inherit mkDerivation base feast global-lock hmatrix hspec mtl
-          parallel-io-simple primitive QuickCheck sparse-linear stdenv
-          suitesparse transformers vector;
+mkDerivation {
+  pname = "feast";
+  version = "0.1.0.0";
+  src = ./.;
+  buildDepends = [
+    base global-lock hmatrix mtl parallel-io-simple primitive
+    sparse-linear suitesparse transformers vector
+  ];
+  testDepends = [
+    base hspec QuickCheck sparse-linear suitesparse vector
+  ];
+  extraLibraries = [ feast ];
+  description = "Haskell bindings to the FEAST eigensolver library";
+  license = stdenv.lib.licenses.gpl2;
 }
