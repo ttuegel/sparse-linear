@@ -250,7 +250,8 @@ geigSH__decodeInfo info = do
     (-2) -> error "geigSH: internal error in inner system solver"
     (-1) -> error "geigSH: internal error in memory allocation"
     0 -> return ()
-    1 -> putStrLn "geigSH: no eigenvalues in search interval"
+    1 -> -- no eigenvalues in search interval, not really an error
+      return ()
     2 -> putStrLn "geigSH: no convergence"
     3 -> putStrLn "geigSH: subspace too small"
     4 -> putStrLn "geigSH: only subspace returned"
