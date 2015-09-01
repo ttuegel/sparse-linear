@@ -21,11 +21,11 @@ import Data.Matrix.Sparse
 
 withConstMatrix
   :: (Storable a, Unbox a)
-  => Matrix a
+  => Matrix U.Vector a
   -> (CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr a -> IO b)
   -> IO b
-{-# SPECIALIZE withConstMatrix :: Matrix Double -> (CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO b) -> IO b #-}
-{-# SPECIALIZE withConstMatrix :: Matrix (Complex Double) -> (CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO b) -> IO b #-}
+{-# SPECIALIZE withConstMatrix :: Matrix U.Vector Double -> (CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO b) -> IO b #-}
+{-# SPECIALIZE withConstMatrix :: Matrix U.Vector (Complex Double) -> (CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO b) -> IO b #-}
 withConstMatrix Matrix {..} action =
   VS.unsafeWith _ptrs $ \_ptrs ->
   VS.unsafeWith _rows $ \_rows ->
@@ -38,9 +38,9 @@ withConstMatrix Matrix {..} action =
 
 fromForeign
   :: (Num a, Storable a, Unbox a)
-  => Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr a -> IO (Matrix a)
-{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO (Matrix Double) #-}
-{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO (Matrix (Complex Double)) #-}
+  => Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr a -> IO (Matrix U.Vector a)
+{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO (Matrix U.Vector Double) #-}
+{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO (Matrix U.Vector (Complex Double)) #-}
 fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals
   = do
     let maybeCopyArray src len

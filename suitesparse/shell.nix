@@ -8,7 +8,6 @@ let
         inherit (pkgs) suitesparse;
         openblas = pkgs.openblasCompat;
       };
-      vector = dontCheck (self.callPackage ../sparse-linear/vector-0.10.12.3.nix {});
     };
   };
 in

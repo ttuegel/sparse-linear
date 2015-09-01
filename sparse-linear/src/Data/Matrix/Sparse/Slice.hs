@@ -1,7 +1,5 @@
 module Data.Matrix.Sparse.Slice where
 
-import Data.Vector.Fusion.Stream (Stream)
-import qualified Data.Vector.Generic as G
 import Data.Vector.Unboxed (Unbox, Vector)
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
@@ -15,11 +13,11 @@ import qualified Data.Vector.Unboxed.Mutable as UM
 unsafeSlice
   :: Unbox a
   => Vector Int -- ^ pointers
-  -> Int -- ^ index of slice
   -> Vector a -- ^ data
+  -> Int -- ^ index of slice
   -> Vector a
 {-# INLINE unsafeSlice #-}
-unsafeSlice = \ptrs ix dat ->
+unsafeSlice = \ptrs dat ix ->
   let start = U.unsafeIndex ptrs ix
       end = U.unsafeIndex ptrs (ix + 1)
   in U.unsafeSlice start (end - start) dat
@@ -40,12 +38,3 @@ unsafeMSlice = \ptrs ix dat ->
   let start = U.unsafeIndex ptrs ix
       end = U.unsafeIndex ptrs (ix + 1)
   in UM.unsafeSlice start (end - start) dat
-
-streamSlice
-  :: Unbox a
-  => Vector Int
-  -> Int
-  -> Vector a
-  -> Stream a
-{-# INLINE streamSlice #-}
-streamSlice = \ptrs ix dat -> G.stream $ unsafeSlice ptrs ix dat

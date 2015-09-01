@@ -42,10 +42,10 @@ unsafeMul = \rdim cdim ptrsA entriesA ptrsB entriesB -> runST $ do
                     else return _entries
 
         let (ixs, xs) = UM.unzip $ UM.unsafeSlice start rdim _entries
-            sliceB = unsafeSlice ptrsB c entriesB
+            sliceB = unsafeSlice ptrsB entriesB c
 
             unsafeMul_scatter _pop (p, b) = do
-              let sliceA = unsafeSlice ptrsA p entriesA
+              let sliceA = unsafeSlice ptrsA entriesA p
               unsafeScatter work b sliceA ixs _pop
 
         pop <- U.foldM' unsafeMul_scatter 0 sliceB

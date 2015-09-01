@@ -5,7 +5,9 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.Matrix.Sparse
@@ -41,11 +43,8 @@ import Data.Monoid ((<>), First(..))
 #endif
 import Data.MonoTraversable (Element, MonoFoldable(..), MonoFunctor(..))
 import Data.Ord (comparing)
+import qualified Data.Vector as Boxed
 import qualified Data.Vector.Algorithms.Intro as Intro
-import qualified Data.Vector.Fusion.Stream as S
-import Data.Vector.Fusion.Stream.Monadic (Stream(..), Step(..))
-import Data.Vector.Fusion.Stream.Size
-import Data.Vector.Fusion.Util (Id(..))
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
 import Data.Vector.Unboxed (Vector, Unbox)
@@ -58,29 +57,31 @@ import qualified Numeric.LinearAlgebra.HMatrix as Dense
 
 import Data.Complex.Enhanced
 import Data.Matrix.Sparse.Mul
-import Data.Matrix.Sparse.ScatterGather
 import Data.Matrix.Sparse.Slice
 import qualified Data.Vector.Sparse as S
 import Data.Vector.Util
 
 -- | Matrix in compressed sparse column (CSC) format.
-data Matrix a = Matrix
+data Matrix v a = Matrix
   { ncols :: !Int -- ^ number of columns
   , nrows :: !Int -- ^ number of rows
   , pointers :: !(Vector Int)
                 -- ^ starting index of each slice,
                 -- last element is number of non-zero entries
-  , entries :: Vector (Int, a)
+  , entries :: v (Int, a)
   }
-  deriving (Eq, Read, Show)
 
-type instance Element (Matrix a) = a
+deriving instance Eq (v (Int, a)) => Eq (Matrix v a)
+deriving instance Show (v (Int, a)) => Show (Matrix v a)
+deriving instance Read (v (Int, a)) => Read (Matrix v a)
 
-instance Unbox a => MonoFunctor (Matrix a) where
+type instance Element (Matrix v a) = a
+
+instance Unbox a => MonoFunctor (Matrix Vector a) where
   {-# INLINE omap #-}
   omap = cmap
 
-instance Unbox a => MonoFoldable (Matrix a) where
+instance Unbox a => MonoFoldable (Matrix Vector a) where
   {-# INLINE ofoldMap #-}
   {-# INLINE ofoldr #-}
   {-# INLINE ofoldl' #-}
@@ -92,7 +93,7 @@ instance Unbox a => MonoFoldable (Matrix a) where
   ofoldr1Ex = \f Matrix {..} -> U.foldr1 f $ snd $ U.unzip entries
   ofoldl1Ex' = \f Matrix {..} -> U.foldl1' f $ snd $ U.unzip entries
 
-instance (Num a, Unbox a) => Num (Matrix a) where
+instance (Num a, Unbox a) => Num (Matrix Vector a) where
   {-# INLINE (+) #-}
   {-# INLINE (-) #-}
   {-# INLINE (*) #-}
@@ -120,36 +121,34 @@ instance (Num a, Unbox a) => Num (Matrix a) where
   signum = omap signum
   fromInteger = errorWithStackTrace "fromInteger: not implemented"
 
-nonZero :: Unbox a => Matrix a -> Int
+nonZero :: Unbox a => Matrix Vector a -> Int
 {-# INLINE nonZero #-}
 nonZero = \Matrix {..} -> U.last pointers
 
-cmap :: (Unbox a, Unbox b) => (a -> b) -> Matrix a -> Matrix b
+cmap :: (Unbox a, Unbox b) => (a -> b) -> Matrix Vector a -> Matrix Vector b
 {-# INLINE cmap #-}
 cmap = \f m ->
   let (indices, values) = U.unzip $ entries m
   in m { entries = U.zip indices $ U.map f values }
 
-scale :: (Num a, Unbox a) => a -> Matrix a -> Matrix a
+scale :: (Num a, Unbox a) => a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE scale #-}
 scale = \x -> cmap (* x)
 
-slice :: Unbox a => Matrix a -> Int -> S.Vector a
+slice :: Unbox a => Matrix Vector a -> Int -> S.Vector Vector a
 {-# INLINE slice #-}
 slice = \Matrix {..} c ->
-  S.Vector
-  { S.dim = nrows
-  , S.entries = unsafeSlice pointers c entries
-  }
+  let (indices, values) = U.unzip (unsafeSlice pointers entries c)
+  in S.Vector nrows indices values
 
 compress
   :: (Num a, Unbox a)
   => Int  -- ^ number of rows
   -> Int  -- ^ number of columns
   -> Vector (Int, Int, a)  -- ^ (row, column, value)
-  -> Matrix a
-{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Double) -> Matrix Double #-}
-{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Complex Double) -> Matrix (Complex Double) #-}
+  -> Matrix Vector a
+{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Double) -> Matrix Vector Double #-}
+{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Complex Double) -> Matrix Vector (Complex Double) #-}
 compress nrows ncols _triples = runST $ do
   let (_rows, _cols, _vals) = U.unzip3 _triples
       ptrs = computePtrs ncols _cols
@@ -255,7 +254,7 @@ decompress = \ptrs -> U.create $ do
     UM.set (unsafeMSlice ptrs c indices) c
   return indices
 
-transpose :: Unbox a => Matrix a -> Matrix a
+transpose :: Unbox a => Matrix Vector a -> Matrix Vector a
 {-# INLINE transpose #-}
 transpose Matrix {..} = runST $ do
   let (indices, values) = U.unzip entries
@@ -270,7 +269,7 @@ transpose Matrix {..} = runST $ do
 
   -- copy each column into place
   U.forM_ (U.enumFromN 0 ncols) $ \m -> do
-    U.forM_ (unsafeSlice pointers m entries) $ \(n, x) -> do
+    U.forM_ (unsafeSlice pointers entries m) $ \(n, x) -> do
       ix <- preincrement count n
       UM.unsafeWrite _ixs ix m
       UM.unsafeWrite _xs ix x
@@ -287,17 +286,15 @@ transpose Matrix {..} = runST $ do
 
 outer
   :: (Num a, Unbox a)
-  => S.Vector a -- ^ sparse column vector
-  -> S.Vector a -- ^ sparse row vector
-  -> Matrix a
+  => S.Vector Vector a -- ^ sparse column vector
+  -> S.Vector Vector a -- ^ sparse row vector
+  -> Matrix Vector a
 {-# INLINE outer #-}
 outer = \sliceC sliceR ->
   let -- indices of sliceM are outer (major) indices of result
       -- indices of sliceN are inner (minor) indices of result
-      nrows = S.dim sliceR
-      ncols = S.dim sliceC
-      (indicesR, valuesR) = U.unzip $ S.entries sliceR
-      (indicesC, valuesC) = U.unzip $ S.entries sliceC
+      S.Vector nrows indicesR valuesR = sliceR
+      S.Vector ncols indicesC valuesC = sliceC
       lenR = U.length valuesR
       lenC = U.length valuesC
       lengths = U.create $ do
@@ -308,7 +305,7 @@ outer = \sliceC sliceR ->
       indices = U.concat $ replicate lenC indicesR
       values = U.create $ do
         vals <- UM.new (lenC * lenR)
-        U.forM_ (S.entries sliceC) $ \(ix, a) ->
+        U.forM_ (U.zip indicesC valuesC) $ \(ix, a) ->
           U.copy (unsafeMSlice pointers ix vals) $ U.map (* a) valuesR
         return vals
       entries = U.zip indices values
@@ -316,157 +313,106 @@ outer = \sliceC sliceR ->
 
 fromTriples
   :: (Num a, Unbox a)
-  => Int -> Int -> [(Int, Int, a)] -> Matrix a
+  => Int -> Int -> [(Int, Int, a)] -> Matrix Vector a
 {-# INLINE fromTriples #-}
 fromTriples = \nr nc -> compress nr nc . U.fromList
 
 (><)
   :: (Num a, Unbox a)
-  => Int -> Int -> [(Int, Int, a)] -> Matrix a
+  => Int -> Int -> [(Int, Int, a)] -> Matrix Vector a
 {-# INLINE (><) #-}
 (><) = fromTriples
 
 ctrans
   :: (IsReal a, Num a, Unbox a)
-  => Matrix a -> Matrix a
+  => Matrix Vector a -> Matrix Vector a
 {-# INLINE ctrans #-}
 ctrans = omap conj . transpose
 
-hermitian :: (Eq a, IsReal a, Num a, Unbox a) => Matrix a -> Bool
+hermitian :: (Eq a, IsReal a, Num a, Unbox a) => Matrix Vector a -> Bool
 {-# INLINE hermitian #-}
 hermitian m = (ctrans m) == m
 
-lin :: (Num a, Unbox a) => a -> Matrix a -> a -> Matrix a -> Matrix a
-{-# SPECIALIZE lin :: Double -> Matrix Double -> Double -> Matrix Double -> Matrix Double #-}
-{-# SPECIALIZE lin :: (Complex Double) -> Matrix (Complex Double) -> (Complex Double) -> Matrix (Complex Double) -> Matrix (Complex Double) #-}
+toColumns :: Unbox a => Matrix Vector a -> Boxed.Vector (S.Vector Vector a)
+{-# INLINE toColumns #-}
+toColumns mat = Boxed.generate (ncols mat) (slice mat)
+
+unsafeFromColumns :: Unbox a
+                  => Boxed.Vector (S.Vector Vector a)
+                  -> Matrix Vector a
+{-# INLINE unsafeFromColumns #-}
+unsafeFromColumns cols
+  = Matrix
+    { nrows = U.head lengths
+    , ncols = Boxed.length cols
+    , pointers = U.scanl' (+) 0 nonZeros
+    , entries = U.concat (entries_col <$> Boxed.toList cols)
+    }
+  where
+    lengths = U.convert (Boxed.map S.length cols)
+    nonZeros = U.convert (Boxed.map S.nonZero cols)
+    entries_col (S.Vector _ indices values) = U.zip indices values
+
+lin :: (Num a, Unbox a) => a -> Matrix Vector a -> a -> Matrix Vector a -> Matrix Vector a
+{-# SPECIALIZE lin :: Double -> Matrix Vector Double -> Double -> Matrix Vector Double -> Matrix Vector Double #-}
+{-# SPECIALIZE lin :: (Complex Double) -> Matrix Vector (Complex Double) -> (Complex Double) -> Matrix Vector (Complex Double) -> Matrix Vector (Complex Double) #-}
 lin a matA b matB = add (cmap (* a) matA) (cmap (* b) matB)
 
-add :: (Num a, Unbox a) => Matrix a -> Matrix a -> Matrix a
+add :: (Num a, Unbox a) => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE add #-}
 add matA matB
-  | nrows matA /= nrows matB = oops "nrows mismatch"
-  | ncols matA /= ncols matB = oops "ncols mismatch"
-  | otherwise =
-      Matrix
-      { ncols = ncols matA
-      , nrows = nrows matA
-      , pointers = _pointers
-      , entries = _entries
-      }
+  = nrowsC `seq` ncolsC `seq`
+    unsafeFromColumns (Boxed.zipWith (+) (toColumns matA) (toColumns matB))
   where
-    oops str = errorWithStackTrace ("add: " ++ str)
+    oops str = errorWithStackTrace ("Data.Matrix.Sparse.add: " ++ str)
 
-    entriesA = entries matA
-    entriesB = entries matB
-    ptrsA = pointers matA
-    ptrsB = pointers matB
-    odim = ncols matA
-    idim = nrows matA
+    nrowsC | nrows matA == nrows matB = nrows matA
+           | otherwise = oops "rows number mismatch"
 
-    _pointers =
-      let count2 :: (s -> Id (Step s Int)) -> Either s (Step s Int)
-                 -> (t -> Id (Step t Int)) -> Either t (Step t Int)
-                 -> Int -> Id Int
-          count2 nextA tokA nextB tokB !n = do
-            stepA <- either nextA return tokA
-            case stepA of
-              Done -> count1 nextB tokB n
-              Skip tokA' -> count2 nextA (Left tokA') nextB tokB n
-              Yield a tokA' -> do
-                stepB <- either nextB return tokB
-                case stepB of
-                  Done -> count1 nextA (Left tokA') (n + 1)
-                  Skip tokB' -> count2 nextA (Right stepA) nextB (Left tokB') n
-                  Yield b tokB' ->
-                    case compare a b of
-                      LT -> count2 nextA (Left tokA') nextB (Right stepB) (n + 1)
-                      EQ -> count2 nextA (Left tokA') nextB (Left tokB') (n + 1)
-                      GT -> count2 nextA (Right stepA) nextB (Left tokB') (n + 1)
-
-          count1 :: (s -> Id (Step s Int)) -> Either s (Step s Int)
-                 -> Int -> Id Int
-          count1 next tok !n = do
-            step <- either next return tok
-            case step of
-              Yield _ tok' -> count1 next (Left tok') (n + 1)
-              Skip tok' -> count1 next (Left tok') n
-              Done -> return n
-
-          countColumn :: Int -> Id Int
-          countColumn n =
-            case (streamSlice ptrsA n . fst . U.unzip) entriesA of
-              Stream nextA tokA _ ->
-                case (streamSlice ptrsB n . fst . U.unzip) entriesB of
-                  Stream nextB tokB _ ->
-                    count2 nextA (Left tokA) nextB (Left tokB) 0
-
-      in unId (U.scanl' (+) 0 <$> U.generateM (ncols matA) countColumn)
-
-    _entries = runST $ do
-      _entries <- UM.new (U.last _pointers)
-
-      _work <- UM.zip <$> UM.replicate idim False <*> UM.new idim
-
-      let unsafeLin_go n = do
-            let sliceA = unsafeSlice ptrsA n entriesA
-                sliceB = unsafeSlice ptrsB n entriesB
-
-            -- find the destination slice
-            start <- U.unsafeIndexM _pointers n
-            end <- U.unsafeIndexM _pointers (n + 1)
-            let len = end - start
-                (ixs, xs) = UM.unzip $ UM.slice start len _entries
-
-            -- scatter/gather
-            _pop <- unsafeScatter _work 1 sliceA ixs 0
-            _pop <- unsafeScatter _work 1 sliceB ixs _pop
-            unsafeGather _work ixs xs _pop
-
-      U.mapM_ unsafeLin_go $ U.enumFromN 0 odim
-
-      U.unsafeFreeze _entries
+    ncolsC | ncols matA == ncols matB = ncols matA
+           | otherwise = oops "cols number mismatch"
 
 axpy_
   :: (GM.MVector v a, Num a, PrimMonad m, Unbox a)
-  => Matrix a -> v (PrimState m) a -> v (PrimState m) a -> m ()
+  => Matrix Vector a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 {-# INLINE axpy_ #-}
 axpy_ Matrix {..} xs ys
   | GM.length xs /= ncols = oops "column dimension does not match operand"
   | GM.length ys /= nrows = oops "row dimension does not match result"
   | otherwise =
       U.forM_ (U.enumFromN 0 ncols) $ \c -> do
-        U.forM_ (unsafeSlice pointers c entries) $ \(r, a) -> do
+        U.forM_ (unsafeSlice pointers entries c) $ \(r, a) -> do
           x <- GM.unsafeRead xs c
           y <- GM.unsafeRead ys r
           GM.unsafeWrite ys r (a * x + y)
   where
     oops str = errorWithStackTrace ("axpy_: " ++ str)
 
-axpy :: (Num a, Unbox a) => Matrix a -> Vector a -> Vector a -> Vector a
-{-# SPECIALIZE axpy :: Matrix Double -> Vector Double -> Vector Double -> Vector Double #-}
-{-# SPECIALIZE axpy :: Matrix (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
+axpy :: (Num a, Unbox a) => Matrix Vector a -> Vector a -> Vector a -> Vector a
+{-# SPECIALIZE axpy :: Matrix Vector Double -> Vector Double -> Vector Double -> Vector Double #-}
+{-# SPECIALIZE axpy :: Matrix Vector (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
 axpy = \a _x _y -> runST $ do
   _y <- U.thaw _y
   _x <- U.unsafeThaw _x
   axpy_ a _x _y
   U.unsafeFreeze _y
 
-mulV :: (G.Vector v a, Num a, Unbox a) => Matrix a -> v a -> v a
-{-# SPECIALIZE mulV :: Matrix Double -> Vector Double -> Vector Double #-}
-{-# SPECIALIZE mulV :: Matrix (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
+mulV :: (G.Vector v a, Num a, Unbox a) => Matrix Vector a -> v a -> v a
+{-# SPECIALIZE mulV :: Matrix Vector Double -> Vector Double -> Vector Double #-}
+{-# SPECIALIZE mulV :: Matrix Vector (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
 mulV = \a _x -> runST $ do
   _x <- G.unsafeThaw _x
   y <- GM.replicate (nrows a) 0
   axpy_ a _x y
   G.unsafeFreeze y
 
-hjoin :: Unbox a => Matrix a -> Matrix a -> Matrix a
+hjoin :: Unbox a => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE hjoin #-}
 hjoin a b = hcat [a, b]
 
-hcat :: Unbox a => [Matrix a] -> Matrix a
-{-# SPECIALIZE hcat :: [Matrix Double] -> Matrix Double #-}
-{-# SPECIALIZE hcat :: [Matrix (Complex Double)] -> Matrix (Complex Double) #-}
+hcat :: Unbox a => [Matrix Vector a] -> Matrix Vector a
+{-# SPECIALIZE hcat :: [Matrix Vector Double] -> Matrix Vector Double #-}
+{-# SPECIALIZE hcat :: [Matrix Vector (Complex Double)] -> Matrix Vector (Complex Double) #-}
 hcat mats
   | null mats = oops "empty list"
   | any (/= _nrows) (map nrows mats) = oops "nrows mismatch"
@@ -482,13 +428,13 @@ hcat mats
     lengths m = let ptrs = pointers m in U.zipWith (-) (U.tail ptrs) ptrs
     oops str = errorWithStackTrace ("hcat: " ++ str)
 
-vjoin :: Unbox a => Matrix a -> Matrix a -> Matrix a
+vjoin :: Unbox a => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE vjoin #-}
 vjoin a b = vcat [a, b]
 
-vcat :: Unbox a => [Matrix a] -> Matrix a
-{-# SPECIALIZE vcat :: [Matrix Double] -> Matrix Double #-}
-{-# SPECIALIZE vcat :: [Matrix (Complex Double)] -> Matrix (Complex Double) #-}
+vcat :: Unbox a => [Matrix Vector a] -> Matrix Vector a
+{-# SPECIALIZE vcat :: [Matrix Vector Double] -> Matrix Vector Double #-}
+{-# SPECIALIZE vcat :: [Matrix Vector (Complex Double)] -> Matrix Vector (Complex Double) #-}
 vcat mats
   | null mats = oops "empty list"
   | any (/= _ncols) (map ncols mats) = oops "ncols mismatch"
@@ -507,7 +453,7 @@ vcat mats
                   let copyWithOffset !ix (row, x) = do
                         UM.unsafeWrite _entries ix (row + off, x)
                         return (ix + 1)
-                  S.foldM copyWithOffset ixD (streamSlice pointers c entries)
+                  U.foldM' copyWithOffset ixD (unsafeSlice pointers entries c)
             F.foldlM copyMatrix (_pointers U.! c) (zip mats offsets)
           return _entries
       }
@@ -516,9 +462,9 @@ vcat mats
     _ncols = ncols (head mats)
     _pointers = F.foldr1 (U.zipWith (+)) (map pointers mats)
 
-fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix a)]] -> Matrix a
-{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Double)]] -> Matrix Double #-}
-{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix (Complex Double))]] -> Matrix (Complex Double) #-}
+fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix Vector a)]] -> Matrix Vector a
+{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Vector Double)]] -> Matrix Vector Double #-}
+{-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Vector (Complex Double))]] -> Matrix Vector (Complex Double) #-}
 fromBlocks = vcat . map hcat . adjustDims
   where
     adjustDims rows = do
@@ -545,48 +491,43 @@ fromBlocks = vcat . map hcat . adjustDims
           | otherwise = U.fromList $ map head widthSpecs
 
 fromBlocksDiag
-  :: (Num a, Unbox a) => [[Maybe (Matrix a)]] -> Matrix a
+  :: (Num a, Unbox a) => [[Maybe (Matrix Vector a)]] -> Matrix Vector a
 {-# INLINE fromBlocksDiag #-}
 fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . L.transpose where
   rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
 
-kronecker :: (Num a, Unbox a) => Matrix a -> Matrix a -> Matrix a
-{-# SPECIALIZE kronecker :: Matrix Double -> Matrix Double -> Matrix Double #-}
-{-# SPECIALIZE kronecker :: Matrix (Complex Double) -> Matrix (Complex Double) -> Matrix (Complex Double) #-}
+kronecker :: (Num a, Unbox a) => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
+{-# SPECIALIZE kronecker :: Matrix Vector Double -> Matrix Vector Double -> Matrix Vector Double #-}
+{-# SPECIALIZE kronecker :: Matrix Vector (Complex Double) -> Matrix Vector (Complex Double) -> Matrix Vector (Complex Double) #-}
 kronecker matA matB =
   let _nrows = nrows matA * nrows matB
       _ncols = ncols matA * ncols matB
-      nz = nonZero matA * nonZero matB
 
       ptrsA = pointers matA
       ptrsB = pointers matB
       lengthsA = U.zipWith (-) (U.tail ptrsA) ptrsA
       lengthsB = U.zipWith (-) (U.tail ptrsB) ptrsB
       ptrs = U.scanl' (+) 0
-             $ G.unstream $ flip S.sized (Exact $ _ncols + 1)
-             $ S.concatMap (\nzA -> S.map (* nzA) $ G.stream lengthsB)
-             $ G.stream lengthsA
+             $ U.concatMap (\nzA -> U.map (* nzA) lengthsB) lengthsA
 
       (indicesA, valuesA) = U.unzip $ entries matA
       (indicesB, valuesB) = U.unzip $ entries matB
 
-      nbs = S.enumFromStepN 0 1 $ ncols matB
-      nas = S.enumFromStepN 0 1 $ ncols matA
-      ns = S.concatMap (\na -> S.map ((,) na) nbs) nas
+      nbs = U.enumFromStepN 0 1 $ ncols matB
+      nas = U.enumFromStepN 0 1 $ ncols matA
+      ns = U.concatMap (\na -> U.map ((,) na) nbs) nas
 
       kronecker_ixs (!na, !nb) =
-        let as = streamSlice ptrsA na indicesA
-            bs = streamSlice ptrsB nb indicesB
-        in S.concatMap (\n -> S.map (+ n) bs) $ S.map (* (nrows matB)) as
-      ixs = G.unstream $ flip S.sized (Exact nz)
-            $ S.concatMap kronecker_ixs ns
+        let as = unsafeSlice ptrsA indicesA na
+            bs = unsafeSlice ptrsB indicesB nb
+        in U.concatMap (\n -> U.map (+ n) bs) (U.map (* (nrows matB)) as)
+      ixs = U.concatMap kronecker_ixs ns
 
       kronecker_xs (!na, !nb) =
-        let as = streamSlice ptrsA na valuesA
-            bs = streamSlice ptrsB nb valuesB
-        in S.concatMap (\a -> S.map (* a) bs) as
-      xs = G.unstream $ flip S.sized (Exact nz)
-           $ S.concatMap kronecker_xs ns
+        let as = unsafeSlice ptrsA valuesA na
+            bs = unsafeSlice ptrsB valuesB nb
+        in U.concatMap (\a -> U.map (* a) bs) as
+      xs = U.concatMap kronecker_xs ns
 
   in Matrix
     { ncols = _ncols
@@ -595,16 +536,16 @@ kronecker matA matB =
     , entries = U.zip ixs xs
     }
 
-takeDiag :: (Num a, Unbox a) => Matrix a -> Vector a
+takeDiag :: (Num a, Unbox a) => Matrix Vector a -> Vector a
 {-# INLINE takeDiag #-}
 takeDiag = \mat@Matrix {..} ->
   flip U.map (U.enumFromN 0 $ min nrows ncols) $ \m ->
-    let (indices, values) = U.unzip $ S.entries $ slice mat m
+    let S.Vector _ indices values = slice mat m
     in case U.elemIndex m indices of
       Nothing -> 0
       Just ix -> values U.! ix
 
-diag :: Unbox a => Vector a -> Matrix a
+diag :: Unbox a => Vector a -> Matrix Vector a
 {-# INLINE diag #-}
 diag values = Matrix{..}
   where
@@ -614,18 +555,18 @@ diag values = Matrix{..}
     indices = U.iterateN ncols (+1) 0
     entries = U.zip indices values
 
-blockDiag :: (Num a, Unbox a) => [Matrix a] -> Matrix a
+blockDiag :: (Num a, Unbox a) => [Matrix Vector a] -> Matrix Vector a
 {-# INLINE blockDiag #-}
 blockDiag mats
   = fromBlocksDiag ((Just <$> mats) : replicate (len - 1) (replicate len Nothing))
   where
     len = length mats
 
-ident :: (Num a, Unbox a) => Int -> Matrix a
+ident :: (Num a, Unbox a) => Int -> Matrix Vector a
 {-# INLINE ident #-}
 ident n = diag $ U.replicate n 1
 
-zeros :: Unbox a => Int -> Int -> Matrix a
+zeros :: Unbox a => Int -> Int -> Matrix Vector a
 {-# INLINE zeros #-}
 zeros nrows ncols = Matrix {..}
   where
@@ -634,7 +575,8 @@ zeros nrows ncols = Matrix {..}
     values = U.empty
     entries = U.zip indices values
 
-pack :: (Dense.Container Dense.Vector a, Num a, Storable a, Unbox a) => Matrix a -> Dense.Matrix a
+pack :: (Dense.Container Dense.Vector a, Num a, Storable a, Unbox a)
+     => Matrix Vector a -> Dense.Matrix a
 {-# INLINE pack #-}
 pack Matrix {..} =
   Dense.assoc (nrows, ncols) 0 $ do
