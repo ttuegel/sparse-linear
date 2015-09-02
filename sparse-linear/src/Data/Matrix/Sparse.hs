@@ -372,11 +372,14 @@ glin c fA matA fB matB
   | ncols matA /= ncols matB = oops "column number mismatch"
   | otherwise
       = unsafeFromColumns $ SG.run (nrows matA) $ do
-        let scatterColumns colA colB = do
-              SG.reset c
-              SG.unsafeScatter colA fA
-              SG.unsafeScatter colB fB
-              SG.gather
+        let scatterColumns colA colB
+              | S.null colA = return (S.cmap (fB c) colB)
+              | S.null colB = return (S.cmap (fA c) colA)
+              | otherwise = do
+                  SG.reset c
+                  SG.unsafeScatter colA fA
+                  SG.unsafeScatter colB fB
+                  SG.gather
         Boxed.zipWithM scatterColumns colsA colsB
   where
     oops str = errorWithStackTrace ("glin: " ++ str)
