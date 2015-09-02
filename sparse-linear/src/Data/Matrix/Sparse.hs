@@ -17,7 +17,7 @@ module Data.Matrix.Sparse
        , transpose, ctrans, hermitian
        , outer
        , axpy_, axpy, mulV
-       , lin, add
+       , glin, lin
        , hjoin, hcat, vjoin, vcat
        , fromBlocks, fromBlocksDiag
        , kronecker
@@ -101,8 +101,8 @@ instance (Num a, Unbox a) => Num (Matrix Vector a) where
   {-# INLINE negate #-}
   {-# INLINE abs #-}
   {-# INLINE signum #-}
-  (+) = add
-  (-) = \a b -> lin 1 a (-1) b
+  (+) = \a b -> glin 0 (+) a (+) b
+  (-) = \a b -> glin 0 (+) a (-) b
   (*) = \a b ->
     if ncols a /= nrows b then oops "inner dimension mismatch"
     else
@@ -354,29 +354,34 @@ unsafeFromColumns cols
     nonZeros = U.convert (Boxed.map S.nonZero cols)
     entries_col (S.Vector _ indices values) = U.zip indices values
 
-lin :: (Num a, Unbox a) => a -> Matrix Vector a -> a -> Matrix Vector a -> Matrix Vector a
-{-# SPECIALIZE lin :: Double -> Matrix Vector Double -> Double -> Matrix Vector Double -> Matrix Vector Double #-}
-{-# SPECIALIZE lin :: (Complex Double) -> Matrix Vector (Complex Double) -> (Complex Double) -> Matrix Vector (Complex Double) -> Matrix Vector (Complex Double) #-}
-lin a matA b matB = add (cmap (* a) matA) (cmap (* b) matB)
-
-add :: (Num a, Unbox a) => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
-{-# INLINE add #-}
-add matA matB
+glin :: (Unbox a, Unbox b, Unbox c)
+     => c
+     -> (c -> a -> c) -> Matrix Vector a
+     -> (c -> b -> c) -> Matrix Vector b
+     -> Matrix Vector c
+{-# INLINE glin #-}
+glin c fA matA fB matB
   | nrows matA /= nrows matB = oops "row number mismatch"
   | ncols matA /= ncols matB = oops "column number mismatch"
-  | otherwise = unsafeFromColumns
-                $ SG.run (nrows matA)
-                $ Boxed.zipWithM scatterColumns colsA colsB
+  | otherwise
+      = unsafeFromColumns $ SG.run (nrows matA) $ do
+        let scatterColumns colA colB = do
+              SG.reset c
+              SG.unsafeScatter colA fA
+              SG.unsafeScatter colB fB
+              SG.gather
+        Boxed.zipWithM scatterColumns colsA colsB
   where
-    oops str = errorWithStackTrace ("Data.Matrix.Sparse.add: " ++ str)
+    oops str = errorWithStackTrace ("glin: " ++ str)
     colsA = toColumns matA
     colsB = toColumns matB
 
-    scatterColumns colA colB = do
-      SG.reset 0
-      SG.unsafeScatter colA (+)
-      SG.unsafeScatter colB (+)
-      SG.gather
+lin
+  :: (Num a, Unbox a)
+  => a -> Matrix Vector a -> a -> Matrix Vector a -> Matrix Vector a
+{-# INLINE lin #-}
+lin alpha matA beta matB
+  = glin 0 (\r a -> r + alpha * a) matA (\r b -> r + beta * b) matB
 
 axpy_
   :: (GM.MVector v a, Num a, PrimMonad m, Unbox a)
