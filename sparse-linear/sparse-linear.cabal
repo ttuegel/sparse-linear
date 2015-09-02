@@ -19,6 +19,7 @@ library
     Data.Matrix.Sparse.ScatterGather
     Data.Matrix.Sparse.Slice
     Data.Vector.Sparse
+    Data.Vector.Sparse.ScatterGather
     Data.Vector.Util
   build-depends:
       base >=4.6 && <4.9
@@ -28,6 +29,7 @@ library
     , mono-traversable >=0.6 && <1
     , primitive >=0.5 && <1
     , tagged >=0.7 && <1
+    , transformers >=0.4
     , vector >=0.11 && <1
     , vector-algorithms >=0.6 && <1
   hs-source-dirs: src
