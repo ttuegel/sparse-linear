@@ -26,8 +26,6 @@ import Test.LinearAlgebra
   && indices a == indices b
   && V.and (V.zipWith (\x y -> x == y || x `closeEnoughTo` y) (values a) (values b))
   where
-    indices = fst . V.unzip . entries
-    values = snd . V.unzip . entries
     closeEnoughTo x y = mag (x - y) / mag (x + y) < 1E-10
 
 main :: IO ()

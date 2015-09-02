@@ -69,12 +69,13 @@ data Matrix v a = Matrix
   , pointers :: !(Vector Int)
                 -- ^ starting index of each slice,
                 -- last element is number of non-zero entries
-  , entries :: v (Int, a)
+  , indices :: U.Vector Int
+  , values :: v a
   }
 
-deriving instance Eq (v (Int, a)) => Eq (Matrix v a)
-deriving instance Show (v (Int, a)) => Show (Matrix v a)
-deriving instance Read (v (Int, a)) => Read (Matrix v a)
+deriving instance Eq (v a) => Eq (Matrix v a)
+deriving instance Show (v a) => Show (Matrix v a)
+deriving instance Read (v a) => Read (Matrix v a)
 
 type instance Element (Matrix v a) = a
 
@@ -88,11 +89,11 @@ instance Unbox a => MonoFoldable (Matrix Vector a) where
   {-# INLINE ofoldl' #-}
   {-# INLINE ofoldr1Ex #-}
   {-# INLINE ofoldl1Ex' #-}
-  ofoldMap = \f Matrix {..} -> ofoldMap f $ snd $ U.unzip entries
-  ofoldr = \f r Matrix {..} -> U.foldr f r $ snd $ U.unzip entries
-  ofoldl' = \f r Matrix {..} -> U.foldl' f r $ snd $ U.unzip entries
-  ofoldr1Ex = \f Matrix {..} -> U.foldr1 f $ snd $ U.unzip entries
-  ofoldl1Ex' = \f Matrix {..} -> U.foldl1' f $ snd $ U.unzip entries
+  ofoldMap = \f mat -> ofoldMap f (values mat)
+  ofoldr = \f r mat -> G.foldr f r (values mat)
+  ofoldl' = \f r mat -> G.foldl' f r (values mat)
+  ofoldr1Ex = \f mat -> G.foldr1 f (values mat)
+  ofoldl1Ex' = \f mat -> G.foldl1' f (values mat)
 
 instance (Num a, Unbox a) => Num (Matrix Vector a) where
   {-# INLINE (+) #-}
@@ -107,13 +108,15 @@ instance (Num a, Unbox a) => Num (Matrix Vector a) where
     if ncols a /= nrows b then oops "inner dimension mismatch"
     else
       let (ptrs, ents) = unsafeMul (nrows a) (ncols b)
-                         (pointers a) (entries a)
-                         (pointers b) (entries b)
+                         (pointers a) (U.zip (indices a) (values a))
+                         (pointers b) (U.zip (indices b) (values b))
+          (ixs, xs) = U.unzip ents
       in Matrix
          { nrows = nrows a
          , ncols = ncols b
          , pointers = ptrs
-         , entries = ents
+         , indices = ixs
+         , values = xs
          }
     where
       oops str = errorWithStackTrace ("(*): " ++ str)
@@ -126,11 +129,9 @@ nonZero :: Unbox a => Matrix Vector a -> Int
 {-# INLINE nonZero #-}
 nonZero = \Matrix {..} -> U.last pointers
 
-cmap :: (Unbox a, Unbox b) => (a -> b) -> Matrix Vector a -> Matrix Vector b
+cmap :: (G.Vector v a, G.Vector v b) => (a -> b) -> Matrix v a -> Matrix v b
 {-# INLINE cmap #-}
-cmap = \f m ->
-  let (indices, values) = U.unzip $ entries m
-  in m { entries = U.zip indices $ U.map f values }
+cmap = \f m -> m { values = G.map f (values m) }
 
 scale :: (Num a, Unbox a) => a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE scale #-}
@@ -138,9 +139,15 @@ scale = \x -> cmap (* x)
 
 slice :: Unbox a => Matrix Vector a -> Int -> S.Vector Vector a
 {-# INLINE slice #-}
-slice = \Matrix {..} c ->
-  let (indices, values) = U.unzip (unsafeSlice pointers entries c)
-  in S.Vector nrows indices values
+slice Matrix {..} c
+  | c >= ncols = oops "column out of range"
+  | otherwise
+      = S.Vector { S.length = nrows
+                 , S.indices = unsafeSlice pointers indices c
+                 , S.values = unsafeSlice pointers values c
+                 }
+  where
+    oops msg = error ("slice: " ++ msg)
 
 compress
   :: (Num a, Unbox a)
@@ -206,6 +213,7 @@ compress nrows ncols _triples = runST $ do
 
   let nz' = U.last pointers
   entries <- U.force <$> U.unsafeFreeze (UM.unsafeSlice 0 nz' _entries)
+  let (indices, values) = U.unzip entries
 
   return Matrix {..}
   where
@@ -258,8 +266,7 @@ decompress = \ptrs -> U.create $ do
 transpose :: Unbox a => Matrix Vector a -> Matrix Vector a
 {-# INLINE transpose #-}
 transpose Matrix {..} = runST $ do
-  let (indices, values) = U.unzip entries
-      nz = U.length values
+  let nz = U.length values
       ptrs = computePtrs nrows indices
 
   -- re-initialize row counts from row pointers
@@ -270,7 +277,7 @@ transpose Matrix {..} = runST $ do
 
   -- copy each column into place
   U.forM_ (U.enumFromN 0 ncols) $ \m -> do
-    U.forM_ (unsafeSlice pointers entries m) $ \(n, x) -> do
+    U.forM_ (unsafeSlice pointers (U.zip indices values) m) $ \(n, x) -> do
       ix <- preincrement count n
       UM.unsafeWrite _ixs ix m
       UM.unsafeWrite _xs ix x
@@ -282,7 +289,8 @@ transpose Matrix {..} = runST $ do
     { ncols = nrows
     , nrows = ncols
     , pointers = ptrs
-    , entries = U.zip _ixs _xs
+    , indices = _ixs
+    , values = _xs
     }
 
 outer
@@ -309,7 +317,6 @@ outer = \sliceC sliceR ->
         U.forM_ (U.zip indicesC valuesC) $ \(ix, a) ->
           U.copy (unsafeMSlice pointers ix vals) $ U.map (* a) valuesR
         return vals
-      entries = U.zip indices values
   in Matrix {..}
 
 fromTriples
@@ -347,12 +354,12 @@ unsafeFromColumns cols
     { nrows = U.head lengths
     , ncols = Boxed.length cols
     , pointers = U.scanl' (+) 0 nonZeros
-    , entries = U.concat (entries_col <$> Boxed.toList cols)
+    , indices = U.concat (S.indices <$> Boxed.toList cols)
+    , values = U.concat (S.values <$> Boxed.toList cols)
     }
   where
     lengths = U.convert (Boxed.map S.length cols)
     nonZeros = U.convert (Boxed.map S.nonZero cols)
-    entries_col (S.Vector _ indices values) = U.zip indices values
 
 glin :: (Unbox a, Unbox b, Unbox c)
      => c
@@ -392,7 +399,7 @@ axpy_ Matrix {..} xs ys
   | GM.length ys /= nrows = oops "row dimension does not match result"
   | otherwise =
       U.forM_ (U.enumFromN 0 ncols) $ \c -> do
-        U.forM_ (unsafeSlice pointers entries c) $ \(r, a) -> do
+        U.forM_ (unsafeSlice pointers (U.zip indices values) c) $ \(r, a) -> do
           x <- GM.unsafeRead xs c
           y <- GM.unsafeRead ys r
           GM.unsafeWrite ys r (a * x + y)
@@ -432,7 +439,8 @@ hcat mats
       { ncols = F.foldl' (+) 0 $ map ncols mats
       , nrows = _nrows
       , pointers = U.scanl' (+) 0 $ U.concat $ map lengths mats
-      , entries = U.concat $ map entries mats
+      , indices = U.concat (indices <$> mats)
+      , values = U.concat (values <$> mats)
       }
   where
     _nrows = nrows $ head mats
@@ -454,24 +462,26 @@ vcat mats
       { ncols = _ncols
       , nrows = F.foldl' (+) 0 (map nrows mats)
       , pointers = _pointers
-      , entries = U.create $ do
-          _entries <- UM.new (U.last _pointers)
-          let -- when concatenating matrices vertically, their row indices
-              -- must be offset according to their position in the final matrix
-              offsets = L.scanl' (+) 0 (map nrows mats)
-          U.forM_ (U.enumFromN 0 _ncols) $ \c -> do
-            let copyMatrix !ixD (Matrix {..}, off) = do
-                  let copyWithOffset !ix (row, x) = do
-                        UM.unsafeWrite _entries ix (row + off, x)
-                        return (ix + 1)
-                  U.foldM' copyWithOffset ixD (unsafeSlice pointers entries c)
-            F.foldlM copyMatrix (_pointers U.! c) (zip mats offsets)
-          return _entries
+      , indices = _indices
+      , values = _values
       }
   where
     oops str = errorWithStackTrace ("vcat: " ++ str)
     _ncols = ncols (head mats)
     _pointers = F.foldr1 (U.zipWith (+)) (map pointers mats)
+    (_indices, _values) = U.unzip $ U.create $ do
+      _entries <- UM.new (U.last _pointers)
+      let -- when concatenating matrices vertically, their row indices
+          -- must be offset according to their position in the final matrix
+          offsets = L.scanl' (+) 0 (map nrows mats)
+      U.forM_ (U.enumFromN 0 _ncols) $ \c -> do
+        let copyMatrix !ixD (Matrix {..}, off) = do
+              let copyWithOffset !ix (row, x) = do
+                    UM.unsafeWrite _entries ix (row + off, x)
+                    return (ix + 1)
+              U.foldM' copyWithOffset ixD (unsafeSlice pointers (U.zip indices values) c)
+        F.foldlM copyMatrix (_pointers U.! c) (zip mats offsets)
+      return _entries
 
 fromBlocks :: (Num a, Unbox a) => [[Maybe (Matrix Vector a)]] -> Matrix Vector a
 {-# SPECIALIZE fromBlocks :: [[Maybe (Matrix Vector Double)]] -> Matrix Vector Double #-}
@@ -521,8 +531,10 @@ kronecker matA matB =
       ptrs = U.scanl' (+) 0
              $ U.concatMap (\nzA -> U.map (* nzA) lengthsB) lengthsA
 
-      (indicesA, valuesA) = U.unzip $ entries matA
-      (indicesB, valuesB) = U.unzip $ entries matB
+      indicesA = indices matA
+      indicesB = indices matB
+      valuesA = values matA
+      valuesB = values matB
 
       nbs = U.enumFromStepN 0 1 $ ncols matB
       nas = U.enumFromStepN 0 1 $ ncols matA
@@ -544,34 +556,38 @@ kronecker matA matB =
     { ncols = _ncols
     , nrows = _nrows
     , pointers = ptrs
-    , entries = U.zip ixs xs
+    , indices = ixs
+    , values = xs
     }
 
 takeDiag :: (Num a, Unbox a) => Matrix Vector a -> Vector a
 {-# INLINE takeDiag #-}
-takeDiag = \mat@Matrix {..} ->
-  flip U.map (U.enumFromN 0 $ min nrows ncols) $ \m ->
-    let S.Vector _ indices values = slice mat m
-    in case U.elemIndex m indices of
-      Nothing -> 0
-      Just ix -> values U.! ix
+takeDiag mat@Matrix {..}
+  = U.generate (min nrows ncols) takeDiagFromColumn
+  where
+    takeDiagFromColumn c
+      = case U.elemIndex c (S.indices column) of
+          Nothing -> 0
+          Just ix -> S.values column U.! ix
+      where
+        column = slice mat c
 
 diag :: Unbox a => Vector a -> Matrix Vector a
 {-# INLINE diag #-}
-diag values = Matrix{..}
+diag values = Matrix {..}
   where
     ncols = U.length values
     nrows = ncols
     pointers = U.iterateN (ncols + 1) (+1) 0
     indices = U.iterateN ncols (+1) 0
-    entries = U.zip indices values
 
 blockDiag :: (Num a, Unbox a) => [Matrix Vector a] -> Matrix Vector a
 {-# INLINE blockDiag #-}
 blockDiag mats
-  = fromBlocksDiag ((Just <$> mats) : replicate (len - 1) (replicate len Nothing))
+  = fromBlocksDiag ((Just <$> mats) : offDiagonal)
   where
     len = length mats
+    offDiagonal = replicate (len - 1) (replicate len Nothing)
 
 ident :: (Num a, Unbox a) => Int -> Matrix Vector a
 {-# INLINE ident #-}
@@ -584,7 +600,6 @@ zeros nrows ncols = Matrix {..}
     pointers = U.replicate (ncols + 1) 0
     indices = U.empty
     values = U.empty
-    entries = U.zip indices values
 
 pack :: (Dense.Container Dense.Vector a, Num a, Storable a, Unbox a)
      => Matrix Vector a -> Dense.Matrix a
@@ -592,8 +607,6 @@ pack :: (Dense.Container Dense.Vector a, Num a, Storable a, Unbox a)
 pack Matrix {..} =
   Dense.assoc (nrows, ncols) 0 $ do
     c <- [0..(ncols - 1)]
-    begin <- U.unsafeIndexM pointers c
-    end <- U.unsafeIndexM pointers (c + 1)
-    let len = end - begin
-        col = U.slice begin len entries
-    U.toList (U.map (\(r, x) -> ((r, c), x)) col)
+    let ixs = unsafeSlice pointers indices c
+        xs = unsafeSlice pointers values c
+    U.toList (U.zip (U.map (flip (,) c) ixs) xs)

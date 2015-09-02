@@ -33,8 +33,8 @@ withConstMatrix Matrix {..} action =
     action (fromIntegral nrows) (fromIntegral ncols) _ptrs _rows _vals
   where
     _ptrs = VS.map fromIntegral $ VS.convert pointers
-    _rows = VS.map fromIntegral $ VS.convert $ fst $ U.unzip entries
-    _vals = VS.convert $ snd $ U.unzip entries
+    _rows = VS.map fromIntegral $ VS.convert indices
+    _vals = VS.convert values
 
 fromForeign
   :: (Num a, Storable a, Unbox a)
@@ -76,4 +76,5 @@ fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals
       dedupInPlace nrows (UM.unsafeSlice start len _entries)
 
     entries <- U.unsafeFreeze _entries
+    let (indices, values) = U.unzip entries
     return Matrix {..}
