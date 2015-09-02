@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fsimpl-tick-factor=200 #-}
 
 module Data.Vector.Sparse
-       ( Vector(..), nonZero, cmap
+       ( Vector(..), null, nonZero, cmap
        , fromPairs, (|>), unsafeFromPairs
        , lin, glin
        ) where
@@ -17,7 +17,7 @@ import Data.Monoid
 import Data.MonoTraversable
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
-import Prelude hiding ( length )
+import Prelude hiding ( length, null )
 
 import qualified Data.Vector.Sparse.ScatterGather as SG
 
@@ -27,6 +27,10 @@ data Vector v a
            , values :: v a
            }
   deriving (Eq, Show)
+
+null :: Vector v a -> Bool
+{-# INLINE null #-}
+null v = nonZero v == 0
 
 nonZero :: Vector v a -> Int
 {-# INLINE nonZero #-}
