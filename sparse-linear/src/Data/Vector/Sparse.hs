@@ -6,20 +6,26 @@
 {-# OPTIONS_GHC -fsimpl-tick-factor=200 #-}
 
 module Data.Vector.Sparse
-       ( Vector(..), nonZero, length, cmap
+       ( Vector(..), nonZero, cmap
        , fromPairs, (|>), unsafeFromPairs
        , lin, glin
        ) where
 
-import Data.Maybe (fromJust, isJust)
+import Data.List ( mapAccumL )
+import Data.Maybe ( fromJust, isJust )
+import Data.Monoid
 import Data.MonoTraversable
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
-import Prelude hiding (length)
+import Prelude hiding ( length )
 
 import qualified Data.Vector.Sparse.ScatterGather as SG
 
-data Vector v a = Vector !Int (U.Vector Int) (v a)
+data Vector v a
+  = Vector { length :: !Int
+           , indices :: U.Vector Int
+           , values :: v a
+           }
   deriving (Eq, Show)
 
 nonZero :: Vector v a -> Int
@@ -116,6 +122,18 @@ instance (G.Vector v a, Num a) => Num (Vector v a) where
   signum = omap signum
   fromInteger = error "Data.Vector.Sparse.fromInteger: not implemented"
 
-length :: Vector v a -> Int
-{-# INLINE length #-}
-length (Vector len _ _) = len
+instance G.Vector v a => Monoid (Vector v a) where
+  {-# INLINE mempty #-}
+  mempty = Vector 0 U.empty G.empty
+
+  {-# INLINE mappend #-}
+  mappend a b = mconcat [a, b]
+
+  {-# INLINE mconcat #-}
+  mconcat xs
+    = Vector { length = sum (length <$> xs)
+             , indices = U.concat (snd (mapAccumL offsetIndices 0 xs))
+             , values = G.concat (values <$> xs)
+             }
+    where
+      offsetIndices off x = (off + length x, U.map (+ off) (indices x))
