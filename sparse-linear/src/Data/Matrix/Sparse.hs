@@ -59,6 +59,7 @@ import Data.Complex.Enhanced
 import Data.Matrix.Sparse.Mul
 import Data.Matrix.Sparse.Slice
 import qualified Data.Vector.Sparse as S
+import qualified Data.Vector.Sparse.ScatterGather as SG
 import Data.Vector.Util
 
 -- | Matrix in compressed sparse column (CSC) format.
@@ -361,16 +362,21 @@ lin a matA b matB = add (cmap (* a) matA) (cmap (* b) matB)
 add :: (Num a, Unbox a) => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE add #-}
 add matA matB
-  = nrowsC `seq` ncolsC `seq`
-    unsafeFromColumns (Boxed.zipWith (+) (toColumns matA) (toColumns matB))
+  | nrows matA /= nrows matB = oops "row number mismatch"
+  | ncols matA /= ncols matB = oops "column number mismatch"
+  | otherwise = unsafeFromColumns
+                $ SG.run (nrows matA)
+                $ Boxed.zipWithM scatterColumns colsA colsB
   where
     oops str = errorWithStackTrace ("Data.Matrix.Sparse.add: " ++ str)
+    colsA = toColumns matA
+    colsB = toColumns matB
 
-    nrowsC | nrows matA == nrows matB = nrows matA
-           | otherwise = oops "rows number mismatch"
-
-    ncolsC | ncols matA == ncols matB = ncols matA
-           | otherwise = oops "cols number mismatch"
+    scatterColumns colA colB = do
+      SG.reset 0
+      SG.unsafeScatter colA (+)
+      SG.unsafeScatter colB (+)
+      SG.gather
 
 axpy_
   :: (GM.MVector v a, Num a, PrimMonad m, Unbox a)
