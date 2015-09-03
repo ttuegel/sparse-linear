@@ -19,6 +19,7 @@ module Data.Matrix.Sparse
        , axpy_, axpy, mulV
        , glin, lin
        , hjoin, hcat, vjoin, vcat
+       , toColumns, unsafeFromColumns
        , fromBlocks, fromBlocksDiag
        , kronecker
        , takeDiag, diag, blockDiag
@@ -56,7 +57,6 @@ import GHC.Stack (errorWithStackTrace)
 import qualified Numeric.LinearAlgebra.HMatrix as Dense
 
 import Data.Complex.Enhanced
-import Data.Matrix.Sparse.Mul
 import Data.Matrix.Sparse.Slice
 import qualified Data.Vector.Sparse as S
 import qualified Data.Vector.Sparse.ScatterGather as SG
@@ -104,22 +104,7 @@ instance (Num a, Unbox a) => Num (Matrix Vector a) where
   {-# INLINE signum #-}
   (+) = \a b -> glin 0 (+) a (+) b
   (-) = \a b -> glin 0 (+) a (-) b
-  (*) = \a b ->
-    if ncols a /= nrows b then oops "inner dimension mismatch"
-    else
-      let (ptrs, ents) = unsafeMul (nrows a) (ncols b)
-                         (pointers a) (U.zip (indices a) (values a))
-                         (pointers b) (U.zip (indices b) (values b))
-          (ixs, xs) = U.unzip ents
-      in Matrix
-         { nrows = nrows a
-         , ncols = ncols b
-         , pointers = ptrs
-         , indices = ixs
-         , values = xs
-         }
-    where
-      oops str = errorWithStackTrace ("(*): " ++ str)
+  (*) = mm
   negate = omap negate
   abs = omap abs
   signum = omap signum
@@ -613,3 +598,16 @@ pack Matrix {..} =
     let ixs = unsafeSlice pointers indices c
         xs = unsafeSlice pointers values c
     U.toList (U.zip (U.map (flip (,) c) ixs) xs)
+
+mm :: (Num a, Unbox a) => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
+{-# INLINE mm #-}
+mm matA matB
+  | ncols matA /= nrows matB = oops "inner dimension mismatch"
+  | otherwise = unsafeFromColumns $ SG.run (nrows matA) $ do
+      Boxed.forM (toColumns matB) $ \colB -> do
+        SG.reset 0
+        S.iforM_ colB $ \rB b ->
+          SG.scatter (slice matA rB) (\c a -> c + a * b)
+        SG.gather
+  where
+    oops msg = error ("mm: " ++ msg)

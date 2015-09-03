@@ -9,6 +9,7 @@ module Data.Vector.Sparse
        ( Vector(..), null, nonZero, cmap
        , fromPairs, (|>), unsafeFromPairs
        , lin, glin
+       , iforM_
        ) where
 
 import Data.List ( mapAccumL )
@@ -141,3 +142,17 @@ instance G.Vector v a => Monoid (Vector v a) where
              }
     where
       offsetIndices off x = (off + length x, U.map (+ off) (indices x))
+
+iforM_ :: (G.Vector v a, Monad m) => Vector v a -> (Int -> a -> m ()) -> m ()
+{-# INLINE iforM_ #-}
+iforM_ as f = iforM__go 0 where
+  nz = nonZero as
+  ixs = indices as
+  vals = values as
+  iforM__go !i
+    | i >= nz = return ()
+    | otherwise = do
+        !ix <- U.unsafeIndexM ixs i
+        !a <- G.unsafeIndexM vals i
+        f ix a
+        iforM__go (i + 1)
