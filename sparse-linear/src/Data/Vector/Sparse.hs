@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -12,6 +13,9 @@ module Data.Vector.Sparse
        , iforM_
        ) where
 
+#if __GLASGOW_HASKELL__ < 710
+import Control.Applicative
+#endif
 import Data.List ( mapAccumL )
 import Data.Maybe ( fromJust, isJust )
 import Data.Monoid
