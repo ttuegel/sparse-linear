@@ -57,7 +57,6 @@ import GHC.Stack (errorWithStackTrace)
 import qualified Numeric.LinearAlgebra.HMatrix as Dense
 
 import Data.Complex.Enhanced
-import Data.Matrix.Sparse.Slice
 import qualified Data.Vector.Sparse as S
 import qualified Data.Vector.Sparse.ScatterGather as SG
 import Data.Vector.Util
@@ -122,15 +121,60 @@ scale :: (Num a, Unbox a) => a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE scale #-}
 scale = \x -> cmap (* x)
 
+-- | Given a vector of pointers to slices in an array, return the indexed slice.
+-- The following requirements are not checked:
+-- * @index + 1 < length pointers@
+-- * @last pointers == length data@
+-- * for all @0 <= i < length pointers@, @pointers ! i <= pointers ! (i + 1)@
+basicUnsafeSlice
+  :: G.Vector v a
+  => Vector Int -- ^ pointers
+  -> v a -- ^ data
+  -> Int -- ^ index of slice
+  -> v a
+{-# INLINE basicUnsafeSlice #-}
+basicUnsafeSlice = \ptrs dat ix ->
+  let start = U.unsafeIndex ptrs ix
+      end = U.unsafeIndex ptrs (ix + 1)
+  in G.unsafeSlice start (end - start) dat
+
+-- | Given a vector of pointers to slices in an array, return the indexed slice.
+-- The following requirements are not checked:
+-- * @index + 1 < length pointers@
+-- * @last pointers == length data@
+-- * for all @0 <= i < length pointers@, @pointers ! i <= pointers ! (i + 1)@
+basicUnsafeSliceM
+  :: Unbox a
+  => Vector Int -- ^ pointers
+  -> Int -- ^ index of slice
+  -> MVector s a -- ^ data
+  -> MVector s a
+{-# INLINE basicUnsafeSliceM #-}
+basicUnsafeSliceM = \ptrs ix dat ->
+  let start = U.unsafeIndex ptrs ix
+      end = U.unsafeIndex ptrs (ix + 1)
+  in UM.unsafeSlice start (end - start) dat
+
+-- | Return a sparse vector representing the indexed column from the matrix.
+-- The following requirements are not checked:
+-- * @index < ncols matrix@
+unsafeSlice
+  :: G.Vector v a
+  => Matrix v a
+  -> Int  -- ^ column index
+  -> S.Vector v a
+{-# INLINE unsafeSlice #-}
+unsafeSlice Matrix {..} c
+  = S.Vector { S.length = nrows
+             , S.indices = basicUnsafeSlice pointers indices c
+             , S.values = basicUnsafeSlice pointers values c
+             }
+
 slice :: Unbox a => Matrix Vector a -> Int -> S.Vector Vector a
 {-# INLINE slice #-}
-slice Matrix {..} c
-  | c >= ncols = oops "column out of range"
-  | otherwise
-      = S.Vector { S.length = nrows
-                 , S.indices = unsafeSlice pointers indices c
-                 , S.values = unsafeSlice pointers values c
-                 }
+slice mat c
+  | c >= ncols mat = oops "column out of range"
+  | otherwise = unsafeSlice mat c
   where
     oops msg = error ("slice: " ++ msg)
 
@@ -138,71 +182,73 @@ compress
   :: (Num a, Unbox a)
   => Int  -- ^ number of rows
   -> Int  -- ^ number of columns
-  -> Vector (Int, Int, a)  -- ^ (row, column, value)
+  -> Vector Int -- ^ row indices
+  -> Vector Int -- ^ column indices
+  -> Vector a -- ^ values
   -> Matrix Vector a
-{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Double) -> Matrix Vector Double #-}
-{-# SPECIALIZE compress :: Int -> Int -> Vector (Int, Int, Complex Double) -> Matrix Vector (Complex Double) #-}
-compress nrows ncols _triples = runST $ do
-  let (_rows, _cols, _vals) = U.unzip3 _triples
+compress nrows ncols _rows _cols _vals
+  | U.length _rows /= U.length _cols = oops "row and column array lengths differ"
+  | U.length _rows /= G.length _vals = oops "row and value array lengths differ"
+  | otherwise = runST $ do
+
+    let checkBounds bound prev ix this
+          | this >= 0 && this < bound = prev <> mempty
+          | otherwise = prev <> First (Just ix)
+
+    -- check bounds of row indices
+    case getFirst (U.ifoldl' (checkBounds nrows) mempty _rows) of
+      Nothing -> return ()
+      Just ix ->
+        let bounds = show (0 :: Int, nrows)
+        in oops ("row index out of bounds " ++ bounds ++ " at " ++ show ix)
+
+    -- check bounds of column indices
+    case getFirst (U.ifoldl' (checkBounds ncols) mempty _cols) of
+      Nothing -> return ()
+      Just ix ->
+        let bounds = show (0 :: Int, ncols)
+        in oops ("column index out of bounds " ++ bounds ++ " at " ++ show ix)
+
+    _rows <- U.unsafeThaw _rows
+    _cols <- U.unsafeThaw _cols
+    _vals <- U.unsafeThaw _vals
+    let _entries = UM.zip _rows _vals
+
+    Intro.sortBy (comparing fst) $ UM.zip _cols _entries
+
+    -- deduplicate columns
+    -- sum entries so there is at most one entry for each row and column
+    -- ndel is a vector holding the number of entries removed from each column
+    ndel <- U.forM (U.enumFromN 0 ncols) $ \m ->
+      dedupInPlace nrows $ basicUnsafeSliceM ptrs m _entries
+
+    let
+      -- the number of indices each column should be shifted down in the
+      -- entries vector
+      shifts = U.scanl' (+) 0 ndel
+      -- the final column-start pointers into the entries matrix
+      pointers = U.zipWith (-) ptrs shifts
+
+    -- perform the shifts
+    U.forM_ (U.enumFromN 0 ncols) $ \m -> do
+      shift <- U.unsafeIndexM shifts m
+      when (shift > 0) $ do
+        start <- U.unsafeIndexM ptrs m
+        end <- U.unsafeIndexM ptrs (m + 1)
+        let len = end - start
+            start' = start - shift
+        UM.move
+          (UM.unsafeSlice start' len _entries)
+          (UM.unsafeSlice start len _entries)
+
+    let nz' = U.last pointers
+    entries <- U.force <$> U.unsafeFreeze (UM.unsafeSlice 0 nz' _entries)
+    let (indices, values) = U.unzip entries
+
+    return Matrix {..}
+    where
+      oops str = errorWithStackTrace ("compress: " ++ str)
       ptrs = computePtrs ncols _cols
-
-  let checkBounds bound prev ix this
-        | this >= 0 && this < bound = prev <> mempty
-        | otherwise = prev <> First (Just ix)
-
-  -- check bounds of row indices
-  case getFirst (U.ifoldl' (checkBounds nrows) mempty _rows) of
-    Nothing -> return ()
-    Just ix ->
-      let bounds = show (0 :: Int, nrows)
-      in oops ("row index out of bounds " ++ bounds ++ " at " ++ show ix)
-
-  -- check bounds of column indices
-  case getFirst (U.ifoldl' (checkBounds ncols) mempty _cols) of
-    Nothing -> return ()
-    Just ix ->
-      let bounds = show (0 :: Int, ncols)
-      in oops ("column index out of bounds " ++ bounds ++ " at " ++ show ix)
-
-  _rows <- U.unsafeThaw _rows
-  _cols <- U.unsafeThaw _cols
-  _vals <- U.unsafeThaw _vals
-  let _entries = UM.zip _rows _vals
-
-  Intro.sortBy (comparing fst) $ UM.zip _cols _entries
-
-  -- deduplicate columns
-  -- sum entries so there is at most one entry for each row and column
-  -- ndel is a vector holding the number of entries removed from each column
-  ndel <- U.forM (U.enumFromN 0 ncols) $ \m ->
-    dedupInPlace nrows $ unsafeMSlice ptrs m _entries
-
-  let
-    -- the number of indices each column should be shifted down in the
-    -- entries vector
-    shifts = U.scanl' (+) 0 ndel
-    -- the final column-start pointers into the entries matrix
-    pointers = U.zipWith (-) ptrs shifts
-
-  -- perform the shifts
-  U.forM_ (U.enumFromN 0 ncols) $ \m -> do
-    shift <- U.unsafeIndexM shifts m
-    when (shift > 0) $ do
-      start <- U.unsafeIndexM ptrs m
-      end <- U.unsafeIndexM ptrs (m + 1)
-      let len = end - start
-          start' = start - shift
-      UM.move
-        (UM.unsafeSlice start' len _entries)
-        (UM.unsafeSlice start len _entries)
-
-  let nz' = U.last pointers
-  entries <- U.force <$> U.unsafeFreeze (UM.unsafeSlice 0 nz' _entries)
-  let (indices, values) = U.unzip entries
-
-  return Matrix {..}
-  where
-    oops str = errorWithStackTrace ("compress: " ++ str)
 
 dedupInPlace
   :: (Num a, PrimMonad m, Unbox a)
@@ -245,7 +291,7 @@ decompress :: Vector Int -> Vector Int
 decompress = \ptrs -> U.create $ do
   indices <- UM.new $ U.last ptrs
   U.forM_ (U.enumFromN 0 $ U.length ptrs - 1) $ \c ->
-    UM.set (unsafeMSlice ptrs c indices) c
+    UM.set (basicUnsafeSliceM ptrs c indices) c
   return indices
 
 transpose :: Unbox a => Matrix Vector a -> Matrix Vector a
@@ -262,7 +308,7 @@ transpose Matrix {..} = runST $ do
 
   -- copy each column into place
   U.forM_ (U.enumFromN 0 ncols) $ \m -> do
-    U.forM_ (unsafeSlice pointers (U.zip indices values) m) $ \(n, x) -> do
+    U.forM_ (basicUnsafeSlice pointers (U.zip indices values) m) $ \(n, x) -> do
       ix <- preincrement count n
       UM.unsafeWrite _ixs ix m
       UM.unsafeWrite _xs ix x
@@ -300,7 +346,7 @@ outer = \sliceC sliceR ->
       values = U.create $ do
         vals <- UM.new (lenC * lenR)
         U.forM_ (U.zip indicesC valuesC) $ \(ix, a) ->
-          U.copy (unsafeMSlice pointers ix vals) $ U.map (* a) valuesR
+          U.copy (basicUnsafeSliceM pointers ix vals) $ U.map (* a) valuesR
         return vals
   in Matrix {..}
 
@@ -308,7 +354,9 @@ fromTriples
   :: (Num a, Unbox a)
   => Int -> Int -> [(Int, Int, a)] -> Matrix Vector a
 {-# INLINE fromTriples #-}
-fromTriples = \nr nc -> compress nr nc . U.fromList
+fromTriples = \nr nc triples ->
+  let (rows, cols, vals) = unzip3 triples
+  in compress nr nc (U.fromList rows) (U.fromList cols) (U.fromList vals)
 
 (><)
   :: (Num a, Unbox a)
@@ -387,7 +435,7 @@ axpy_ Matrix {..} xs ys
   | GM.length ys /= nrows = oops "row dimension does not match result"
   | otherwise =
       U.forM_ (U.enumFromN 0 ncols) $ \c -> do
-        U.forM_ (unsafeSlice pointers (U.zip indices values) c) $ \(r, a) -> do
+        U.forM_ (basicUnsafeSlice pointers (U.zip indices values) c) $ \(r, a) -> do
           x <- GM.unsafeRead xs c
           y <- GM.unsafeRead ys r
           GM.unsafeWrite ys r (a * x + y)
@@ -467,7 +515,7 @@ vcat mats
               let copyWithOffset !ix (row, x) = do
                     UM.unsafeWrite _entries ix (row + off, x)
                     return (ix + 1)
-              U.foldM' copyWithOffset ixD (unsafeSlice pointers (U.zip indices values) c)
+              U.foldM' copyWithOffset ixD (basicUnsafeSlice pointers (U.zip indices values) c)
         F.foldlM copyMatrix (_pointers U.! c) (zip mats offsets)
       return _entries
 
@@ -529,14 +577,14 @@ kronecker matA matB =
       ns = U.concatMap (\na -> U.map ((,) na) nbs) nas
 
       kronecker_ixs (!na, !nb) =
-        let as = unsafeSlice ptrsA indicesA na
-            bs = unsafeSlice ptrsB indicesB nb
+        let as = basicUnsafeSlice ptrsA indicesA na
+            bs = basicUnsafeSlice ptrsB indicesB nb
         in U.concatMap (\n -> U.map (+ n) bs) (U.map (* (nrows matB)) as)
       ixs = U.concatMap kronecker_ixs ns
 
       kronecker_xs (!na, !nb) =
-        let as = unsafeSlice ptrsA valuesA na
-            bs = unsafeSlice ptrsB valuesB nb
+        let as = basicUnsafeSlice ptrsA valuesA na
+            bs = basicUnsafeSlice ptrsB valuesB nb
         in U.concatMap (\a -> U.map (* a) bs) as
       xs = U.concatMap kronecker_xs ns
 
@@ -595,8 +643,8 @@ pack :: (Dense.Container Dense.Vector a, Num a, Storable a, Unbox a)
 pack Matrix {..} =
   Dense.assoc (nrows, ncols) 0 $ do
     c <- [0..(ncols - 1)]
-    let ixs = unsafeSlice pointers indices c
-        xs = unsafeSlice pointers values c
+    let ixs = basicUnsafeSlice pointers indices c
+        xs = basicUnsafeSlice pointers values c
     U.toList (U.zip (U.map (flip (,) c) ixs) xs)
 
 mm :: (Num a, Unbox a) => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
