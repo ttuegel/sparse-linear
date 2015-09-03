@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
@@ -9,6 +10,9 @@ module Data.Vector.Sparse.ScatterGather
        , gather
        ) where
 
+#if __GLASGOW_HASKELL__ < 710
+import Control.Applicative
+#endif
 import Control.Monad.ST ( ST, runST )
 import Control.Monad.Trans.Class ( lift )
 import Control.Monad.Trans.Reader ( ReaderT(..), ask )
