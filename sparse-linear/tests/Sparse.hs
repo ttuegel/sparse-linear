@@ -2,7 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module Main where
+module Main (main) where
 
 #if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
@@ -17,136 +17,46 @@ import Data.Matrix.Sparse
 import Data.Matrix.Sparse.Foreign
 import Test.LinearAlgebra
 
-(~==) :: (IsReal a, Eq a, Fractional a, Fractional (RealOf a), Num a, Ord (RealOf a), Show a, Unbox a, Unbox (RealOf a)) => Matrix Vector a -> Matrix Vector a -> Property
-(~==) a b =
-  counterexample (show a ++ " /= " ++ show b)
-  $ ncols a == ncols b
-  && nrows a == nrows b
-  && pointers a == pointers b
-  && indices a == indices b
-  && V.and (V.zipWith (\x y -> x == y || x `closeEnoughTo` y) (values a) (values b))
-  where
-    indices = fst . V.unzip . entries
-    values = snd . V.unzip . entries
-    closeEnoughTo x y = mag (x - y) / mag (x + y) < 1E-10
-
 main :: IO ()
 main = hspec $ do
   describe "Data.Matrix.Sparse" $ do
-    describe "fromTriples" $ do
-      checkMatrixR arbitrary
-      checkMatrixZ arbitrary
+    describe "fromTriples" (checkMatrix arbitrary)
 
     describe "kronecker" $ do
       it "assembles identity matrices" $ property $ do
         m <- arbdim
         n <- arbdim
-        return $ kronecker (ident m) (ident n) === (ident (m * n) :: Matrix Vector Double)
+        return $ kronecker (ident m) (ident n) === (ident (m * n) :: Matrix Vector Int)
 
-      checkMatrixR (kronecker <$> arbitrary <*> arbitrary)
-      checkMatrixZ (kronecker <$> arbitrary <*> arbitrary)
+      checkMatrix (kronecker <$> arbitrary <*> arbitrary)
 
     describe "diag" $ do
       it "takeDiag (diag v) == v" $ property $ do
         m <- arbdim
         v <- V.fromList <$> vectorOf m arbitrary
-        return $ takeDiag (diag v) == (v :: Vector Double)
+        return $ takeDiag (diag v) == (v :: Vector Int)
 
-      checkMatrixR (diag <$> arbitrary)
-      checkMatrixZ (diag <$> arbitrary)
+      checkMatrix (diag <$> arbitrary)
 
     describe "mulV" $ do
-      it "ident `mulV` v == v :: Matrix Double" $ property $ do
+      it "ident `mulV` v == v" $ property $ do
         m <- arbdim
         v <- V.fromList <$> vectorOf m arbitrary
-        let mat :: Matrix Vector Double
+        let mat :: Matrix Vector Int
             mat = ident m
         return $ mat `mulV` v == v
 
-      it "ident `mulV` v == v :: Matrix (Complex Double)" $ property $ do
-        m <- arbdim
-        v <- V.fromList <$> vectorOf m arbitrary
-        let mat :: Matrix Vector (Complex Double)
-            mat = ident m
-        return $ mat `mulV` v == v
-
-      it "ident `mulV` v == v :: Matrix Double" $ property $ do
-        m <- arbdim
-        v <- V.fromList <$> vectorOf m arbitrary
-        let mat :: Matrix Vector Double
-            mat = ident m
-        return $ mat `mulV` v == v
-
-      it "ident `mulV` v == v :: Matrix (Complex Double)" $ property $ do
-        m <- arbdim
-        v <- V.fromList <$> vectorOf m arbitrary
-        let mat :: Matrix Vector Double
-            mat = ident m
-        return $ mat `mulV` v == v
-
-    describe "lin" $ do
-      let addIdent
-            :: (Arbitrary a, Eq a, Num a, Num (Matrix Vector a), Unbox a)
-            => Matrix Vector a -> Bool
-          addIdent a = a + zeros (nrows a) (ncols a) == a
-      it "a + zeros == a :: Matrix Double"
-        $ property (addIdent :: Matrix Vector Double -> Bool)
-      it "a + zeros == a :: Matrix (Complex Double)"
-        $ property (addIdent :: Matrix Vector (Complex Double) -> Bool)
-
-      let addInv
-            :: (Arbitrary a, Eq a, Num a, Num (Matrix Vector a), Unbox a)
-            => Matrix Vector a -> Bool
-          addInv a = a - a == cmap (const 0) a
-      it "a - a `propTo` zeros :: Matrix Double"
-        $ property (addInv :: Matrix Vector Double -> Bool)
-      it "a - a `propTo` zeros :: Matrix (Complex Double)"
-        $ property (addInv :: Matrix Vector (Complex Double) -> Bool)
-
-      let addComm
-            :: (Arbitrary a, Eq a, Num a, Num (Matrix Vector a), Unbox a)
-            => Matrix Vector a -> Gen Bool
-          addComm a = do
-            b <- arbitraryMatrix (nrows a) (ncols a)
-            return $ a + b == b + a
-      it "a + b == b + a :: Matrix Double"
-        $ property (addComm :: Matrix Vector Double -> Gen Bool)
-      it "a + b == b + a :: Matrix (Complex Double)"
-        $ property (addComm :: Matrix Vector (Complex Double) -> Gen Bool)
-
-      let addAssoc
-            :: (Arbitrary a, Eq a, Fractional a, Fractional (RealOf a), IsReal a, Num a, Num (Matrix Vector a), Ord (RealOf a), Show a, Unbox a, Unbox (RealOf a))
-            => Matrix Vector a -> Gen Property
-          addAssoc a = do
-            b <- arbitraryMatrix (nrows a) (ncols a)
-            c <- arbitraryMatrix (nrows a) (ncols a)
-            return $ ((a + b) + c) ~== (a + (b + c))
-      it "(a + b) + c == a + (b + c) :: Matrix Double"
-        $ property (addAssoc :: Matrix Vector Double -> Gen Property)
-      it "(a + b) + c == a + (b + c) :: Matrix (Complex Double)"
-        $ property (addAssoc :: Matrix Vector (Complex Double) -> Gen Property)
-
-      let arbitraryAdd
-            :: (Arbitrary a, Num a, Num (Matrix Vector a), Unbox a)
-            => Gen (Matrix Vector a)
-          arbitraryAdd = do
-            a <- arbitrary
-            b <- arbitraryMatrix (nrows a) (ncols a)
-            return $ a + b
-      checkMatrixR arbitraryAdd
-      checkMatrixZ arbitraryAdd
+    describe "addition" $ do
+      it "a + zeros == a" prop_add_ident
+      it "a - a == 0" prop_add_inv
+      it "a + b == b + a" prop_add_commute
+      it "a + (b + c) == (a + b) + c" prop_add_assoc
+      checkMatrix $ (\(a, b) -> a + b) <$> arbitraryAdd2
 
     describe "transpose" $ do
-      it "transpose . diag == diag :: Matrix Double " $ property $ do
-        v <- arbitrary
-        let mat :: Matrix Vector Double
-            mat = diag v
-        return $ transpose mat == mat
-      it "transpose . diag == diag :: Matrix (Complex Double) " $ property $ do
-        v <- arbitrary
-        let mat :: Matrix Vector (Complex Double)
-            mat = diag v
-        return $ transpose mat == mat
+      it "transpose . diag == diag" $ property $ do
+        mat <- diag <$> arbitrary :: Gen (Matrix Vector Int)
+        return (transpose mat === mat)
 
     describe "ctrans" $ do
       it "preserves hermitian matrices" $ do
@@ -163,44 +73,25 @@ main = hspec $ do
         m `shouldBe` ctrans m
 
     describe "mul" $ do
-      let mulIdentL
-            :: (Arbitrary a, Eq a, Num a, Num (Matrix Vector a), Unbox a)
-            => Matrix Vector a -> Gen Bool
-          mulIdentL a = do
-            return $ ident (nrows a) * a == a
-      it "ident * a == a :: Matrix Double"
-        $ property (mulIdentL :: Matrix Vector Double -> Gen Bool)
-      it "ident * a == a :: Matrix (Complex Double)"
-        $ property (mulIdentL :: Matrix Vector (Complex Double) -> Gen Bool)
+      let mulIdentL :: Matrix Vector Int -> Property
+          mulIdentL a = ident (nrows a) * a === a
+      it "ident * a == a" (property mulIdentL)
 
-      let mulIdentR
-            :: (Arbitrary a, Eq a, Num a, Num (Matrix Vector a), Unbox a)
-            => Matrix Vector a -> Gen Bool
-          mulIdentR a = do
-            return $ a * ident (ncols a) == a
-      it "ident * a == a :: Matrix Double"
-        $ property (mulIdentR :: Matrix Vector Double -> Gen Bool)
-      it "ident * a == a :: Matrix (Complex Double)"
-        $ property (mulIdentR :: Matrix Vector (Complex Double) -> Gen Bool)
+      let mulIdentR :: Matrix Vector Int -> Property
+          mulIdentR a = (a * ident (ncols a) === a)
+      it "a * ident == a" (property mulIdentR)
 
-      let mulAssoc
-            :: (Arbitrary a, Eq a, Fractional a, Fractional (RealOf a), IsReal a, Num a, Num (Matrix Vector a), Ord (RealOf a), Show a, Unbox a, Unbox (RealOf a))
-            => Matrix Vector a -> Gen Property
+      let mulAssoc :: Matrix Vector Int -> Gen Property
           mulAssoc a = do
             let m = ncols a
             n <- arbdim
             b <- arbitraryMatrix m n
             p <- arbdim
             c <- arbitraryMatrix n p
-            return $ ((a * b) * c) ~== (a * (b * c))
-      it "(a * b) * c == a * (b * c) :: Matrix Double"
-        $ property (mulAssoc :: Matrix Vector Double -> Gen Property)
-      it "(a * b) * c == a * (b * c) :: Matrix (Complex Double)"
-        $ property (mulAssoc :: Matrix Vector (Complex Double) -> Gen Property)
+            return $ ((a * b) * c) === (a * (b * c))
+      it "(a * b) * c == a * (b * c)" (property mulAssoc)
 
-      let arbitraryMul
-            :: (Arbitrary a, Num a, Num (Matrix Vector a), Unbox a)
-            => Gen (Matrix Vector a)
+      let arbitraryMul :: Gen (Matrix Vector Int)
           arbitraryMul = do
             m <- arbdim
             n <- arbdim
@@ -208,8 +99,7 @@ main = hspec $ do
             p <- arbdim
             b <- arbitraryMatrix n p
             return $! a * b
-      checkMatrixR arbitraryMul
-      checkMatrixZ arbitraryMul
+      checkMatrix arbitraryMul
 
     describe "fromBlocksDiag" $ do
 
@@ -220,11 +110,9 @@ main = hspec $ do
                         [ [Just (ident m), Just (ident n)]
                         , [Nothing, Nothing]
                         ]
-        return $ assembled === (ident (m + n) :: Matrix Vector Double)
+        return $ assembled === (ident (m + n) :: Matrix Vector Int)
 
-      let arbSymBlock
-            :: (Arbitrary a, Eq a, Fractional a, Fractional (RealOf a), IsReal a, Num a, Num (Matrix Vector a), Ord (RealOf a), Show a, Unbox a, Unbox (RealOf a))
-            => Matrix Vector a -> Gen Property
+      let arbSymBlock :: Matrix Vector Double -> Gen Property
           arbSymBlock arbMN = do
             arbM <- arbitraryMatrix (nrows arbMN) (nrows arbMN)
             arbN <- arbitraryMatrix (ncols arbMN) (ncols arbMN)
@@ -236,29 +124,55 @@ main = hspec $ do
                             ]
             return $ assembled === ctrans assembled
 
-      it "symmetric blockwise :: Matrix Double"
-        $ property (arbSymBlock :: Matrix Vector Double -> Gen Property)
+      it "symmetric blockwise" (property arbSymBlock)
 
-      it "symmetric blockwise :: Matrix (Complex Double)"
-        $ property (arbSymBlock :: Matrix Vector (Complex Double) -> Gen Property)
-
-      let arbitraryFromBlocksDiag :: (Arbitrary a, Num a, Unbox a) => Gen (Matrix Vector a)
+      let arbitraryFromBlocksDiag :: Gen (Matrix Vector Int)
           arbitraryFromBlocksDiag = do
             n <- arbdim
             mats <- vectorOf n arbitrary
             return $ fromBlocksDiag
               $ (map Just mats)
               : replicate (n - 1) (replicate n Nothing)
-      checkMatrixR arbitraryFromBlocksDiag
-      checkMatrixZ arbitraryFromBlocksDiag
+      checkMatrix arbitraryFromBlocksDiag
 
   describe "Data.Matrix.Sparse.Foreign" $ do
-    it "fromForeign . withConstMatrix == id (Double)"
-      $ property (prop_withConstFromForeign :: Matrix Vector Double -> Bool)
-    it "fromForeign . withConstMatrix == id (Complex Double)"
-      $ property (prop_withConstFromForeign :: Matrix Vector (Complex Double) -> Bool)
+    it "fromForeign . withConstMatrix == id"
+      (property (prop_withConstFromForeign :: Matrix Vector Int -> Bool))
 
 prop_withConstFromForeign
   :: (Eq a, Num a, Storable a, Unbox a) => Matrix Vector a -> Bool
 prop_withConstFromForeign mat =
   unsafePerformIO (withConstMatrix mat $ fromForeign True) == mat
+
+prop_add_commute :: Property
+prop_add_commute = property $ do
+  (a, b) <- arbitraryAdd2
+  return (a + b === b + a)
+
+prop_add_inv :: Property
+prop_add_inv = property $ do
+  a <- arbitrary :: Gen (Matrix Vector Int)
+  return (a - a === cmap (const 0) a)
+
+prop_add_ident :: Property
+prop_add_ident = property $ do
+  a <- arbitrary :: Gen (Matrix Vector Int)
+  return (a + zeros (nrows a) (ncols a) === a)
+
+prop_add_assoc :: Property
+prop_add_assoc = property $ do
+  (a, b, c) <- arbitraryAdd3
+  return (a + (b + c) === (a + b) + c)
+
+arbitraryAdd2 :: Gen (Matrix Vector Int, Matrix Vector Int)
+arbitraryAdd2 = do
+  a <- arbitrary
+  b <- arbitraryMatrix (nrows a) (ncols a)
+  return (a, b)
+
+arbitraryAdd3 :: Gen (Matrix Vector Int, Matrix Vector Int, Matrix Vector Int)
+arbitraryAdd3 = do
+  a <- arbitrary
+  b <- arbitraryMatrix (nrows a) (ncols a)
+  c <- arbitraryMatrix (nrows a) (ncols a)
+  return (a, b, c)
