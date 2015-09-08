@@ -1,0 +1,5 @@
+* TODO Export type synonyms
+  Specifying the underlying storage type for `Matrix` and `Vector` is
+  inconvenient and abstraction-breaking. We should export modules that
+  have `Matrix` and `Vector` defined as type synonyms for common
+  storage types, like Unboxed or Storable.
