@@ -27,9 +27,9 @@ import Control.Monad.State.Strict (MonadState(..), evalStateT)
 import Control.Monad.IO.Class
 import Data.Maybe (isJust)
 import Data.Traversable
-import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
+import qualified Data.Vector.Unboxed as U
 import Foreign.C.Types (CInt)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr (Ptr)
@@ -40,7 +40,7 @@ import System.GlobalLock (lock)
 import System.IO.Unsafe
 
 import Data.Complex.Enhanced
-import qualified Data.Packed.Matrix as Dense
+import qualified Numeric.LinearAlgebra as Dense
 import qualified Numeric.LinearAlgebra.Devel as Dense
 import Data.Matrix.Sparse
 import Numeric.LinearAlgebra.Feast.Internal
@@ -51,21 +51,21 @@ import Numeric.LinearAlgebra.Umfpack
 -- ------------------------------------------------------------------------
 
 eigSH
-  :: (Feast a)
+  :: (Feast a, Unbox a)
   => Int
   -> (RealOf a, RealOf a)
-  -> Matrix a
-  -> (Vector (RealOf a), Dense.Matrix a)
+  -> Matrix U.Vector a
+  -> (Dense.Vector (RealOf a), Dense.Matrix a)
 {-# INLINE eigSH #-}
 eigSH = eigSHParams defaultFeastParams
 
 geigSH
-  :: (Feast a)
+  :: (Feast a, Unbox a)
   => Int
   -> (RealOf a, RealOf a)
-  -> Matrix a
-  -> Matrix a
-  -> (Vector (RealOf a), Dense.Matrix a)
+  -> Matrix U.Vector a
+  -> Matrix U.Vector a
+  -> (Dense.Vector (RealOf a), Dense.Matrix a)
 {-# INLINE geigSH #-}
 geigSH = geigSHParams defaultFeastParams
 
@@ -89,36 +89,36 @@ defaultFeastParams =
     }
 
 eigSHParams
-  :: (Feast a)
+  :: (Feast a, Unbox a)
   => FeastParams
   -> Int
   -> (RealOf a, RealOf a)
-  -> Matrix a
-  -> (Vector (RealOf a), Dense.Matrix a)
+  -> Matrix U.Vector a
+  -> (Dense.Vector (RealOf a), Dense.Matrix a)
 {-# INLINE eigSHParams #-}
 eigSHParams = \params m0 bounds matA ->
   geigSHParams params m0 bounds matA (ident (ncols matA))
 
 geigSHParams
-  :: Feast a
+  :: (Feast a, Unbox a)
   => FeastParams
   -> Int
   -> (RealOf a, RealOf a)
-  -> Matrix a
-  -> Matrix a
-  -> (Vector (RealOf a), Dense.Matrix a)
+  -> Matrix U.Vector a
+  -> Matrix U.Vector a
+  -> (Dense.Vector (RealOf a), Dense.Matrix a)
 {-# INLINE geigSHParams #-}
 geigSHParams = \params m0 bounds matA matB ->
   let (m, evals, evecs) = geigSH_ params m0 bounds Nothing matA matB
   in (V.take m evals, Dense.takeColumns m evecs)
 
 geigSH_
-  :: (Feast a)
+  :: (Feast a, Unbox a)
   => FeastParams
   -> Int -> (RealOf a, RealOf a)
   -> Maybe (Dense.Matrix a) -- ^ subspace guess
-  -> Matrix a -> Matrix a
-  -> (Int, Vector (RealOf a), Dense.Matrix a)
+  -> Matrix U.Vector a -> Matrix U.Vector a
+  -> (Int, Dense.Vector (RealOf a), Dense.Matrix a)
 {-# INLINE geigSH_ #-}
 geigSH_ FeastParams{..} !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go where
   n = ncols matA

@@ -8,6 +8,7 @@ module Numeric.LinearAlgebra.Umfpack.Internal
     , Umfpack(..)
     ) where
 
+import Data.Vector.Generic (Vector)
 import Data.Vector.Unboxed (Unbox)
 import Foreign.C.Types (CInt(..))
 import Foreign.ForeignPtr (FinalizerPtr)
@@ -63,7 +64,7 @@ class (Num a, Storable a, Unbox a) => Umfpack a where
     umfpack_solve :: UmfpackSolve a
     umfpack_free_symbolic :: FinalizerPtr (Symbolic a)
     umfpack_free_numeric :: FinalizerPtr (Numeric a)
-    umfpack_report_status :: Matrix a -> UmfpackReport
+    umfpack_report_status :: Vector v a => Matrix v a -> UmfpackReport
 
 foreign import ccall "umfpack.h umfpack_zi_symbolic"
   umfpack_zi_symbolic

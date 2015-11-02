@@ -18,7 +18,7 @@ import Foreign.Storable
 import Prelude hiding (concat, mapM)
 
 import Data.Complex.Enhanced
-import qualified Data.Packed.Matrix as Dense
+import qualified Numeric.LinearAlgebra as Dense
 import Numeric.LinearAlgebra.Umfpack
 
 type FeastRci a

@@ -13,5 +13,4 @@ let
       };
     };
   };
-in
-haskellPackages.feast.env
+in haskellPackages.feast

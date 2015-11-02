@@ -10,5 +10,4 @@ let
       };
     };
   };
-in
-haskellPackages.suitesparse.env
+in haskellPackages.suitesparse

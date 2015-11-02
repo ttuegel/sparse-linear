@@ -4,6 +4,7 @@
 module Main where
 
 import qualified Data.Vector.Storable as V
+import qualified Data.Vector.Unboxed as U
 import Test.Hspec
 import Test.QuickCheck
 
@@ -20,7 +21,7 @@ import Numeric.LinearAlgebra.Feast
 main :: IO ()
 main = hspec $ do
   describe "eigSH" $ do
-    let m :: Matrix (Complex Double)
+    let m :: Matrix U.Vector (Complex Double)
         m = fromTriples 2 2 [(0, 0, 2), (0, 1, -1), (1, 0, -1), (1, 1, 2)]
         params = defaultFeastParams { feastDebug = True }
         eigenvalues = fst $ eigSHParams params 2 (0, 4) m
