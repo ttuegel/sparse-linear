@@ -431,8 +431,14 @@ axpy_
   => Matrix Vector a -> v (PrimState m) a -> v (PrimState m) a -> m ()
 {-# INLINE axpy_ #-}
 axpy_ Matrix {..} xs ys
-  | GM.length xs /= ncols = oops "column dimension does not match operand"
-  | GM.length ys /= nrows = oops "row dimension does not match result"
+  | GM.length xs /= ncols = oops ("column dimension "
+                                  ++ show ncols
+                                  ++ " does not match operand dimension "
+                                  ++ show (GM.length xs))
+  | GM.length ys /= nrows = oops ("row dimension "
+                                  ++ show nrows
+                                  ++ " does not match result dimension "
+                                  ++ show (GM.length ys))
   | otherwise =
       U.forM_ (U.enumFromN 0 ncols) $ \c -> do
         U.forM_ (basicUnsafeSlice pointers (U.zip indices values) c) $ \(r, a) -> do
