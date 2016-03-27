@@ -43,10 +43,6 @@ withConstMatrix Matrix {..} action =
 fromForeign
   :: (Num a, Storable a, Unbox a, Vector v a)
   => Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr a -> IO (Matrix v a)
-{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO (Matrix VU.Vector Double) #-}
-{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO (Matrix VU.Vector (Complex Double)) #-}
-{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO (Matrix VS.Vector Double) #-}
-{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO (Matrix VS.Vector (Complex Double)) #-}
 fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals
   = do
     let maybeCopyArray src len
@@ -66,11 +62,11 @@ fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals
 
     let nz = VU.last pointers
     _rows <- toForeignPtr rows nz
-    _rows <- (VU.thaw . VU.convert . VS.map fromIntegral)
+    _rows <- (VU.unsafeThaw . VU.convert . VS.map fromIntegral)
              (VS.unsafeFromForeignPtr0 _rows nz)
 
     _vals <- toForeignPtr vals nz
-    _vals <- (VU.thaw . VU.convert)
+    _vals <- (VU.unsafeThaw . VU.convert)
              (VS.unsafeFromForeignPtr0 _vals nz)
 
     let _entries = UM.zip _rows _vals
@@ -81,6 +77,12 @@ fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals
       let len = end - start
       dedupInPlace nrows (UM.unsafeSlice start len _entries)
 
-    entries <- VU.freeze _entries
+    entries <- VU.unsafeFreeze _entries
     let (indices, VG.convert -> values) = VU.unzip entries
     return Matrix {..}
+
+{-# NOINLINE fromForeign #-} -- uses unsafeFreeze and unsafeThaw
+{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO (Matrix VU.Vector Double) #-}
+{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO (Matrix VU.Vector (Complex Double)) #-}
+{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr Double -> IO (Matrix VS.Vector Double) #-}
+{-# SPECIALIZE fromForeign :: Bool -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> Ptr (Complex Double) -> IO (Matrix VS.Vector (Complex Double)) #-}
