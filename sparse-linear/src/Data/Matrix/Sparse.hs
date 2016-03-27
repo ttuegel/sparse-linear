@@ -178,14 +178,13 @@ slice mat c
   where
     oops msg = error ("slice: " ++ msg)
 
-compress
-  :: (Num a, Unbox a)
-  => Int  -- ^ number of rows
-  -> Int  -- ^ number of columns
-  -> Vector Int -- ^ row indices
-  -> Vector Int -- ^ column indices
-  -> Vector a -- ^ values
-  -> Matrix Vector a
+compress :: (Num a, Unbox a) =>
+            Int  -- ^ number of rows
+         -> Int  -- ^ number of columns
+         -> Vector Int -- ^ row indices
+         -> Vector Int -- ^ column indices
+         -> Vector a -- ^ values
+         -> Matrix Vector a
 compress nrows ncols _rows _cols _vals
   | U.length _rows /= U.length _cols = oops "row and column array lengths differ"
   | U.length _rows /= G.length _vals = oops "row and value array lengths differ"
@@ -242,13 +241,15 @@ compress nrows ncols _rows _cols _vals
           (UM.unsafeSlice start len _entries)
 
     let nz' = U.last pointers
-    entries <- U.force <$> U.freeze (UM.unsafeSlice 0 nz' _entries)
+    entries <- U.force <$> U.unsafeFreeze (UM.unsafeSlice 0 nz' _entries)
     let (indices, values) = U.unzip entries
 
     return Matrix {..}
     where
       oops str = errorWithStackTrace ("compress: " ++ str)
       ptrs = computePtrs ncols _cols
+
+{-# NOINLINE compress #-}
 
 dedupInPlace
   :: (Num a, PrimMonad m, Unbox a)
