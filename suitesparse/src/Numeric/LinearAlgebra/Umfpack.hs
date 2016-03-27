@@ -41,9 +41,9 @@ linearSolve mat@Matrix{..} bs =
   unsafePerformIO $ do
     let fact = factor mat (analyze mat)
     xs <- forM bs $ \_b -> do
-      _b <- V.unsafeThaw (V.convert _b)
+      _b <- V.thaw (V.convert _b)
       linearSolve_ fact UmfpackNormal mat _b
-    map V.convert <$> mapM V.unsafeFreeze xs
+    map V.convert <$> mapM V.freeze xs
 
 (<\>) :: (Vector v a, Umfpack a) => Matrix v a -> v a -> v a
 {-# INLINE (<\>) #-}

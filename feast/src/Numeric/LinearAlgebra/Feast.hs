@@ -236,8 +236,8 @@ geigSH_ FeastParams{..} !m0 (!_emin, !_emax) !guess !matA !matB = geigSH_go wher
 
           (,,)
             <$> (fromIntegral <$> peek mode)
-            <*> V.unsafeFreeze _eigenvalues
-            <*> (Dense.fromColumns <$> mapM V.unsafeFreeze _eigenvectors)
+            <*> V.freeze _eigenvalues
+            <*> (Dense.fromColumns <$> mapM V.freeze _eigenvectors)
 
 -- ------------------------------------------------------------------------
 -- Utilities

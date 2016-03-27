@@ -209,9 +209,9 @@ compress nrows ncols _rows _cols _vals
         let bounds = show (0 :: Int, ncols)
         in oops ("column index out of bounds " ++ bounds ++ " at " ++ show ix)
 
-    _rows <- U.unsafeThaw _rows
-    _cols <- U.unsafeThaw _cols
-    _vals <- U.unsafeThaw _vals
+    _rows <- U.thaw _rows
+    _cols <- U.thaw _cols
+    _vals <- U.thaw _vals
     let _entries = UM.zip _rows _vals
 
     Intro.sortBy (comparing fst) $ UM.zip _cols _entries
@@ -242,7 +242,7 @@ compress nrows ncols _rows _cols _vals
           (UM.unsafeSlice start len _entries)
 
     let nz' = U.last pointers
-    entries <- U.force <$> U.unsafeFreeze (UM.unsafeSlice 0 nz' _entries)
+    entries <- U.force <$> U.freeze (UM.unsafeSlice 0 nz' _entries)
     let (indices, values) = U.unzip entries
 
     return Matrix {..}
@@ -284,7 +284,7 @@ computePtrs n indices = runST $ do
     count <- UM.unsafeRead counts ix
     UM.unsafeWrite counts ix (count + 1)
   -- compute the index pointers by prefix-summing the occurrence counts
-  U.scanl (+) 0 <$> U.unsafeFreeze counts
+  U.scanl (+) 0 <$> U.freeze counts
 
 decompress :: Vector Int -> Vector Int
 {-# INLINE decompress #-}
@@ -313,8 +313,8 @@ transpose Matrix {..} = runST $ do
       UM.unsafeWrite _ixs ix m
       UM.unsafeWrite _xs ix x
 
-  _ixs <- U.unsafeFreeze _ixs
-  _xs <- U.unsafeFreeze _xs
+  _ixs <- U.freeze _ixs
+  _xs <- U.freeze _xs
 
   return Matrix
     { ncols = nrows
@@ -453,18 +453,18 @@ axpy :: (Num a, Unbox a) => Matrix Vector a -> Vector a -> Vector a -> Vector a
 {-# SPECIALIZE axpy :: Matrix Vector (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
 axpy = \a _x _y -> runST $ do
   _y <- U.thaw _y
-  _x <- U.unsafeThaw _x
+  _x <- U.thaw _x
   axpy_ a _x _y
-  U.unsafeFreeze _y
+  U.freeze _y
 
 mulV :: (G.Vector v a, Num a, Unbox a) => Matrix Vector a -> v a -> v a
 {-# SPECIALIZE mulV :: Matrix Vector Double -> Vector Double -> Vector Double #-}
 {-# SPECIALIZE mulV :: Matrix Vector (Complex Double) -> Vector (Complex Double) -> Vector (Complex Double) #-}
 mulV = \a _x -> runST $ do
-  _x <- G.unsafeThaw _x
+  _x <- G.thaw _x
   y <- GM.replicate (nrows a) 0
   axpy_ a _x y
-  G.unsafeFreeze y
+  G.freeze y
 
 hjoin :: Unbox a => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE hjoin #-}

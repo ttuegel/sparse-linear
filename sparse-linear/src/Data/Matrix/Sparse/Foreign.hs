@@ -66,11 +66,11 @@ fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals
 
     let nz = VU.last pointers
     _rows <- toForeignPtr rows nz
-    _rows <- (VU.unsafeThaw . VU.convert . VS.map fromIntegral)
+    _rows <- (VU.thaw . VU.convert . VS.map fromIntegral)
              (VS.unsafeFromForeignPtr0 _rows nz)
 
     _vals <- toForeignPtr vals nz
-    _vals <- (VU.unsafeThaw . VU.convert)
+    _vals <- (VU.thaw . VU.convert)
              (VS.unsafeFromForeignPtr0 _vals nz)
 
     let _entries = UM.zip _rows _vals
@@ -81,6 +81,6 @@ fromForeign copy (fromIntegral -> nrows) (fromIntegral -> ncols) ptrs rows vals
       let len = end - start
       dedupInPlace nrows (UM.unsafeSlice start len _entries)
 
-    entries <- VU.unsafeFreeze _entries
+    entries <- VU.freeze _entries
     let (indices, VG.convert -> values) = VU.unzip entries
     return Matrix {..}

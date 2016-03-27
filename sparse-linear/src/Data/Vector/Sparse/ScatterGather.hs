@@ -127,7 +127,7 @@ gatherIndices pop = SG $ do
               UM.unsafeWrite indices iIdx iPat
               return (iIdx + 1)
     _ <- U.foldM' gatherIndex 0 (U.enumFromN 0 (UM.length pattern))
-    U.unsafeFreeze indices
+    U.freeze indices
 
 gatherValues :: Vector v a => Int -> SG v s a (v a)
 {-# INLINE gatherValues #-}
@@ -144,4 +144,4 @@ gatherValues pop = SG $ do
               GM.unsafeWrite values iVal x
               return (iVal + 1)
     _ <- U.foldM' gatherValue 0 (U.enumFromN 0 (UM.length pattern))
-    G.unsafeFreeze values
+    G.freeze values
