@@ -1,4 +1,5 @@
 dist/
 .*.sw*
 *.prof
-result*
+.result*
+.shell*
