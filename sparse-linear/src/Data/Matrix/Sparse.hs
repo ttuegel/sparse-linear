@@ -25,6 +25,7 @@ module Data.Matrix.Sparse
        , takeDiag, diag, blockDiag
        , ident, zeros
        , pack
+       , subMatrix
        , Unbox, module Data.Complex.Enhanced
        ) where
 
@@ -68,7 +69,7 @@ data Matrix v a = Matrix
   , pointers :: !(Vector Int)
                 -- ^ starting index of each slice,
                 -- last element is number of non-zero entries
-  , indices :: U.Vector Int
+  , indices :: Vector Int
   , values :: v a
   }
 
@@ -666,3 +667,30 @@ mm matA matB
         SG.gather
   where
     oops msg = error ("mm: " ++ msg)
+
+subMatrix :: Unbox a =>
+             (Int, Int) -> (Int, Int)
+          -> Matrix Vector a -> Matrix Vector a
+subMatrix (r0, c0) (nr, nc) mat
+    | r0 + nr > nrows mat = oops "range exceeds input row size"
+    | c0 + nc > ncols mat = oops "range exceeds input column size"
+    | otherwise =
+        let
+            rf = r0 + nr
+            ix0 = pointers mat U.! c0
+            nix = pointers mat U.! (c0 + nc)
+            (_indices, _values) =
+                ( U.unzip
+                . U.filter (\(r, _) -> r >= r0 && r < rf)
+                . U.slice ix0 nix )
+                (U.zip (indices mat) (values mat))
+            _pointers = computePtrs nc _indices
+        in
+          Matrix { nrows = nr
+                 , ncols = nc
+                 , pointers = _pointers
+                 , indices = _indices
+                 , values = _values
+                 }
+  where
+    oops msg = error ("subMatrix: " ++ msg)
