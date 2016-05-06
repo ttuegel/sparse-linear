@@ -14,7 +14,6 @@ module Data.Complex.Enhanced
 #if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
 #endif
-import Data.Binary (Binary(..))
 import Data.Complex
 import Data.Orphans ()
 
@@ -53,9 +52,3 @@ instance IsReal (Complex Double) where
 instance IsImag (Complex Double) where
   {-# INLINE imag #-}
   imag = (0 :+)
-
-instance (Binary a, RealFloat a) => Binary (Complex a) where
-  {-# INLINE put #-}
-  {-# INLINE get #-}
-  put = \(x :+ y) -> put x >> put y
-  get = (:+) <$> get <*> get
