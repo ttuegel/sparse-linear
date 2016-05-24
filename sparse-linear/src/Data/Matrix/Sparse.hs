@@ -558,8 +558,12 @@ fromBlocks = vcat . map hcat . adjustDims
 fromBlocksDiag
   :: (Num a, Unbox a) => [[Maybe (Matrix Vector a)]] -> Matrix Vector a
 {-# INLINE fromBlocksDiag #-}
-fromBlocksDiag = fromBlocks . zipWith rejoin [0..] . L.transpose where
-  rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
+fromBlocksDiag blocks =
+    (fromBlocks . zipWith rejoin [0..] . map pad . L.transpose) blocks
+  where
+    len = length blocks
+    pad as = as ++ replicate (len - length as) Nothing
+    rejoin = \n as -> let (rs, ls) = splitAt (length as - n) as in ls ++ rs
 
 kronecker :: (Num a, Unbox a) => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
 {-# SPECIALIZE kronecker :: Matrix Vector Double -> Matrix Vector Double -> Matrix Vector Double #-}
