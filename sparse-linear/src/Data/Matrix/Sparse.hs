@@ -49,6 +49,8 @@ import qualified Data.Vector as Boxed
 import qualified Data.Vector.Algorithms.Intro as Intro
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
+import qualified Data.Vector.Storable as VS
+import qualified Data.Vector.Storable.Mutable as VSM
 import Data.Vector.Unboxed (Vector, Unbox)
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Mutable (MVector)
@@ -467,6 +469,33 @@ mulV = \a _x -> runST $ do
   y <- GM.replicate (nrows a) 0
   axpy_ a _x y
   G.freeze y
+
+mulM :: (Dense.Container VS.Vector a, Dense.Element a, Num a, Dense.Transposable (Dense.Matrix a) (Dense.Matrix a), Unbox a) => Matrix Vector a -> Dense.Matrix a -> Dense.Matrix a
+{-# SPECIALIZE mulM :: Matrix Vector Double -> Dense.Matrix Double -> Dense.Matrix Double #-}
+{-# SPECIALIZE mulM :: Matrix Vector (Complex Double) -> Dense.Matrix (Complex Double) -> Dense.Matrix (Complex Double) #-}
+mulM matA matB
+    | ncols matA /= Dense.rows matB = oops "inner dimension mismatch"
+    | otherwise = runST $ do
+        -- unpack matB column-wise into a mutable array
+        unpackedB <- (VS.thaw . Dense.flatten . Dense.tr') matB
+        resultC <- VSM.replicate (nrowsC * ncolsC) 0
+        let mulCols i
+                | i >= ncolsC = pure ()
+                | otherwise = do
+                    let inp = VSM.slice (i * nrowsB) nrowsB unpackedB
+                        outp = VSM.slice (i * nrowsC) nrowsC resultC
+                    axpy_ matA inp outp
+                    mulCols (i + 1)
+        mulCols 0
+        Dense.tr' . Dense.reshape nrowsC <$> VS.freeze resultC
+  where
+    oops str = errorWithStackTrace ("mulM: " ++ str)
+    nrowsA = nrows matA
+    nrowsB = Dense.rows matB
+    nrowsC = nrowsA
+    ncolsA = ncols matA
+    ncolsB = Dense.cols matB
+    ncolsC = ncolsB
 
 hjoin :: Unbox a => Matrix Vector a -> Matrix Vector a -> Matrix Vector a
 {-# INLINE hjoin #-}
