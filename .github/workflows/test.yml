@@ -13,6 +13,12 @@ jobs:
       - uses: haskell/actions/setup@v1
         with:
           ghc-version: ${{ matrix.ghc }}
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+          key: ${{ runner.os }}-${{ matrix.ghc }}
       - name: 'Build'
         run: cabal build sparse-linear
       - name: 'Run unit tests'
