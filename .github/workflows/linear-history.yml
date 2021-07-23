@@ -1,0 +1,14 @@
+on: [pull_request]
+name: 'Linear history'
+jobs:
+  linear-history:
+    name: 'Linear history'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          num_merges=$(git log --format=oneline --merge $GITHUB_BASE_REF..HEAD | wc -l)
+          if [[ $num_merges -gt 0 ]]; then
+            echo >&2 'Error: found merge commits'
+            git log --merge $GITHUB_BASE_REF..HEAD >&2
+          fi
