@@ -13,4 +13,7 @@ jobs:
       - uses: haskell/actions/setup@v1
         with:
           ghc-version: ${{ matrix.ghc }}
-      - run: cabal build sparse-linear
+      - name: 'Build'
+        run: cabal build sparse-linear
+      - name: 'Run unit tests'
+        run: cabal test --test-show-details=direct sparse-linear
