@@ -1,4 +1,5 @@
 dist/
+dist-newstyle/
 .*.sw*
 *.prof
 .result*

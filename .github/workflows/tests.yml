@@ -1,0 +1,25 @@
+on: [push, pull_request]
+name: 'Tests'
+jobs:
+  test:
+    name: 'Tests'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ghc: ['7.10']
+    steps:
+      - run: sudo apt install -y libblas-dev liblapack-dev
+      - uses: actions/checkout@v2
+      - uses: haskell/actions/setup@v1
+        with:
+          ghc-version: ${{ matrix.ghc }}
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+          key: ${{ runner.os }}-${{ matrix.ghc }}
+      - name: 'Build'
+        run: cabal build sparse-linear
+      - name: 'Run unit tests'
+        run: cabal test --test-show-details=direct sparse-linear

@@ -1,0 +1,4 @@
+packages:
+  sparse-linear
+  feast
+  suitesparse
