@@ -1,5 +1,5 @@
 on: [pull_request]
-name: 'Linear history'
+name: 'Git'
 jobs:
   linear-history:
     name: 'Linear history'
@@ -11,4 +11,5 @@ jobs:
           if [[ $num_merges -gt 0 ]]; then
             echo >&2 'Error: found merge commits'
             git log --merge $GITHUB_BASE_REF..HEAD >&2
+            exit 1
           fi
