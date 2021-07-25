@@ -19,7 +19,7 @@ library
     Data.Vector.Sparse.ScatterGather
     Data.Vector.Util
   build-depends:
-      base >=4.6
+      base >=4.11
     , base-orphans >= 0.4 && < 1
     , binary >=0.7
     , hmatrix >=0.16 && <1
