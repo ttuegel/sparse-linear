@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ghc: ['7.10']
+        ghc: ['7.10', '8.10', 'latest']
     steps:
       - run: sudo apt install -y libblas-dev liblapack-dev
       - uses: actions/checkout@v2
