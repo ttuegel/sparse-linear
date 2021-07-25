@@ -131,12 +131,13 @@ instance (G.Vector v a, Num a) => Num (Vector v a) where
   signum = omap signum
   fromInteger = error "Data.Vector.Sparse.fromInteger: not implemented"
 
+instance G.Vector v a => Semigroup (Vector v a) where
+  {-# INLINE (<>) #-}
+  (<>) a b = mconcat [a, b]
+
 instance G.Vector v a => Monoid (Vector v a) where
   {-# INLINE mempty #-}
   mempty = Vector 0 U.empty G.empty
-
-  {-# INLINE mappend #-}
-  mappend a b = mconcat [a, b]
 
   {-# INLINE mconcat #-}
   mconcat xs

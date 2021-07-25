@@ -15,7 +15,6 @@ module Data.Complex.Enhanced
 import Control.Applicative
 #endif
 import Data.Complex
-import Data.Orphans ()
 
 type family RealOf a where
   RealOf (Complex a) = a
